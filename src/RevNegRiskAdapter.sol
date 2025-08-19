@@ -290,7 +290,10 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, MarketStateManager, IRevNegR
         // `split` on i: **−A WCOL**, +A `YES(i)`, +A `NO(i)`.
         _splitPosition(targetConditionId, _amount);
 
-        // burn `YES(i)`: −A `YES(i)`.
+        // Get user's target YES position and burn it: −A `YES(i)`.
+        ctf.safeTransferFrom(msg.sender, YES_TOKEN_BURN_ADDRESS, targetYesPositionId, _amount, "");
+
+        // burn the YES(i) we created from split: −A `YES(i)`.
         ctf.safeTransferFrom(address(this), YES_TOKEN_BURN_ADDRESS, targetYesPositionId, _amount, "");
 
         // transfer `NO(i)` to user (and fee to vault if any).
