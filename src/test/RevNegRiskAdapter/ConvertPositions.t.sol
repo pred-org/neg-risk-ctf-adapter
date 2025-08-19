@@ -352,8 +352,6 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
         _before(_questionCount, 0, _targetIndex, _amount);
 
-        uint256 wcolBalanceBefore = wcol.balanceOf(address(revAdapter));
-
         // convert positions
         {
             vm.startPrank(brian);
@@ -361,10 +359,268 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
             revAdapter.convertPositions(marketId, _targetIndex, _amount);
         }
 
+        // WCOL balance should always be 0 after execution
         uint256 wcolBalanceAfter = wcol.balanceOf(address(revAdapter));
+        assertEq(wcolBalanceAfter, 0, "WCOL balance must be 0 after convertPositions");
+    }
 
-        // WCOL balance should be the same (all minted WCOL should be burned)
-        assertEq(wcolBalanceAfter, wcolBalanceBefore);
+    /// @notice Test that WCOL balance is always 0 after convertPositions execution
+    /// @dev This ensures the core contract invariant is maintained
+    function test_convertPositions_wcolBalanceAlwaysZero(uint256 _questionCount, uint256 _feeBips, uint256 _targetIndex, uint128 _amount)
+        public
+    {
+        vm.assume(_amount > 0);
+
+        _feeBips = bound(_feeBips, 0, FEE_BIPS_MAX);
+        _questionCount = bound(_questionCount, 2, QUESTION_COUNT_MAX);
+        _targetIndex = bound(_targetIndex, 0, _questionCount - 1);
+
+        _before(_questionCount, _feeBips, _targetIndex, _amount);
+
+        // Record initial WCOL balance
+        uint256 initialWcolBalance = revAdapter.wcol().balanceOf(address(revAdapter));
+
+        // convert positions
+        {
+            vm.startPrank(brian);
+            ctf.setApprovalForAll(address(revAdapter), true);
+
+            revAdapter.convertPositions(marketId, _targetIndex, _amount);
+        }
+
+        // Verify WCOL balance is exactly 0 after execution
+        uint256 finalWcolBalance = revAdapter.wcol().balanceOf(address(revAdapter));
+        assertEq(finalWcolBalance, 0, "WCOL balance must be 0 after convertPositions");
+
+        // Verify the balance change matches the expected pattern
+        // Initial: 0 WCOL
+        // During execution: +_amount WCOL (minted), then consumed by splits
+        // Final: 0 WCOL
+        assertEq(initialWcolBalance, 0, "Initial WCOL balance should be 0");
+    }
+
+    /// @notice Test WCOL balance consistency across different question counts
+    function test_convertPositions_wcolBalanceDifferentQuestionCounts() public {
+        uint256[] memory questionCounts = new uint256[](4);
+        questionCounts[0] = 2;
+        questionCounts[1] = 3;
+        questionCounts[2] = 5;
+        questionCounts[3] = 10;
+
+        for (uint256 i = 0; i < questionCounts.length; i++) {
+            uint256 questionCount = questionCounts[i];
+            uint256 targetIndex = 0; // Always target first question
+            uint256 amount = 1000;
+
+            // Create a new market for each iteration
+            vm.prank(oracle);
+            bytes32 newMarketId = revAdapter.prepareMarket(0, bytes(string.concat("market_", vm.toString(i))));
+
+            // Prepare questions
+            for (uint256 j = 0; j < questionCount; j++) {
+                vm.prank(oracle);
+                revAdapter.prepareQuestion(newMarketId, "");
+            }
+
+            // Give brian YES positions for all questions
+            for (uint256 j = 0; j < questionCount; j++) {
+                bytes32 questionId = NegRiskIdLib.getQuestionId(newMarketId, uint8(j));
+                bytes32 conditionId = revAdapter.getConditionId(questionId);
+                uint256 yesPositionId = revAdapter.getPositionId(questionId, true);
+
+                // Split position to get YES tokens
+                vm.startPrank(alice);
+                usdc.mint(alice, amount);
+                usdc.approve(address(revAdapter), amount);
+                revAdapter.splitPosition(conditionId, amount);
+                vm.stopPrank();
+
+                // Transfer YES tokens to brian
+                vm.prank(alice);
+                ctf.safeTransferFrom(alice, brian, yesPositionId, amount, "");
+            }
+
+            // convert positions
+            {
+                vm.startPrank(brian);
+                ctf.setApprovalForAll(address(revAdapter), true);
+                revAdapter.convertPositions(newMarketId, targetIndex, amount);
+            }
+
+            // Verify WCOL balance is 0
+            uint256 finalWcolBalance = revAdapter.wcol().balanceOf(address(revAdapter));
+            assertEq(finalWcolBalance, 0, string.concat("WCOL balance must be 0 for ", vm.toString(questionCount), " questions"));
+
+            // Reset for next iteration
+            vm.stopPrank();
+        }
+    }
+
+    /// @notice Test WCOL balance consistency across different fee levels
+    function test_convertPositions_wcolBalanceDifferentFees() public {
+        uint256 questionCount = 3;
+        uint256 targetIndex = 0;
+        uint256 amount = 1000;
+
+        uint256[] memory feeBips = new uint256[](4);
+        feeBips[0] = 0;      // No fees
+        feeBips[1] = 100;    // 1% fee
+        feeBips[2] = 500;    // 5% fee
+        feeBips[3] = 1000;   // 10% fee
+
+        for (uint256 i = 0; i < feeBips.length; i++) {
+            uint256 feeBipsValue = feeBips[i];
+
+            // Create a new market for each iteration
+            vm.prank(oracle);
+            bytes32 newMarketId = revAdapter.prepareMarket(feeBipsValue, bytes(string.concat("market_", vm.toString(i))));
+
+            // Prepare questions
+            for (uint256 j = 0; j < questionCount; j++) {
+                vm.prank(oracle);
+                revAdapter.prepareQuestion(newMarketId, "");
+            }
+
+            // Give brian YES positions for all questions
+            for (uint256 j = 0; j < questionCount; j++) {
+                bytes32 questionId = NegRiskIdLib.getQuestionId(newMarketId, uint8(j));
+                bytes32 conditionId = revAdapter.getConditionId(questionId);
+                uint256 yesPositionId = revAdapter.getPositionId(questionId, true);
+
+                // Split position to get YES tokens
+                vm.startPrank(alice);
+                usdc.mint(alice, amount);
+                usdc.approve(address(revAdapter), amount);
+                revAdapter.splitPosition(conditionId, amount);
+                vm.stopPrank();
+
+                // Transfer YES tokens to brian
+                vm.prank(alice);
+                ctf.safeTransferFrom(alice, brian, yesPositionId, amount, "");
+            }
+
+            // convert positions
+            {
+                vm.startPrank(brian);
+                ctf.setApprovalForAll(address(revAdapter), true);
+                revAdapter.convertPositions(newMarketId, targetIndex, amount);
+            }
+
+            // Verify WCOL balance is 0 regardless of fee level
+            uint256 finalWcolBalance = revAdapter.wcol().balanceOf(address(revAdapter));
+            assertEq(finalWcolBalance, 0, string.concat("WCOL balance must be 0 for ", vm.toString(feeBipsValue), " bips fee"));
+
+            // Reset for next iteration
+            vm.stopPrank();
+        }
+    }
+
+    /// @notice Test WCOL balance consistency with edge case amounts
+    function test_convertPositions_wcolBalanceEdgeCaseAmounts() public {
+        uint256 questionCount = 3;
+        uint256 targetIndex = 0;
+
+        uint256[] memory amounts = new uint256[](4);
+        amounts[0] = 1;           // Minimum amount
+        amounts[1] = 100;         // Small amount
+        amounts[2] = 1000000;     // Large amount
+        amounts[3] = 10000;       // Reasonable large amount (avoiding uint128.max for gas)
+
+        for (uint256 i = 0; i < amounts.length; i++) {
+            uint256 amount = amounts[i];
+
+            // Create a new market for each iteration
+            vm.prank(oracle);
+            bytes32 newMarketId = revAdapter.prepareMarket(0, bytes(string.concat("market_", vm.toString(i))));
+
+            // Prepare questions
+            for (uint256 j = 0; j < questionCount; j++) {
+                vm.prank(oracle);
+                revAdapter.prepareQuestion(newMarketId, "");
+            }
+
+            // Give brian YES positions for all questions
+            for (uint256 j = 0; j < questionCount; j++) {
+                bytes32 questionId = NegRiskIdLib.getQuestionId(newMarketId, uint8(j));
+                bytes32 conditionId = revAdapter.getConditionId(questionId);
+                uint256 yesPositionId = revAdapter.getPositionId(questionId, true);
+
+                // Split position to get YES tokens
+                vm.startPrank(alice);
+                usdc.mint(alice, amount);
+                usdc.approve(address(revAdapter), amount);
+                revAdapter.splitPosition(conditionId, amount);
+                vm.stopPrank();
+
+                // Transfer YES tokens to brian
+                vm.prank(alice);
+                ctf.safeTransferFrom(alice, brian, yesPositionId, amount, "");
+            }
+
+            // convert positions
+            {
+                vm.startPrank(brian);
+                ctf.setApprovalForAll(address(revAdapter), true);
+                revAdapter.convertPositions(newMarketId, targetIndex, amount);
+            }
+
+            // Verify WCOL balance is 0 regardless of amount
+            uint256 finalWcolBalance = revAdapter.wcol().balanceOf(address(revAdapter));
+            assertEq(finalWcolBalance, 0, string.concat("WCOL balance must be 0 for amount ", vm.toString(amount)));
+
+            // Reset for next iteration
+            vm.stopPrank();
+        }
+    }
+
+    /// @notice Test WCOL balance consistency with different target indices
+    function test_convertPositions_wcolBalanceDifferentTargetIndices() public {
+        uint256 questionCount = 5;
+        uint256 amount = 1000;
+
+        for (uint256 targetIndex = 0; targetIndex < questionCount; targetIndex++) {
+            // Create a new market for each iteration
+            vm.prank(oracle);
+            bytes32 newMarketId = revAdapter.prepareMarket(0, bytes(string.concat("market_", vm.toString(targetIndex))));
+
+            // Prepare questions
+            for (uint256 j = 0; j < questionCount; j++) {
+                vm.prank(oracle);
+                revAdapter.prepareQuestion(newMarketId, "");
+            }
+
+            // Give brian YES positions for all questions
+            for (uint256 j = 0; j < questionCount; j++) {
+                bytes32 questionId = NegRiskIdLib.getQuestionId(newMarketId, uint8(j));
+                bytes32 conditionId = revAdapter.getConditionId(questionId);
+                uint256 yesPositionId = revAdapter.getPositionId(questionId, true);
+
+                // Split position to get YES tokens
+                vm.startPrank(alice);
+                usdc.mint(alice, amount);
+                usdc.approve(address(revAdapter), amount);
+                revAdapter.splitPosition(conditionId, amount);
+                vm.stopPrank();
+
+                // Transfer YES tokens to brian
+                vm.prank(alice);
+                ctf.safeTransferFrom(alice, brian, yesPositionId, amount, "");
+            }
+
+            // convert positions
+            {
+                vm.startPrank(brian);
+                ctf.setApprovalForAll(address(revAdapter), true);
+                revAdapter.convertPositions(newMarketId, targetIndex, amount);
+            }
+
+            // Verify WCOL balance is 0 regardless of target index
+            uint256 finalWcolBalance = revAdapter.wcol().balanceOf(address(revAdapter));
+            assertEq(finalWcolBalance, 0, string.concat("WCOL balance must be 0 for target index ", vm.toString(targetIndex)));
+
+            // Reset for next iteration
+            vm.stopPrank();
+        }
     }
 
     function test_convertPositions_eventEmission(uint256 _questionCount, uint256 _targetIndex, uint128 _amount) public {

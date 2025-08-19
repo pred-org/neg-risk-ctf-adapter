@@ -253,7 +253,7 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, MarketStateManager, IRevNegR
             return;
         }
 
-        // Pre-calculate fee amounts
+        // Pre-calculate fee amounts to avoid recalculation
         uint256 feeAmount = (_amount * md.feeBips()) / FEE_DENOMINATOR;
         uint256 amountOut = _amount - feeAmount;
 
@@ -261,7 +261,7 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, MarketStateManager, IRevNegR
         wcol.mint(_amount);
 
         // **For each j ≠ i (loop):**
-        for (uint256 j = 0; j < questionCount; j++) {
+        for (uint256 j = 0; j < questionCount;) {
             if (j != _targetIndex) {
                 bytes32 questionId = NegRiskIdLib.getQuestionId(_marketId, uint8(j));
                 bytes32 conditionId = getConditionId(questionId);
@@ -276,12 +276,27 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, MarketStateManager, IRevNegR
 
                 // burn by-product `YES(j)'`: −A `YES(j)'`.
                 ctf.safeTransferFrom(address(this), YES_TOKEN_BURN_ADDRESS, yesPositionId, _amount, "");
-                
-                // **Net after each j:** WCOL still **+A**; user's `YES(j)` is gone; no stray tokens.
             }
+            unchecked { ++j; }
         }
 
-        // **Final step (outcome i):**
+        // Process target question
+        _processTargetQuestion(_marketId, _targetIndex, _amount, feeAmount, amountOut);
+
+        // **Net after final split:** **0 WCOL** left.
+        // The contract logic ensures this invariant is maintained
+
+        emit PositionsConverted(msg.sender, _marketId, _targetIndex, _amount);
+    }
+
+    /// @dev internal function to process target question and avoid stack too deep
+    function _processTargetQuestion(
+        bytes32 _marketId, 
+        uint256 _targetIndex, 
+        uint256 _amount, 
+        uint256 _feeAmount, 
+        uint256 _amountOut
+    ) internal {
         bytes32 targetQuestionId = NegRiskIdLib.getQuestionId(_marketId, uint8(_targetIndex));
         bytes32 targetConditionId = getConditionId(targetQuestionId);
         uint256 targetYesPositionId = getPositionId(targetQuestionId, true);
@@ -297,23 +312,13 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, MarketStateManager, IRevNegR
         ctf.safeTransferFrom(address(this), YES_TOKEN_BURN_ADDRESS, targetYesPositionId, _amount, "");
 
         // transfer `NO(i)` to user (and fee to vault if any).
-        if (feeAmount > 0) {
+        if (_feeAmount > 0) {
             // transfer no token fees to vault
-            ctf.safeTransferFrom(address(this), vault, targetNoPositionId, feeAmount, "");
+            ctf.safeTransferFrom(address(this), vault, targetNoPositionId, _feeAmount, "");
         }
 
         // transfer no tokens to sender
-        ctf.safeTransferFrom(address(this), msg.sender, targetNoPositionId, amountOut, "");
-
-        // **Net after final split:** **0 WCOL** left.
-        // Verify we have no WCOL left (should be 0)
-        uint256 remainingWcol = wcol.balanceOf(address(this));
-        if (remainingWcol > 0) {
-            // Burn any remaining WCOL
-            wcol.burn(remainingWcol);
-        }
-
-        emit PositionsConverted(msg.sender, _marketId, _targetIndex, _amount);
+        ctf.safeTransferFrom(address(this), msg.sender, targetNoPositionId, _amountOut, "");
     }
 
     /*//////////////////////////////////////////////////////////////
