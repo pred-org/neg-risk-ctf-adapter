@@ -93,19 +93,23 @@ contract RevNegRiskAdapter_BasicFunctionality_Test is RevNegRiskAdapter_SetUp {
             revAdapter.splitPosition(conditionId, amount);
             vm.stopPrank();
         }
+
+        uint targetIndex = 0;
         
         // Give brian YES positions for ALL questions (including target)
         // The convertPositions function will burn the target YES position
         for (uint256 i = 0; i < 2; i++) {
             uint256 yesPositionId = revAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, uint8(i)), true);
-            vm.prank(alice);
-            ctf.safeTransferFrom(alice, brian, yesPositionId, amount, "");
+            if (i != targetIndex){
+                vm.prank(alice);
+                ctf.safeTransferFrom(alice, brian, yesPositionId, amount, "");
+            }
         }
         
         // Convert positions
         vm.startPrank(brian);
         ctf.setApprovalForAll(address(revAdapter), true);
-        revAdapter.convertPositions(marketId, 0, amount); // Target index 0
+        revAdapter.convertPositions(marketId, targetIndex, amount); // Target index 0
         vm.stopPrank();
         
         // Check results
@@ -120,7 +124,7 @@ contract RevNegRiskAdapter_BasicFunctionality_Test is RevNegRiskAdapter_SetUp {
         assertEq(ctf.balanceOf(brian, nonTargetYesPositionId), 0);
         // YES positions should be burned
         // The target YES position gets burned twice: once from user, once from split
-        assertEq(ctf.balanceOf(revAdapter.YES_TOKEN_BURN_ADDRESS(), targetYesPositionId), amount * 2);
+        assertEq(ctf.balanceOf(revAdapter.YES_TOKEN_BURN_ADDRESS(), targetYesPositionId), amount);
         assertEq(ctf.balanceOf(revAdapter.YES_TOKEN_BURN_ADDRESS(), nonTargetYesPositionId), amount);
     }
-} 
+}
