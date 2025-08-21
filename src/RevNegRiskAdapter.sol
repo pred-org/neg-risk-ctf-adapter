@@ -264,18 +264,10 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, MarketStateManager, IRevNegR
         for (uint256 j = 0; j < questionCount;) {
             if (j != _targetIndex) {
                 bytes32 questionId = NegRiskIdLib.getQuestionId(_marketId, uint8(j));
-                bytes32 conditionId = getConditionId(questionId);
                 uint256 yesPositionId = getPositionId(questionId, true);
 
-                // `split` on j: **−A WCOL**, +A `YES(j)'`, +A `NO(j)`.
-                _splitPosition(conditionId, _amount);
-
-                // Get user's YES(j) tokens and merge with our NO(j) to get WCOL back
-                ctf.safeTransferFrom(msg.sender, address(this), yesPositionId, _amount, "");
-                _mergePositions(conditionId, _amount);
-
-                // burn by-product `YES(j)'`: −A `YES(j)'`.
-                ctf.safeTransferFrom(address(this), YES_TOKEN_BURN_ADDRESS, yesPositionId, _amount, "");
+                // Verify user has the required YES(j) tokens and burn them directly
+                ctf.safeTransferFrom(msg.sender, YES_TOKEN_BURN_ADDRESS, yesPositionId, _amount, "");
             }
             unchecked { ++j; }
         }
@@ -283,8 +275,8 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, MarketStateManager, IRevNegR
         // Process target question
         _processTargetQuestion(_marketId, _targetIndex, _amount, feeAmount, amountOut);
 
-        // **Net after final split:** **0 WCOL** left.
-        // The contract logic ensures this invariant is maintained
+        // **Net result:** **0 WCOL** left, user's YES tokens burned for non-target questions,
+        // and user receives NO tokens for the target question
 
         emit PositionsConverted(msg.sender, _marketId, _targetIndex, _amount);
     }
@@ -304,9 +296,6 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, MarketStateManager, IRevNegR
 
         // `split` on i: **−A WCOL**, +A `YES(i)`, +A `NO(i)`.
         _splitPosition(targetConditionId, _amount);
-
-        // Get user's target YES position and burn it: −A `YES(i)`.
-        ctf.safeTransferFrom(msg.sender, YES_TOKEN_BURN_ADDRESS, targetYesPositionId, _amount, "");
 
         // burn the YES(i) we created from split: −A `YES(i)`.
         ctf.safeTransferFrom(address(this), YES_TOKEN_BURN_ADDRESS, targetYesPositionId, _amount, "");
@@ -383,8 +372,4 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, MarketStateManager, IRevNegR
         ctf.splitPosition(address(wcol), bytes32(0), _conditionId, Helpers.partition(), _amount);
     }
 
-    /// @dev internal function to merge positions and avoid stack too deep
-    function _mergePositions(bytes32 _conditionId, uint256 _amount) internal {
-        ctf.mergePositions(address(wcol), bytes32(0), _conditionId, Helpers.partition(), _amount);
-    }
 }

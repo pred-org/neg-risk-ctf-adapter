@@ -35,17 +35,19 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
         assertEq(revAdapter.getQuestionCount(marketId), _questionCount);
 
-        // send YES positions to brian for ALL questions (including target)
+        // send YES positions to brian for ALL questions (except target)
         // The convertPositions function will burn the target YES position
         {
             i = 0;
 
             while (i < _questionCount) {
+                if (i != _targetIndex){
                 uint256 positionId = revAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, i), true);
                 ctf.balanceOf(alice, positionId);
-                vm.prank(alice);
-                ctf.safeTransferFrom(alice, brian, positionId, _amount, "");
-                assertEq(ctf.balanceOf(brian, positionId), _amount);
+                    vm.prank(alice);
+                    ctf.safeTransferFrom(alice, brian, positionId, _amount, "");
+                    assertEq(ctf.balanceOf(brian, positionId), _amount);
+                }
                 ++i;
             }
         }
@@ -83,9 +85,10 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
                     assertEq(ctf.balanceOf(brian, targetNoPositionId), amountOut);
                     // vault has the rest of no tokens as fees
                     assertEq(ctf.balanceOf(vault, targetNoPositionId), feeAmount);
-                    // YES tokens should be at the burn address
-                    // The target YES position gets burned twice: once from user, once from split
-                    assertEq(ctf.balanceOf(revAdapter.YES_TOKEN_BURN_ADDRESS(), targetYesPositionId), _amount * 2);
+                    // User's target YES tokens are burned (not kept)
+                    assertEq(ctf.balanceOf(brian, targetYesPositionId), 0);
+                    // The target YES position gets burned from split
+                    assertEq(ctf.balanceOf(revAdapter.YES_TOKEN_BURN_ADDRESS(), targetYesPositionId), _amount);
                     // rev adapter should have no conditional tokens
                     assertEq(ctf.balanceOf(address(revAdapter), targetYesPositionId), 0);
                     assertEq(ctf.balanceOf(address(revAdapter), targetNoPositionId), 0);
