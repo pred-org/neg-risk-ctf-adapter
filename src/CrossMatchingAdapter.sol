@@ -104,29 +104,74 @@ contract CrossMatchingAdapter is ReentrancyGuard {
         ICTFExchange.OrderIntent[] calldata orders
     ) external nonReentrant {
         // ---- 0) Precompute YES/NO ids per question from NegRisk ----
-        uint256 Q = neg.getQuestionCount(marketId);
-        require(Q >= 2, "need binary+");
-        bytes32[] memory cond = new bytes32[](Q);
-        uint256[] memory YES  = new uint256[](Q);
-        uint256[] memory NO   = new uint256[](Q);
-        for (uint8 i=0;i<Q;i++){
-            bytes32 qid = _questionId(marketId, i);
-            cond[i] = neg.getConditionId(qid);
-            YES[i]  = neg.getPositionId(qid, true);
-            NO[i]   = neg.getPositionId(qid, false);
+        (bytes32[] memory cond, uint256[] memory YES, uint256[] memory NO) = _precomputeQuestionData(marketId);
+        
+        // ---- 1) Parse orders, classify, and compute pricing ----
+        (Parsed[] memory P, uint256 totalBuyerDeposit, uint256 totalSellerPayout, uint256[] memory needYesBuy, uint256[] memory needYesMerge) = _parseAndClassifyOrders(orders, YES, NO);
+        
+        // ---- 2) Compute YES supply needed and plan pivot split/convert ----
+        (uint256 S, uint256 maxNonPivot) = _computeSupplyNeeded(needYesBuy, needYesMerge);
+        
+        // Bootstrap safety: we need S USDC on hand to wrap before merges create WCOL.
+        if (totalBuyerDeposit < S) revert BootstrapShortfall();
+        
+        // ---- 3) Pull USDC from BUY makers ----
+        _pullBuyerDeposits(P);
+        
+        // ---- 4) Split on pivot and convert NO0 once ----
+        _executePivotOperations(marketId, cond, S, maxNonPivot);
+        
+        // ---- 5) Deliver YES to BUYers ----
+        _deliverYesToBuyers(P);
+        
+        // ---- 6) Pull NO from SELLers, merge, unwrap, and pay ----
+        _processSellerOrders(P, cond);
+        
+        // ---- 8) Refund residual USDC to solver (who can pro-rata refund buyers off-chain) ----
+        uint256 residual = usdc.balanceOf(address(this));
+        if (residual > 0) {
+            require(usdc.transfer(msg.sender, residual), "residual xfer");
         }
 
-        // map tokenId -> (index, isYes)
-        // we’ll linearly search (Q is small); could also build a hashmap if desired.
+        emit CrossMatched(marketId, S, maxNonPivot, totalBuyerDeposit, totalSellerPayout, residual);
+    }
 
-        // ---- 1) Parse orders, classify, and compute pricing ----
-        Parsed[] memory P = new Parsed[](orders.length);
-        uint256 totalBuyerDeposit;
-        uint256 totalSellerPayout;
-        uint256[] memory needYesBuy  = new uint256[](Q);
-        uint256[] memory needYesMerge= new uint256[](Q);
+    function _precomputeQuestionData(bytes32 marketId) internal view returns (
+        bytes32[] memory cond,
+        uint256[] memory YES,
+        uint256[] memory NO
+    ) {
+        uint256 Q = neg.getQuestionCount(marketId);
+        require(Q >= 2, "need binary+");
+        cond = new bytes32[](Q);
+        YES = new uint256[](Q);
+        NO = new uint256[](Q);
+        for (uint8 i = 0; i < Q; i++) {
+            bytes32 qid = _questionId(marketId, i);
+            cond[i] = neg.getConditionId(qid);
+            YES[i] = neg.getPositionId(qid, true);
+            NO[i] = neg.getPositionId(qid, false);
+        }
+    }
 
-        for (uint256 k=0;k<orders.length;k++){
+    function _parseAndClassifyOrders(
+        ICTFExchange.OrderIntent[] calldata orders,
+        uint256[] memory YES,
+        uint256[] memory NO
+    ) internal pure returns (
+        Parsed[] memory P,
+        uint256 totalBuyerDeposit,
+        uint256 totalSellerPayout,
+        uint256[] memory needYesBuy,
+        uint256[] memory needYesMerge
+    ) {
+        P = new Parsed[](orders.length);
+        totalBuyerDeposit = 0;
+        totalSellerPayout = 0;
+        needYesBuy = new uint256[](YES.length);
+        needYesMerge = new uint256[](YES.length);
+
+        for (uint256 k = 0; k < orders.length; k++) {
             ICTFExchange.OrderIntent calldata o = orders[k];
 
             // classify tokenId -> which question and side
@@ -134,68 +179,73 @@ contract CrossMatchingAdapter is ReentrancyGuard {
             if (!found) revert UnsupportedToken();
 
             Parsed memory x;
-            x.maker   = o.order.maker;
-            x.side    = o.side;
+            x.maker = o.order.maker;
+            x.side = o.side;
             x.tokenId = o.tokenId;
-            x.qIndex  = qi;
+            x.qIndex = qi;
 
             if (o.side == SIDE_BUY) {
                 // BUY must be for YES only in this adapter
                 if (!isYes) revert SideNotSupported();
-                x.shares   = o.order.takerAmount;                                // wants this many YES
+                x.shares = o.order.takerAmount;                                // wants this many YES
                 x.priceQ18 = _divQ(o.order.makerAmount, o.order.takerAmount);          // USDC/share
                 if (x.priceQ18 > ONE) revert PriceOutOfRange();
-                x.payUSDC  = _mulQ(x.shares, x.priceQ18);
+                x.payUSDC = _mulQ(x.shares, x.priceQ18);
                 totalBuyerDeposit += x.payUSDC;
-                needYesBuy[qi]    += x.shares;
+                needYesBuy[qi] += x.shares;
             } else if (o.side == SIDE_SELL) {
                 // SELL must be NO in this adapter
                 if (isYes) revert SideNotSupported();
-                x.shares   = o.order.makerAmount;                                 // selling this many NO
+                x.shares = o.order.makerAmount;                                 // selling this many NO
                 x.priceQ18 = _divQ(o.order.takerAmount, o.order.makerAmount);           // USDC/share
                 if (x.priceQ18 > ONE) revert PriceOutOfRange();
-                x.payUSDC  = _mulQ(x.shares, x.priceQ18);
+                x.payUSDC = _mulQ(x.shares, x.priceQ18);
                 totalSellerPayout += x.payUSDC;
-                needYesMerge[qi]  += x.shares;                              // we will merge YES+NO
+                needYesMerge[qi] += x.shares;                              // we will merge YES+NO
             } else {
                 revert SideNotSupported();
             }
-            P[k]=x;
+            P[k] = x;
         }
+    }
 
-        // ---- 2) Compute YES supply needed and plan pivot split/convert ----
+    function _computeSupplyNeeded(
+        uint256[] memory needYesBuy,
+        uint256[] memory needYesMerge
+    ) internal pure returns (uint256 S, uint256 maxNonPivot) {
         // For each question i, we need YES_i = buys + merges
-        uint256[] memory needYES = new uint256[](Q);
-        uint256 maxNonPivot = 0;
-        for (uint8 i=0;i<Q;i++){
+        uint256[] memory needYES = new uint256[](needYesBuy.length);
+        maxNonPivot = 0;
+        for (uint8 i = 0; i < needYesBuy.length; i++) {
             needYES[i] = needYesBuy[i] + needYesMerge[i];
-            if (i!=0 && needYES[i] > maxNonPivot) maxNonPivot = needYES[i];
+            if (i != 0 && needYES[i] > maxNonPivot) maxNonPivot = needYES[i];
         }
         uint256 pivotNeeded = needYES[0];
 
         // We must split at least max(pivotNeeded, maxNonPivot) on pivot (index 0).
         // (Split S mints YES0=S and NO0=S; converting NO0=T yields YES_j=T for all j!=0)
-        uint256 S = pivotNeeded > maxNonPivot ? pivotNeeded : maxNonPivot;
+        S = pivotNeeded > maxNonPivot ? pivotNeeded : maxNonPivot;
+    }
 
-        // Bootstrap safety: we need S USDC on hand to wrap before merges create WCOL.
-        // TODO: not sure if this is correct or not, need to think about it
-        if (totalBuyerDeposit < S) revert BootstrapShortfall();
-
-        // ---- 3) Pull USDC from BUY makers ----
-        for (uint256 k=0;k<P.length;k++){
+    function _pullBuyerDeposits(Parsed[] memory P) internal {
+        for (uint256 k = 0; k < P.length; k++) {
             if (P[k].side == SIDE_BUY) {
                 require(usdc.transferFrom(P[k].maker, address(this), P[k].payUSDC), "USDC pull fail");
             }
         }
+    }
 
-        // ---- 4) Split on pivot and convert NO0 once ----
+    function _executePivotOperations(
+        bytes32 marketId,
+        bytes32[] memory cond,
+        uint256 S,
+        uint256 maxNonPivot
+    ) internal {
         // split S -> YES0 + NO0
         if (S > 0) {
             wcol.wrap(address(this), S);
             ctf.splitPosition(address(wcol), PARENT, cond[0], PARTITION, S);
         }
-
-        // uint256 wcolBefore = wcol.balanceOf(address(this));
 
         // convert NO0 amount = maxNonPivot (we need T YES for all non-pivot questions)
         if (maxNonPivot > 0) {
@@ -203,21 +253,23 @@ contract CrossMatchingAdapter is ReentrancyGuard {
         }
 
         // sanity supply check
-        if (YES[0] == 0) revert SupplyInvariant();
+        if (neg.getPositionId(_questionId(marketId, 0), true) == 0) revert SupplyInvariant();
         // YES available by construction:
         //  - YES0: S
         //  - YESj (j>0): maxNonPivot
         // And we ensured S >= pivotNeeded and S >= maxNonPivot
+    }
 
-        // ---- 5) Deliver YES to BUYers ----
-        for (uint256 k=0;k<P.length;k++){
+    function _deliverYesToBuyers(Parsed[] memory P) internal {
+        for (uint256 k = 0; k < P.length; k++) {
             if (P[k].side == SIDE_BUY) {
                 IERC1155(address(ctf)).safeTransferFrom(address(this), P[k].maker, P[k].tokenId, P[k].shares, "");
             }
         }
+    }
 
-        // ---- 6) Pull NO from SELLers, merge, unwrap, and pay ----
-        for (uint256 k=0;k<P.length;k++){
+    function _processSellerOrders(Parsed[] memory P, bytes32[] memory cond) internal {
+        for (uint256 k = 0; k < P.length; k++) {
             if (P[k].side == SIDE_SELL) {
                 // Pull seller's NO
                 IERC1155(address(ctf)).safeTransferFrom(P[k].maker, address(this), P[k].tokenId, P[k].shares, "");
@@ -229,20 +281,6 @@ contract CrossMatchingAdapter is ReentrancyGuard {
                 // leftover USDC from this merge (shares - payUSDC) stays to contract residual
             }
         }
-
-        // ---- 7) Invariant: no net WCOL (post-ops) ----
-        // TODO: not sure if this is correct or not, need to think about it
-        // uint256 wcolAfter = wcol.balanceOf(address(this));
-        // if (wcolAfter != wcolBefore) revert NotSelfFinancing();
-
-        // ---- 8) Refund residual USDC to solver (who can pro-rata refund buyers off-chain) ----
-        // residual = deposits - S (wrapped) + sum(unwrap from merges == sum seller shares) - payouts
-        uint256 residual = usdc.balanceOf(address(this));
-        if (residual > 0) {
-            require(usdc.transfer(msg.sender, residual), "residual xfer");
-        }
-
-        emit CrossMatched(marketId, S, maxNonPivot, totalBuyerDeposit, totalSellerPayout, residual);
     }
 
     // ------- helpers -------
