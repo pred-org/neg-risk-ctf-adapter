@@ -15,8 +15,8 @@ import {WrappedCollateral} from "src/WrappedCollateral.sol";
  * - Derives:
  *    * buyer funders from order.maker (USDC source)
  *    * seller funders from order.maker (NO source)
- *    * shares from maker/taker amounts per side
- *    * unit price (USDC/share) from makerAmount/takerAmount
+ *    * shares from order.quantity per side
+ *    * unit price (USDC/share) from order.price
  *
  * Uses pivot index 0 (no external field) via neg.getQuestionId(marketId, 0).
  */
@@ -38,11 +38,12 @@ interface ICTFExchange {
         address signer;
         address taker;       // unused here
         uint256 tokenId;     // CTF ERC1155 id (YES or NO)
-        uint256 makerAmount;
-        uint256 takerAmount;
+        uint256 price;       // USDC per share (fixed-point 18 decimals)
+        uint256 quantity;    // number of shares to trade
         uint256 expiration;
         uint256 nonce;
         uint256 feeRateBps;
+        uint8   intent; // 0 = LONG, 1 = SHORT
         uint8   signatureType;
         bytes   signature;
     }
@@ -187,18 +188,18 @@ contract CrossMatchingAdapter is ReentrancyGuard {
             if (o.side == SIDE_BUY) {
                 // BUY must be for YES only in this adapter
                 if (!isYes) revert SideNotSupported();
-                x.shares = o.order.takerAmount;                                // wants this many YES
-                x.priceQ18 = _divQ(o.order.makerAmount, o.order.takerAmount);          // USDC/share
+                x.priceQ18 = o.order.price;                                    // USDC/share from order
                 if (x.priceQ18 > ONE) revert PriceOutOfRange();
+                x.shares = o.order.quantity;                                  // number of YES shares to buy
                 x.payUSDC = _mulQ(x.shares, x.priceQ18);
                 totalBuyerDeposit += x.payUSDC;
                 needYesBuy[qi] += x.shares;
             } else if (o.side == SIDE_SELL) {
                 // SELL must be NO in this adapter
                 if (isYes) revert SideNotSupported();
-                x.shares = o.order.makerAmount;                                 // selling this many NO
-                x.priceQ18 = _divQ(o.order.takerAmount, o.order.makerAmount);           // USDC/share
+                x.priceQ18 = o.order.price;                                    // USDC/share from order
                 if (x.priceQ18 > ONE) revert PriceOutOfRange();
+                x.shares = o.order.quantity;                                  // number of NO shares to sell
                 x.payUSDC = _mulQ(x.shares, x.priceQ18);
                 totalSellerPayout += x.payUSDC;
                 needYesMerge[qi] += x.shares;                              // we will merge YES+NO
