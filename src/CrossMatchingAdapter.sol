@@ -136,9 +136,8 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
     function crossMatchLongOrders(
         bytes32 marketId,
         ICTFExchange.OrderIntent calldata takerOrder,
-        ICTFExchange.OrderIntent[] calldata makerOrders,
-        uint256 takerFillAmount,
-        uint256[] calldata makerFillAmounts
+        ICTFExchange.OrderIntent[] calldata makerOrder,
+        uint256 fillAmount
     ) external nonReentrant {
         // Cross-matching function that handles two scenarios:
         // 
@@ -160,14 +159,14 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         // - Return USDC to sellers
         // - Burn remaining WCOL to maintain self-financing
         
-        Parsed[] memory parsedOrders = new Parsed[](makerOrders.length + 1);
+        Parsed[] memory parsedOrders = new Parsed[](makerOrder.length + 1);
         uint256 totalBuyAmount = 0;
         uint256 totalSellAmount = 0;
         uint256 totalBuyUSDC = 0;
         uint256 totalSellUSDC = 0;
         
         // Parse taker order
-        parsedOrders[0] = _parseOrder(takerOrder, takerFillAmount, marketId);
+        parsedOrders[0] = _parseOrder(takerOrder, fillAmount, marketId);
         if (parsedOrders[0].side == SIDE_BUY) {
             totalBuyAmount += parsedOrders[0].shares;
             totalBuyUSDC += parsedOrders[0].payUSDC;
@@ -177,8 +176,8 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         }
         
         // Parse maker orders
-        for (uint256 i = 0; i < makerOrders.length; i++) {
-            parsedOrders[i + 1] = _parseOrder(makerOrders[i], makerFillAmounts[i], marketId);
+        for (uint256 i = 0; i < makerOrder.length; i++) {
+            parsedOrders[i + 1] = _parseOrder(makerOrder[i], fillAmount, marketId);
             if (parsedOrders[i + 1].side == SIDE_BUY) {
                 totalBuyAmount += parsedOrders[i + 1].shares;
                 totalBuyUSDC += parsedOrders[i + 1].payUSDC;
@@ -233,19 +232,16 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         // Use the provided marketId parameter
         
         // Execute cross-matching logic
-        _executeCrossMatch(parsedOrders, marketId, totalBuyAmount, totalBuyUSDC, totalSellUSDC, totalSellAmount);
+        _executeCrossMatch(parsedOrders, marketId, totalBuyUSDC, totalSellUSDC);
     }
     
     function _executeCrossMatch(
         Parsed[] memory parsedOrders,
         bytes32 marketId,
-        uint256 totalBuyAmount,
         uint256 totalBuyUSDC,
-        uint256 totalSellUSDC,
-        uint256 totalSellAmount
+        uint256 totalSellUSDC
     ) internal {
         uint256 totalCollateral = totalBuyUSDC + totalSellUSDC;
-        
 
         uint256 balanceBefore = usdc.balanceOf(address(this));
         // Collect USDC from buyers before we can use it
@@ -313,74 +309,105 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         uint256 totalVaultUSDC = 0;
         for (uint256 i = 0; i < parsedOrders.length; i++) {
             if (parsedOrders[i].side == SIDE_SELL) {
-                // For sell orders, we need to merge the user's NO tokens with the generated YES tokens
-                // to get USDC, which will be used to pay back the vault and the user
-                
-                uint8 qIndex = parsedOrders[i].side == SIDE_SELL ? parsedOrders[i].qIndex : 0;
-                bytes32 questionId = NegRiskIdLib.getQuestionId(marketId, qIndex);
-                uint256 noPositionId = neg.getPositionId(questionId, false);
-                uint256 yesPositionId = neg.getPositionId(questionId, true);
-                
-                // Get the user's NO token balance
-                uint256 userNoBalance = ctf.balanceOf(parsedOrders[i].maker, noPositionId);
-                require(userNoBalance >= parsedOrders[i].shares, "User doesn't have enough NO tokens to sell");
-                
-                // Transfer NO tokens from user to adapter
-                ctf.safeTransferFrom(
-                    parsedOrders[i].maker,
-                    address(this),
-                    noPositionId,
-                    parsedOrders[i].shares,
-                    ""
-                );
-                
-                // Check if adapter has enough YES tokens for this question
-                uint256 adapterYesBalance = ctf.balanceOf(address(this), yesPositionId);
-                require(adapterYesBalance >= parsedOrders[i].shares, "Adapter doesn't have enough YES tokens for merge");
-                
-                // Merge NO + YES tokens to get USDC back
-                // We need to create a partition that represents both NO and YES positions
-                // For a binary outcome (YES/NO), the partition should be [1, 2] where:
-                // 1 = NO position (index 0)
-                // 2 = YES position (index 1)
-                uint256[] memory partition = new uint256[](2);
-                partition[0] = 1; // NO position (index 0)
-                partition[1] = 2; // YES position (index 1)
-                
-                // Approve CTF to burn our tokens
-                ctf.setApprovalForAll(address(ctf), true);
-                
-                // Merge positions to get USDC back
-                // Use the minimum of available balances to avoid overflow
-                uint256 mergeAmount = parsedOrders[i].shares;
-                if (adapterYesBalance < mergeAmount) {
-                    mergeAmount = adapterYesBalance;
-                }
-                
-                ctf.mergePositions(
-                    address(usdc),
-                    bytes32(0), // parentCollectionId
-                    questionId,
-                    partition,
-                    mergeAmount
-                );
-                
-                // Now we have USDC from the merge operation
-                // USDC TO pay to the seller
-                uint256 usdcToPay = parsedOrders[i].payUSDC;
-                totalVaultUSDC += parsedOrders[i].usdcToReturn;
-                
-                // Transfer USDC to seller
-                usdc.transfer(parsedOrders[i].maker, usdcToPay);
+                totalVaultUSDC += _processSellOrder(parsedOrders[i], marketId);
             }
         }
         return totalVaultUSDC;
+    }
+    
+    function _processSellOrder(
+        Parsed memory order,
+        bytes32 marketId
+    ) internal returns (uint256) {
+        // For sell orders, we need to merge the user's NO tokens with the generated YES tokens
+        // to get USDC, which will be used to pay back the vault and the user
+        
+        uint8 qIndex = order.side == SIDE_SELL ? order.qIndex : 0;
+        bytes32 questionId = NegRiskIdLib.getQuestionId(marketId, qIndex);
+        uint256 noPositionId = neg.getPositionId(questionId, false);
+        uint256 yesPositionId = neg.getPositionId(questionId, true);
+        
+        // Get the user's NO token balance
+        uint256 userNoBalance = ctf.balanceOf(order.maker, noPositionId);
+        require(userNoBalance >= order.shares, "User doesn't have enough NO tokens to sell");
+        
+        // Transfer NO tokens from user to adapter
+        ctf.safeTransferFrom(
+            order.maker,
+            address(this),
+            noPositionId,
+            order.shares,
+            ""
+        );
+        
+        // Check if adapter has enough YES tokens for this question
+        uint256 adapterYesBalance = ctf.balanceOf(address(this), yesPositionId);
+        require(adapterYesBalance >= order.shares, "Adapter doesn't have enough YES tokens for merge");
+        
+        // Get the condition ID for this question from the NegRiskAdapter
+        bytes32 conditionId = neg.getConditionId(questionId);
+        
+        // Approve CTF to burn our tokens
+        ctf.setApprovalForAll(address(ctf), true);
+        
+        // Merge positions to get USDC back
+        // Use the minimum of available balances to avoid overflow
+        uint256 mergeAmount = order.shares;
+        if (adapterYesBalance < mergeAmount) {
+            mergeAmount = adapterYesBalance;
+        }
+        
+        // Use NegRiskAdapter's mergePositions function instead of calling ConditionalTokens directly
+        // This ensures the tokens are merged correctly with the right collateral token
+        neg.mergePositions(conditionId, mergeAmount);
+        
+        // Now we have USDC from the merge operation
+        // USDC TO pay to the seller
+        uint256 usdcToPay = order.payUSDC;
+        uint256 vaultUSDC = order.usdcToReturn;
+        
+        // Transfer USDC to seller
+        usdc.transfer(order.maker, usdcToPay);
+        
+        return vaultUSDC;
     }
     
     function _distributeYesTokens(
         Parsed[] memory parsedOrders,
         bytes32 marketId
     ) internal {
+        // First, calculate how many YES tokens we need to keep for merging with NO tokens from sellers
+        uint256 totalSellShares = 0;
+        for (uint256 i = 0; i < parsedOrders.length; i++) {
+            if (parsedOrders[i].side == SIDE_SELL) {
+                totalSellShares += parsedOrders[i].shares;
+            }
+        }
+        
+        // Only reserve YES tokens for the pivot question if we have sell orders AND we're not in an all-sell scenario
+        uint256 reservedPivotYesTokens = 0;
+        if (totalSellShares > 0) {
+            // Check if we have any buy orders
+            bool hasBuyOrders = false;
+            for (uint256 i = 0; i < parsedOrders.length; i++) {
+                if (parsedOrders[i].side == SIDE_BUY) {
+                    hasBuyOrders = true;
+                    break;
+                }
+            }
+            
+            // Only reserve if we have both buy and sell orders (mixed scenario)
+            if (hasBuyOrders) {
+                bytes32 pivotQuestionId = NegRiskIdLib.getQuestionId(marketId, 0);
+                uint256 pivotYesPositionId = neg.getPositionId(pivotQuestionId, true);
+                uint256 pivotYesBalance = ctf.balanceOf(address(this), pivotYesPositionId);
+                
+                // Reserve the minimum amount needed for merging
+                reservedPivotYesTokens = totalSellShares;
+                require(pivotYesBalance >= reservedPivotYesTokens, "Insufficient YES tokens for pivot question");
+            }
+        }
+        
         for (uint256 i = 0; i < parsedOrders.length; i++) {
             if (parsedOrders[i].side == SIDE_BUY) {
                 // Each buyer ordered a specific YES token for a specific question
