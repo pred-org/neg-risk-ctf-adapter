@@ -325,36 +325,31 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         bytes32 questionId = NegRiskIdLib.getQuestionId(marketId, qIndex);
         uint256 noPositionId = neg.getPositionId(questionId, false);
         uint256 yesPositionId = neg.getPositionId(questionId, true);
+
+        uint256 mergeAmount = order.shares * ONE;
         
         // Get the user's NO token balance
         uint256 userNoBalance = ctf.balanceOf(order.maker, noPositionId);
-        require(userNoBalance >= order.shares, "User doesn't have enough NO tokens to sell");
+        require(userNoBalance >= mergeAmount, "User doesn't have enough NO tokens to sell");
         
         // Transfer NO tokens from user to adapter
         ctf.safeTransferFrom(
             order.maker,
             address(this),
             noPositionId,
-            order.shares,
+            mergeAmount,
             ""
         );
         
         // Check if adapter has enough YES tokens for this question
         uint256 adapterYesBalance = ctf.balanceOf(address(this), yesPositionId);
-        require(adapterYesBalance >= order.shares, "Adapter doesn't have enough YES tokens for merge");
+        require(adapterYesBalance >= order.usdcToReturn, "Adapter doesn't have enough YES tokens for merge");
         
         // Get the condition ID for this question from the NegRiskAdapter
         bytes32 conditionId = neg.getConditionId(questionId);
         
         // Approve CTF to burn our tokens
         ctf.setApprovalForAll(address(ctf), true);
-        
-        // Merge positions to get USDC back
-        // Use the minimum of available balances to avoid overflow
-        uint256 mergeAmount = order.shares;
-        if (adapterYesBalance < mergeAmount) {
-            mergeAmount = adapterYesBalance;
-        }
         
         // Use NegRiskAdapter's mergePositions function instead of calling ConditionalTokens directly
         // This ensures the tokens are merged correctly with the right collateral token
@@ -375,42 +370,10 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         Parsed[] memory parsedOrders,
         bytes32 marketId
     ) internal {
-        // First, calculate how many YES tokens we need to keep for merging with NO tokens from sellers
-        uint256 totalSellShares = 0;
-        for (uint256 i = 0; i < parsedOrders.length; i++) {
-            if (parsedOrders[i].side == SIDE_SELL) {
-                totalSellShares += parsedOrders[i].shares;
-            }
-        }
-        
-        // Only reserve YES tokens for the pivot question if we have sell orders AND we're not in an all-sell scenario
-        uint256 reservedPivotYesTokens = 0;
-        if (totalSellShares > 0) {
-            // Check if we have any buy orders
-            bool hasBuyOrders = false;
-            for (uint256 i = 0; i < parsedOrders.length; i++) {
-                if (parsedOrders[i].side == SIDE_BUY) {
-                    hasBuyOrders = true;
-                    break;
-                }
-            }
-            
-            // Only reserve if we have both buy and sell orders (mixed scenario)
-            if (hasBuyOrders) {
-                bytes32 pivotQuestionId = NegRiskIdLib.getQuestionId(marketId, 0);
-                uint256 pivotYesPositionId = neg.getPositionId(pivotQuestionId, true);
-                uint256 pivotYesBalance = ctf.balanceOf(address(this), pivotYesPositionId);
-                
-                // Reserve the minimum amount needed for merging
-                reservedPivotYesTokens = totalSellShares;
-                require(pivotYesBalance >= reservedPivotYesTokens, "Insufficient YES tokens for pivot question");
-            }
-        }
-        
         for (uint256 i = 0; i < parsedOrders.length; i++) {
             if (parsedOrders[i].side == SIDE_BUY) {
                 // Each buyer ordered a specific YES token for a specific question
-                uint256 buyerShares = parsedOrders[i].shares;
+                uint256 buyerShares = parsedOrders[i].shares * ONE;
                 uint8 qIndex = parsedOrders[i].qIndex;
                 
                 // Get the YES token position ID for this specific question
@@ -485,9 +448,9 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         
         uint256 shares = fillAmount;
         uint256 priceQ6 = order.order.price;
-        uint256 payUSDC = (shares * priceQ6) / ONE;
+        uint256 payUSDC = (shares * priceQ6);
         // the usdc amount that we need to return to the seller
-        uint256 usdcToReturn = (order.side == SIDE_SELL) ? ((ONE - priceQ6) * shares) / ONE : 0;
+        uint256 usdcToReturn = (order.side == SIDE_SELL) ? ((ONE - priceQ6) * shares): 0;
         
         return Parsed({
             maker: order.order.maker,
