@@ -183,8 +183,8 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
                 totalBuyUSDC += parsedOrders[i + 1].payUSDC;
             } else {
                 totalSellAmount += parsedOrders[i + 1].shares;
-                // For sell orders, we need to give USDC back to the user
-                totalSellUSDC += parsedOrders[i + 1].usdcToReturn;
+                // For sell orders, amount that we need for minting 
+                totalSellUSDC += parsedOrders[i + 1].payUSDC;
             }
         }
         
@@ -215,12 +215,11 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         uint256 totalCombinedPrice = 0;
         for (uint256 i = 0; i < parsedOrders.length; i++) {
             if (parsedOrders[i].side == SIDE_BUY) {
-                // For buy orders: add the price * shares
+                // For buy orders: add the price
                 totalCombinedPrice += parsedOrders[i].priceQ6;
             } else {
-                // For sell orders: add (1 - price) * shares since Yi + Ni = 1
-                uint256 sellPrice = parsedOrders[i].priceQ6;
-                totalCombinedPrice += ONE - sellPrice;
+                // For sell orders: add price
+                totalCombinedPrice += parsedOrders[i].priceQ6;
             }
         }
         
@@ -363,8 +362,8 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         
         // Now we have USDC from the merge operation
         // USDC TO pay to the seller
-        uint256 usdcToPay = order.payUSDC;
-        uint256 vaultUSDC = order.usdcToReturn;
+        uint256 usdcToPay = order.usdcToReturn;
+        uint256 vaultUSDC = order.payUSDC;
         
         // Transfer USDC to seller
         usdc.transfer(order.maker, usdcToPay);
@@ -487,6 +486,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         uint256 shares = fillAmount;
         uint256 priceQ6 = order.order.price;
         uint256 payUSDC = (shares * priceQ6) / ONE;
+        // the usdc amount that we need to return to the seller
         uint256 usdcToReturn = (order.side == SIDE_SELL) ? ((ONE - priceQ6) * shares) / ONE : 0;
         
         return Parsed({

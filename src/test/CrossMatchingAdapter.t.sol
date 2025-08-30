@@ -282,7 +282,7 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         // User2: Sell NO tokens from Question 2 at 0.7 price (equivalent to 0.3 for YES)
         // For sell orders, we need to ensure combined price = 1.0
         // Buy price: 0.7, Sell price: 0.7, so 0.7 + (1-0.7) = 1.0
-        orders[1] = _createOrderIntent(user2, no2PositionId, 1, 1e18, 0.7e6);
+        orders[1] = _createOrderIntent(user2, no2PositionId, 1, 1e18, 0.3e6);
         
         return orders;
     }
@@ -442,12 +442,6 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         uint256 adapterFinalBalance = usdc.balanceOf(address(adapter));
         uint256 vaultFinalBalance = usdc.balanceOf(vault);
         
-        console.log("Final balances:");
-        console.log("  User1 USDC:", user1FinalBalance);
-        console.log("  User2 USDC:", user2FinalBalance);
-        console.log("  Adapter USDC:", adapterFinalBalance);
-        console.log("  Vault USDC:", vaultFinalBalance);
-        
         // Verify the cross-matching worked correctly
         // User1 should have received YES tokens and paid USDC
         // User2 should have received USDC for selling NO tokens
@@ -466,13 +460,13 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         assertTrue(adapterFinalBalance == 0, "Adapter should have distributed all USDC");
         
         // Check that the vault balance remains the same (it provides liquidity and gets it back)
-        assertTrue(vaultFinalBalance == vaultInitialBalance, "Vault balance should remain the same after providing liquidity");
+        assertEq(usdc.balanceOf(vault), vaultInitialBalance, "Vault balance should remain the same after providing liquidity");
         
         console.log("Cross-matching completed successfully!");
-        console.log("User1 YES tokens:", user1YesTokens);
-        console.log("User2 NO tokens remaining:", user2NoTokens);
-        console.log("Adapter final USDC:", adapterFinalBalance);
-        console.log("Vault final USDC:", vaultFinalBalance);
+        // console.log("User1 YES tokens:", user1YesTokens);
+        // console.log("User2 NO tokens remaining:", user2NoTokens);
+        // console.log("Adapter final USDC:", adapterFinalBalance);
+        // console.log("Vault final USDC:", vaultFinalBalance);
     }
     
     function test_Scenario3_AllSellOrders() public {
@@ -570,16 +564,16 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         
         // User1: Sell NO tokens from Question 1 at 0.75 price
         // (1-0.75) = 0.25 contribution to the total
-        orders[0] = _createOrderIntent(user1, no1PositionId, 1, 1e18, 0.75e6);
+        orders[0] = _createOrderIntent(user1, no1PositionId, 1, 1e18, 0.25e6);
         
         // User2: Sell NO tokens from Question 2 at 0.6 price
         // (1-0.6) = 0.4 contribution to the total
-        orders[1] = _createOrderIntent(user2, no2PositionId, 1, 1e18, 0.6e6);
+        orders[1] = _createOrderIntent(user2, no2PositionId, 1, 1e18, 0.4e6);
         
         // User3: Sell NO tokens from Question 3 at 0.65 price
         // (1-0.65) = 0.35 contribution to the total
         // Total: 0.25 + 0.4 + 0.35 = 1.0 (which equals the pivot question price)
-        orders[2] = _createOrderIntent(user3, no3PositionId, 1, 1e18, 0.65e6);
+        orders[2] = _createOrderIntent(user3, no3PositionId, 1, 1e18, 0.35e6);
         
         return orders;
     }
