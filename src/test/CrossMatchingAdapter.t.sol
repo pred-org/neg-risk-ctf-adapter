@@ -242,16 +242,16 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         uint256 yes4PositionId = negRiskAdapter.getPositionId(question4Id, true);
         
         // User1: Buy YES1 tokens at 0.25 price
-        orders[0] = _createOrderIntent(user1, yes1PositionId, 0, 1e6, 0.25e18);
+        orders[0] = _createOrderIntent(user1, yes1PositionId, 0, 1e6, 0.25e6);
         
         // User2: Buy YES2 tokens at 0.25 price
-        orders[1] = _createOrderIntent(user2, yes2PositionId, 0, 1e6, 0.25e18);
+        orders[1] = _createOrderIntent(user2, yes2PositionId, 0, 1e6, 0.25e6);
         
         // User3: Buy YES3 tokens at 0.25 price
-        orders[2] = _createOrderIntent(user3, yes3PositionId, 0, 1e6, 0.25e18);
+        orders[2] = _createOrderIntent(user3, yes3PositionId, 0, 1e6, 0.25e6);
         
         // User4: Buy YES4 tokens at 0.25 price (we'll use user1 again for simplicity)
-        orders[3] = _createOrderIntent(user1, yes4PositionId, 0, 1e6, 0.25e18);
+        orders[3] = _createOrderIntent(user1, yes4PositionId, 0, 1e6, 0.25e6);
         
         return orders;
     }
@@ -277,12 +277,12 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         _mintSpecificToken(user2, no2PositionId, question2Id, 1e6);
         
         // User1: Buy YES tokens from Question 1 at 0.7 price
-        orders[0] = _createOrderIntent(user1, yes1PositionId, 0, 1e18, 0.7e18);
+        orders[0] = _createOrderIntent(user1, yes1PositionId, 0, 1e18, 0.7e6);
         
         // User2: Sell NO tokens from Question 2 at 0.7 price (equivalent to 0.3 for YES)
         // For sell orders, we need to ensure combined price = 1.0
         // Buy price: 0.7, Sell price: 0.7, so 0.7 + (1-0.7) = 1.0
-        orders[1] = _createOrderIntent(user2, no2PositionId, 1, 1e18, 0.7e18);
+        orders[1] = _createOrderIntent(user2, no2PositionId, 1, 1e18, 0.7e6);
         
         return orders;
     }
@@ -570,16 +570,16 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         
         // User1: Sell NO tokens from Question 1 at 0.75 price
         // (1-0.75) = 0.25 contribution to the total
-        orders[0] = _createOrderIntent(user1, no1PositionId, 1, 1e18, 0.75e18);
+        orders[0] = _createOrderIntent(user1, no1PositionId, 1, 1e18, 0.75e6);
         
         // User2: Sell NO tokens from Question 2 at 0.6 price
         // (1-0.6) = 0.4 contribution to the total
-        orders[1] = _createOrderIntent(user2, no2PositionId, 1, 1e18, 0.6e18);
+        orders[1] = _createOrderIntent(user2, no2PositionId, 1, 1e18, 0.6e6);
         
         // User3: Sell NO tokens from Question 3 at 0.65 price
         // (1-0.65) = 0.35 contribution to the total
         // Total: 0.25 + 0.4 + 0.35 = 1.0 (which equals the pivot question price)
-        orders[2] = _createOrderIntent(user3, no3PositionId, 1, 1e18, 0.65e18);
+        orders[2] = _createOrderIntent(user3, no3PositionId, 1, 1e18, 0.65e6);
         
         return orders;
     }

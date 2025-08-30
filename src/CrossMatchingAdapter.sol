@@ -40,7 +40,7 @@ interface ICTFExchange {
         address maker;       // funder (USDC for BUY, NO for SELL)
         address signer;
         address taker;       // unused here
-        uint256 price;       // USDC per share (fixed-point 18 decimals)
+        uint256 price;       // USDC per share (fixed-point 6 decimals)
         uint256 quantity;    // number of shares to trade
         uint256 expiration;
         uint256 nonce;
@@ -63,7 +63,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
     uint8    constant SIDE_BUY  = 0;
     uint8    constant SIDE_SELL = 1;
     bytes32  constant PARENT = bytes32(0);
-    uint256  constant ONE = 1e18; // fixed-point for price
+    uint256  constant ONE = 1e6; // fixed-point for price (6 decimals to match USDC)
 
     INegRiskAdapter public immutable neg;
     IConditionalTokens public immutable ctf;
@@ -105,7 +105,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         uint8   side;
         uint256 tokenId;
         uint256 shares;     // derived
-        uint256 priceQ18;   // USDC/share (≤ 1e18)
+        uint256 priceQ6;    // USDC/share (≤ 1e6) - updated from priceQ18
         uint256 payUSDC;    // = shares * price (for buy orders)
         uint256 usdcToReturn; // = shares * (1 - price) (for sell orders)
         uint8   qIndex;     // which question index
@@ -216,10 +216,10 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         for (uint256 i = 0; i < parsedOrders.length; i++) {
             if (parsedOrders[i].side == SIDE_BUY) {
                 // For buy orders: add the price * shares
-                totalCombinedPrice += parsedOrders[i].priceQ18;
+                totalCombinedPrice += parsedOrders[i].priceQ6;
             } else {
                 // For sell orders: add (1 - price) * shares since Yi + Ni = 1
-                uint256 sellPrice = parsedOrders[i].priceQ18;
+                uint256 sellPrice = parsedOrders[i].priceQ6;
                 totalCombinedPrice += ONE - sellPrice;
             }
         }
@@ -485,16 +485,16 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         }
         
         uint256 shares = fillAmount;
-        uint256 priceQ18 = order.order.price;
-        uint256 payUSDC = (shares * priceQ18) / ONE;
-        uint256 usdcToReturn = (order.side == SIDE_SELL) ? ((ONE - priceQ18) * shares) / ONE : 0;
+        uint256 priceQ6 = order.order.price;
+        uint256 payUSDC = (shares * priceQ6) / ONE;
+        uint256 usdcToReturn = (order.side == SIDE_SELL) ? ((ONE - priceQ6) * shares) / ONE : 0;
         
         return Parsed({
             maker: order.order.maker,
             side: order.side,
             tokenId: order.tokenId,
             shares: shares,
-            priceQ18: priceQ18,
+            priceQ6: priceQ6,
             payUSDC: payUSDC,
             usdcToReturn: usdcToReturn,
             qIndex: qIndex
