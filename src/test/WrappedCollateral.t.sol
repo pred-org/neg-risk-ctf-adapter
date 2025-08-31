@@ -28,7 +28,7 @@ contract WrappedCollateralTest is TestHelper {
         assertEq(wcol.symbol(), "WCOL");
         assertEq(wcol.decimals(), usdc.decimals());
         assertEq(wcol.underlying(), address(usdc));
-        assertEq(wcol.owner(), owner);
+        assertEq(wcol.owners(owner), true);
     }
 
     function test_wrap(uint64 _a, uint64 _b) public {

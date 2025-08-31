@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.19;
+pragma solidity ^0.8.15;
 
 import {ERC20} from "lib/solmate/src/tokens/ERC20.sol";
 import {SafeTransferLib} from "lib/solmate/src/utils/SafeTransferLib.sol";
@@ -23,7 +23,8 @@ contract WrappedCollateral is IWrappedCollateralEE, ERC20 {
                                  STATE
     //////////////////////////////////////////////////////////////*/
 
-    address public immutable owner;
+    // map address => bool
+    mapping(address => bool) public owners;
     address public immutable underlying;
 
     /*//////////////////////////////////////////////////////////////
@@ -31,7 +32,7 @@ contract WrappedCollateral is IWrappedCollateralEE, ERC20 {
     //////////////////////////////////////////////////////////////*/
 
     modifier onlyOwner() {
-        if (msg.sender != owner) revert OnlyOwner();
+        if (!owners[msg.sender]) revert OnlyOwner();
         _;
     }
 
@@ -42,7 +43,7 @@ contract WrappedCollateral is IWrappedCollateralEE, ERC20 {
     /// @param _underlying The address of the underlying ERC20 token
     /// @param _decimals The number of decimals of the underlying ERC20 token
     constructor(address _underlying, uint8 _decimals) ERC20(NAME, SYMBOL, _decimals) {
-        owner = msg.sender;
+        owners[msg.sender] = true;
         underlying = _underlying;
     }
 
@@ -91,5 +92,12 @@ contract WrappedCollateral is IWrappedCollateralEE, ERC20 {
     /// @param _amount - the amount of tokens to release
     function release(address _to, uint256 _amount) external onlyOwner {
         ERC20(underlying).safeTransfer(_to, _amount);
+    }
+
+    /// @notice Adds a new owner
+    /// @notice Can only be called by the owner
+    /// @param _owner - the new owner
+    function addOwner(address _owner) external onlyOwner {
+        owners[_owner] = true;
     }
 }

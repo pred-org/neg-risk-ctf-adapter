@@ -8,9 +8,12 @@ import {WrappedCollateral} from "../../WrappedCollateral.sol";
 import {DeployLib} from "../../dev/libraries/DeployLib.sol";
 import {USDC} from "../../test/mock/USDC.sol";
 import {IConditionalTokens} from "../../interfaces/IConditionalTokens.sol";
+import {NegRiskAdapter} from "../../NegRiskAdapter.sol";
+import {INegRiskAdapter} from "../../interfaces/INegRiskAdapter.sol";
 
 contract RevNegRiskAdapter_SetUp is TestHelper, IRevNegRiskAdapterEE {
     RevNegRiskAdapter revAdapter;
+    NegRiskAdapter nrAdapter;
     USDC usdc;
     WrappedCollateral wcol;
     IConditionalTokens ctf;
@@ -26,9 +29,12 @@ contract RevNegRiskAdapter_SetUp is TestHelper, IRevNegRiskAdapterEE {
         oracle = vm.createWallet("oracle").addr;
         ctf = IConditionalTokens(DeployLib.deployConditionalTokens());
         usdc = new USDC();
-        revAdapter = new RevNegRiskAdapter(address(ctf), address(usdc), vault);
+        nrAdapter = new NegRiskAdapter(address(ctf), address(usdc), vault);
+        revAdapter = new RevNegRiskAdapter(address(ctf), address(usdc), vault, INegRiskAdapter(address(nrAdapter)));
+        wcol = revAdapter.wcol();
+        vm.prank(address(nrAdapter));
+        wcol.addOwner(address(revAdapter));
         RevNegRiskAdapter(revAdapter).addAdmin(admin);
         RevNegRiskAdapter(revAdapter).renounceAdmin();
-        wcol = revAdapter.wcol();
     }
 } 
