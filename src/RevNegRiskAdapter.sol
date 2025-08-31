@@ -131,7 +131,7 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, IRevNegRiskAdapterEE, Auth {
     /// @param _marketId - the marketId
     /// @param _targetIndex - the index of the question for which to get the NO position
     /// @param _amount   - the amount of tokens to convert
-    function convertPositions(bytes32 _marketId, uint256 _targetIndex, uint256 _amount) public {
+    function convertPositions(bytes32 _marketId, uint256 _targetIndex, uint256 _amount, address _recipient) public {
         uint256 questionCount = neg.getQuestionCount(_marketId);
 
         if (questionCount <= 1) revert NoConvertiblePositions();
@@ -163,7 +163,7 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, IRevNegRiskAdapterEE, Auth {
         }
 
         // Process target question - use the collected USDC to get WCOL for the split
-        _processTargetQuestion(_marketId, _targetIndex, _amount, feeAmount, amountOut);
+        _processTargetQuestion(_marketId, _targetIndex, _amount, feeAmount, amountOut, _recipient);
 
         // **Net result:** user's YES tokens burned for non-target questions,
         // and user receives NO tokens for the target question
@@ -177,9 +177,11 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, IRevNegRiskAdapterEE, Auth {
     function mergeAllYesTokens(bytes32 _marketId, uint256 _amount) public {
         // convert all 0 to n-1 yes positions to nth no position
         // Then merge the nth no position with nth yes position to get USDC
-        convertPositions(_marketId, 0, _amount);
+        convertPositions(_marketId, 0, _amount, address(this));
+        require(ctf.balanceOf(address(this), neg.getPositionId(NegRiskIdLib.getQuestionId(_marketId, 0), false)) == _amount, "No tokens should be at the target no position");
+        ctf.safeTransferFrom(msg.sender, address(this), neg.getPositionId(NegRiskIdLib.getQuestionId(_marketId, 0), true), _amount, "");
         neg.mergePositions(neg.getConditionId(NegRiskIdLib.getQuestionId(_marketId, 0)), _amount);
-        wcol.unwrap(msg.sender, _amount);
+        col.transfer(msg.sender, _amount);
     }
 
     /// @dev internal function to process target question and avoid stack too deep
@@ -188,7 +190,8 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, IRevNegRiskAdapterEE, Auth {
         uint256 _targetIndex, 
         uint256 _amount, 
         uint256 _feeAmount, 
-        uint256 _amountOut
+        uint256 _amountOut,
+        address _recipient
     ) internal {
         bytes32 targetQuestionId = NegRiskIdLib.getQuestionId(_marketId, uint8(_targetIndex));
         bytes32 targetConditionId = neg.getConditionId(targetQuestionId);
@@ -210,7 +213,7 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, IRevNegRiskAdapterEE, Auth {
         }
 
         // transfer no tokens to sender
-        ctf.safeTransferFrom(address(this), msg.sender, targetNoPositionId, _amountOut, "");
+        ctf.safeTransferFrom(address(this), _recipient, targetNoPositionId, _amountOut, "");
     }
 
     /*//////////////////////////////////////////////////////////////

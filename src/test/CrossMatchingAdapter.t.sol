@@ -4,6 +4,8 @@ pragma solidity ^0.8.15;
 import {Test, console} from "forge-std/Test.sol";
 import {CrossMatchingAdapter, ICTFExchange} from "src/CrossMatchingAdapter.sol";
 import {NegRiskAdapter} from "src/NegRiskAdapter.sol";
+import {RevNegRiskAdapter} from "src/RevNegRiskAdapter.sol";
+import {IRevNegRiskAdapter} from "src/interfaces/IRevNegRiskAdapter.sol";
 import {IConditionalTokens} from "src/interfaces/IConditionalTokens.sol";
 import {IERC20} from "openzeppelin-contracts/token/ERC20/IERC20.sol";
 import {IERC1155} from "openzeppelin-contracts/token/ERC1155/IERC1155.sol";
@@ -24,6 +26,7 @@ contract MockCTFExchange {
 contract CrossMatchingAdapterTest is Test, TestHelper {
     CrossMatchingAdapter public adapter;
     NegRiskAdapter public negRiskAdapter;
+    RevNegRiskAdapter public revNegRiskAdapter;
     ICTFExchange public ctfExchange;
     IConditionalTokens public ctf;
     IERC20 public usdc;
@@ -70,7 +73,7 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         vm.label(address(negRiskAdapter), "NegRiskAdapter");
         
         // Deploy CrossMatchingAdapter - we need to provide a mock CTF exchange
-        adapter = new CrossMatchingAdapter(INegRiskAdapter(address(negRiskAdapter)), IERC20(address(usdc)), ICTFExchange(address(ctfExchange)));
+        adapter = new CrossMatchingAdapter(INegRiskAdapter(address(negRiskAdapter)), IERC20(address(usdc)), ICTFExchange(address(ctfExchange)), IRevNegRiskAdapter(address(revNegRiskAdapter)));
         vm.label(address(adapter), "CrossMatchingAdapter");
         
         MockUSDC(address(usdc)).mint(address(vault), 1000000e6);
@@ -146,7 +149,7 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         console.log("  NO balance:", ctf.balanceOf(to, noPositionId));
     }
 
-    function _mintSpecificToken(address to, uint256 oppositeTokenId, bytes32 specificConditionId, uint256 amount) internal {
+    function _mintSpecificToken(address to, bytes32 specificConditionId, uint256 amount) internal {
         // For testing, we'll mint the specific token by splitting and then transferring the desired amount
         uint256[] memory partition = new uint256[](2);
         partition[0] = 1;
@@ -265,7 +268,7 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         
         // Mint specific tokens for the users in the new questions
         // _mintSpecificToken(user1, yes1PositionId, question1Id, 1e6);
-        _mintSpecificToken(user2, yes2PositionId, question2Id, 50*1e6);
+        _mintSpecificToken(user2, question2Id, 50*1e6);
 
         vm.prank(user2);
         ctf.setApprovalForAll(address(adapter), true);
@@ -439,9 +442,9 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         uint256 no3PositionId = negRiskAdapter.getPositionId(question3Id, false);
         
         // Mint specific NO tokens for the users in the new questions
-        _mintSpecificToken(user1, no1PositionId, questionId, 70*1e6);
-        _mintSpecificToken(user2, no2PositionId, question2Id, 70*1e6);
-        _mintSpecificToken(user3, no3PositionId, question3Id, 70*1e6);
+        _mintSpecificToken(user1, questionId, 70*1e6);
+        _mintSpecificToken(user2, question2Id, 70*1e6);
+        _mintSpecificToken(user3, question3Id, 70*1e6);
         
         vm.prank(user1);
         ctf.setApprovalForAll(address(adapter), true);
@@ -526,8 +529,8 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         // Get position IDs for the pivot question (index 0) - this is created in _setupMarketAndQuestion
         
         // Mint specific tokens for the users
-        _mintSpecificToken(user2, yes2PositionId, question2Id, 1e7);
-        _mintSpecificToken(user4, yes4PositionId, question4Id, 1e7);
+        _mintSpecificToken(user2, question2Id, 1e7);
+        _mintSpecificToken(user4, question4Id, 1e7);
 
         // give approval to adapter to spend the No tokens
         vm.startPrank(user2);

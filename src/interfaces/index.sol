@@ -9,5 +9,6 @@ import {IERC20} from "./IERC20.sol";
 import {IFeeModule} from "./IFeeModule.sol";
 import {IFinder} from "./IFinder.sol";
 import {INegRiskAdapter} from "./INegRiskAdapter.sol";
+import {IRevNegRiskAdapter} from "./IRevNegRiskAdapter.sol";
 import {IOptimisticOracleV2} from "./IOptimisticOracleV2.sol";
 import {IUmaCtfAdapter} from "./IUmaCtfAdapter.sol";

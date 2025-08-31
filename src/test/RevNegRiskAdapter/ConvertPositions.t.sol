@@ -135,7 +135,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
             vm.expectEmit();
             emit PositionsConverted(brian, marketId, _targetIndex, _amount);
-            revAdapter.convertPositions(marketId, _targetIndex, _amount);
+            revAdapter.convertPositions(marketId, _targetIndex, _amount, brian);
         }
 
         _after(_questionCount, _feeBips, _targetIndex, _amount);
@@ -162,7 +162,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
             vm.expectEmit();
             emit PositionsConverted(brian, marketId, _targetIndex, _amount);
-            revAdapter.convertPositions(marketId, _targetIndex, _amount);
+            revAdapter.convertPositions(marketId, _targetIndex, _amount, brian);
         }
 
         _after(_questionCount, _feeBips, _targetIndex, _amount);
@@ -189,7 +189,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
             vm.expectEmit();
             emit PositionsConverted(brian, marketId, _targetIndex, _amount);
-            revAdapter.convertPositions(marketId, _targetIndex, _amount);
+            revAdapter.convertPositions(marketId, _targetIndex, _amount, brian);
         }
 
         _after(_questionCount, _feeBips, _targetIndex, _amount);
@@ -216,7 +216,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
             vm.expectEmit();
             emit PositionsConverted(brian, marketId, _targetIndex, _amount);
-            revAdapter.convertPositions(marketId, _targetIndex, _amount);
+            revAdapter.convertPositions(marketId, _targetIndex, _amount, brian);
         }
 
         _after(_questionCount, _feeBips, _targetIndex, _amount);
@@ -232,7 +232,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
         {
             vm.prank(brian);
-            revAdapter.convertPositions(marketId, _targetIndex, amount);
+            revAdapter.convertPositions(marketId, _targetIndex, amount, brian);
         }
     }
 
@@ -257,7 +257,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
             vm.expectEmit();
             emit PositionsConverted(brian, marketId, _targetIndex, _amount);
-            revAdapter.convertPositions(marketId, _targetIndex, _amount);
+            revAdapter.convertPositions(marketId, _targetIndex, _amount, brian);
         }
 
         _after(_questionCount, _feeBips, _targetIndex, _amount);
@@ -284,7 +284,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
             vm.expectEmit();
             emit PositionsConverted(brian, marketId, _targetIndex, _amount);
-            revAdapter.convertPositions(marketId, _targetIndex, _amount);
+            revAdapter.convertPositions(marketId, _targetIndex, _amount, brian);
         }
 
         _after(_questionCount, _feeBips, _targetIndex, _amount);
@@ -292,7 +292,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
     function test_revert_convertPositions_marketNotPrepared(bytes32 _marketId) public {
         vm.expectRevert(NoConvertiblePositions.selector);
-        revAdapter.convertPositions(_marketId, 0, 0);
+        revAdapter.convertPositions(_marketId, 0, 0, brian);
     }
 
     function test_revert_convertPositions_noConvertiblePositions() public {
@@ -301,21 +301,21 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
         // 0 questions prepared
         vm.expectRevert(NoConvertiblePositions.selector);
-        revAdapter.convertPositions(marketId, 0, 0);
+        revAdapter.convertPositions(marketId, 0, 0, brian);
 
         vm.prank(oracle);
         nrAdapter.prepareQuestion(marketId, "");
 
         // 1 question prepared
         vm.expectRevert(NoConvertiblePositions.selector);
-        revAdapter.convertPositions(marketId, 0, 0);
+        revAdapter.convertPositions(marketId, 0, 0, brian);
 
         vm.prank(oracle);
         nrAdapter.prepareQuestion(marketId, "");
 
         // 2 questions prepared - should work
         vm.prank(brian);
-        revAdapter.convertPositions(marketId, 0, 0);
+        revAdapter.convertPositions(marketId, 0, 0, brian);
     }
 
     function test_revert_convertPositions_invalidTargetIndex(uint256 _questionCount, uint256 _targetIndex) public {
@@ -332,7 +332,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
         }
 
         vm.expectRevert(InvalidTargetIndex.selector);
-        revAdapter.convertPositions(marketId, _targetIndex, 0);
+        revAdapter.convertPositions(marketId, _targetIndex, 0, brian);
     }
 
     function test_revert_convertPositions_userNotApproved(uint256 _questionCount, uint256 _targetIndex, uint128 _amount) public {
@@ -351,7 +351,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
             // The function should revert when trying to transfer tokens without approval
             vm.expectRevert();
-            revAdapter.convertPositions(marketId, _targetIndex, _amount);
+            revAdapter.convertPositions(marketId, _targetIndex, _amount, brian);
         }
     }
 
@@ -377,7 +377,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
             // The function should revert when trying to transfer insufficient YES tokens
             vm.expectRevert();
-            revAdapter.convertPositions(marketId, _targetIndex, _amount);
+            revAdapter.convertPositions(marketId, _targetIndex, _amount, brian);
         }
     }
 
@@ -398,7 +398,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
         {
             vm.startPrank(brian);
             ctf.setApprovalForAll(address(revAdapter), true);
-            revAdapter.convertPositions(marketId, _targetIndex, _amount);
+            revAdapter.convertPositions(marketId, _targetIndex, _amount, brian);
         }
 
         // WCOL balance should always be 0 after execution
@@ -427,7 +427,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
             vm.startPrank(brian);
             ctf.setApprovalForAll(address(revAdapter), true);
 
-            revAdapter.convertPositions(marketId, _targetIndex, _amount);
+            revAdapter.convertPositions(marketId, _targetIndex, _amount, brian);
         }
 
         // Verify WCOL balance is exactly 0 after execution
@@ -491,7 +491,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
             {
                 vm.startPrank(brian);
                 ctf.setApprovalForAll(address(revAdapter), true);
-                revAdapter.convertPositions(newMarketId, targetIndex, amount);
+                revAdapter.convertPositions(newMarketId, targetIndex, amount, brian);
             }
 
             // Verify WCOL balance is 0
@@ -555,7 +555,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
             {
                 vm.startPrank(brian);
                 ctf.setApprovalForAll(address(revAdapter), true);
-                revAdapter.convertPositions(newMarketId, targetIndex, amount);
+                revAdapter.convertPositions(newMarketId, targetIndex, amount, brian);
             }
 
             // Verify WCOL balance is 0 regardless of fee level
@@ -618,7 +618,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
             {
                 vm.startPrank(brian);
                 ctf.setApprovalForAll(address(revAdapter), true);
-                revAdapter.convertPositions(newMarketId, targetIndex, currentAmount);
+                revAdapter.convertPositions(newMarketId, targetIndex, currentAmount, brian);
             }
 
             // Verify WCOL balance is 0 regardless of amount
@@ -673,7 +673,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
             {
                 vm.startPrank(brian);
                 ctf.setApprovalForAll(address(revAdapter), true);
-                revAdapter.convertPositions(newMarketId, targetIndex, amount);
+                revAdapter.convertPositions(newMarketId, targetIndex, amount, brian);
             }
 
             // Verify WCOL balance is 0 regardless of target index
@@ -700,7 +700,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
             vm.expectEmit(true, true, true, true);
             emit PositionsConverted(brian, marketId, _targetIndex, _amount);
-            revAdapter.convertPositions(marketId, _targetIndex, _amount);
+            revAdapter.convertPositions(marketId, _targetIndex, _amount, brian);
         }
     }
 } 

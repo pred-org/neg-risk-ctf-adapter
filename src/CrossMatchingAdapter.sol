@@ -7,6 +7,7 @@ import {IERC1155} from "openzeppelin-contracts/token/ERC1155/IERC1155.sol";
 import {ERC1155TokenReceiver} from "lib/solmate/src/tokens/ERC1155.sol";
 import {IConditionalTokens} from "./interfaces/IConditionalTokens.sol";
 import {INegRiskAdapter} from "./interfaces/INegRiskAdapter.sol";
+import {IRevNegRiskAdapter} from "./interfaces/IRevNegRiskAdapter.sol";
 import {WrappedCollateral} from "src/WrappedCollateral.sol";
 import {NegRiskIdLib} from "./libraries/NegRiskIdLib.sol";
 
@@ -66,6 +67,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
     uint256  constant ONE = 1e6; // fixed-point for price (6 decimals to match USDC)
 
     INegRiskAdapter public immutable neg;
+    IRevNegRiskAdapter public immutable revNeg;
     IConditionalTokens public immutable ctf;
     ICTFExchange public immutable ctfExchange;
     WrappedCollateral public immutable wcol; // wrapped USDC
@@ -74,7 +76,8 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
     uint256[] internal PARTITION; // [YES, NO] = [1,2]
     uint256   constant PIVOT_INDEX_BIT = 1; // index 0 -> bit 1
 
-    constructor(INegRiskAdapter neg_, IERC20 usdc_, ICTFExchange ctfExchange_) {
+    constructor(INegRiskAdapter neg_, IERC20 usdc_, ICTFExchange ctfExchange_, IRevNegRiskAdapter revNeg_) {
+        revNeg = revNeg_;
         neg  = neg_;
         ctfExchange = ctfExchange_;
         ctf  = IConditionalTokens(neg_.ctf());
@@ -86,6 +89,8 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         
         // Approve CTF contract to transfer WCOL on our behalf
         wcol.approve(address(ctf), type(uint256).max);
+
+        ctf.setApprovalForAll(address(revNeg), true);
         
         // Note: The vault must approve this contract to transfer USDC for seller returns
     }
@@ -131,6 +136,133 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
                 ++i;
             }
         }
+    }
+
+    function crossMatchShortOrders(
+        bytes32 marketId,
+        ICTFExchange.OrderIntent calldata takerOrder,
+        ICTFExchange.OrderIntent[] calldata makerOrder,
+        uint256 fillAmount
+    ) external nonReentrant {
+        Parsed[] memory parsedOrders = new Parsed[](makerOrder.length + 1);
+        uint256 totalBuyAmount = 0;
+        uint256 totalSellAmount = 0;
+        uint256 totalBuyUSDC = 0;
+        uint256 totalSellUSDC = 0;
+
+        // Check that the question count of this market should be equal to length of makerOrder + 1
+        uint256 questionCount = neg.getQuestionCount(marketId);
+        require(questionCount == makerOrder.length + 1, "Question count should be equal to length of makerOrder + 1");
+        
+        // Parse taker order
+        parsedOrders[0] = _parseOrder(takerOrder, fillAmount, marketId);
+        if (parsedOrders[0].side == SIDE_BUY) {
+            totalBuyAmount += parsedOrders[0].shares;
+            totalBuyUSDC += parsedOrders[0].payUSDC;
+        } else {
+            totalSellAmount += parsedOrders[0].shares;
+            totalSellUSDC += parsedOrders[0].payUSDC;
+        }
+        
+        // Parse maker orders
+        for (uint256 i = 0; i < makerOrder.length; i++) {
+            parsedOrders[i + 1] = _parseOrder(makerOrder[i], fillAmount, marketId);
+            if (parsedOrders[i + 1].side == SIDE_BUY) {
+                totalBuyAmount += parsedOrders[i + 1].shares;
+                totalBuyUSDC += parsedOrders[i + 1].payUSDC;
+            } else {
+                totalSellAmount += parsedOrders[i + 1].shares;
+                // For sell orders, amount that we need for minting 
+                totalSellUSDC += parsedOrders[i + 1].payUSDC;
+            }
+        }
+        
+        // Validate that we have at least some orders
+        if (totalBuyAmount == 0 && totalSellAmount == 0) {
+            revert("Must have at least some orders");
+        }
+        
+        uint256 totalCombinedPrice = 0;
+        for (uint256 i = 0; i < parsedOrders.length; i++) {
+            if (parsedOrders[i].side == SIDE_BUY) {
+                // For buy orders: add the price
+                totalCombinedPrice += parsedOrders[i].priceQ6;
+            } else {
+                // For sell orders: add price
+                totalCombinedPrice += parsedOrders[i].priceQ6;
+            }
+        }
+        
+        // The total combined price must equal to one
+        if (totalCombinedPrice != makerOrder.length * ONE) {
+            revert InvalidCombinedPrice();
+        }
+
+        // Execute cross-matching logic
+        _executeShortCrossMatch(parsedOrders, marketId, totalBuyUSDC, totalSellUSDC);
+    }
+
+    function _executeShortCrossMatch(
+        Parsed[] memory parsedOrders,
+        bytes32 marketId,
+        uint256 totalBuyUSDC,
+        uint256 totalSellUSDC
+    ) internal {
+        uint256 balanceBefore = usdc.balanceOf(address(this));
+        _collectBuyerUSDC(parsedOrders);
+
+        uint256 actualUSDCBalance = usdc.balanceOf(address(this));
+        require(actualUSDCBalance - balanceBefore == totalBuyUSDC, "Incorrect buy USDC balance");
+
+        usdc.transferFrom(neg.vault(), address(this), parsedOrders[0].shares * ONE + totalSellUSDC);
+
+        ctf.setApprovalForAll(address(neg), true);
+        // split positions for all the orders
+        for (uint256 i = 0; i < parsedOrders.length; i++) {
+            bytes32 questionId = NegRiskIdLib.getQuestionId(marketId, parsedOrders[i].qIndex);
+            bytes32 conditionId = neg.getConditionId(questionId);
+            neg.splitPosition(conditionId, parsedOrders[i].shares * ONE);
+        }
+
+        // Based on order is a BUY no or SELL yes, we will either directly distribute the NO tokens to the buyers or merge the NO tokens with the YES tokens to get USDC for the sellers
+        for (uint256 i = 0; i < parsedOrders.length; i++) {
+            if (parsedOrders[i].side == SIDE_BUY) {
+                // Distribute NO tokens to the buyers
+                _distributeNoTokens(parsedOrders[i]);
+            } else {
+                // Merge NO tokens with YES tokens to get USDC for the sellers
+                _mergeNoTokens(parsedOrders[i], marketId);
+            }
+        }
+
+        // Merge all the YES tokens to get USDC
+        require(ctf.balanceOf(address(this), neg.getPositionId(NegRiskIdLib.getQuestionId(marketId, 0), true)) == parsedOrders[0].shares * ONE, "YES tokens should be at the target yes position");
+        revNeg.mergeAllYesTokens(marketId, parsedOrders[0].shares * ONE);
+
+        // transfer the shares * ONE of USDC to the vault, since we took it from the vault
+        usdc.transfer(neg.vault(), parsedOrders[0].shares * ONE + totalSellUSDC);
+    }
+
+    function _distributeNoTokens(
+        Parsed memory order
+    ) internal {
+        // Distribute NO tokens to the buyers
+        ctf.safeTransferFrom(address(this), order.maker, order.tokenId, order.shares * ONE, "");
+    }
+
+    function _mergeNoTokens(
+        Parsed memory order,
+        bytes32 marketId
+    ) internal {
+        // transfer the YES tokens to the adapter that the maker is selling
+        ctf.safeTransferFrom(order.maker, address(this), order.tokenId, order.shares * ONE, "");
+        
+        // Merge NO tokens with user's YES tokens to get USDC for the sellers
+        // The NO tokens are already in the adapter from the split operation
+        bytes32 questionId = NegRiskIdLib.getQuestionId(marketId, order.qIndex);
+        bytes32 conditionId = neg.getConditionId(questionId);
+        neg.mergePositions(conditionId, order.shares * ONE);
+        usdc.transfer(order.maker, order.usdcToReturn);
     }
 
     function crossMatchLongOrders(
