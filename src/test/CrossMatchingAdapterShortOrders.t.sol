@@ -246,20 +246,19 @@ contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
         uint256 chelseaNoPositionId = negRiskAdapter.getPositionId(chelseaQuestionId, false);
         uint256 spursNoPositionId = negRiskAdapter.getPositionId(spursQuestionId, false);
         
-        // User A: Buy Arsenal No @ 0.75
-        orders[0] = _createOrderIntent(user1, arsenalNoPositionId, 0, 1e6, 0.75e6);
+        // User A: Buy Arsenal No @ 0.25
+        orders[0] = _createOrderIntent(user1, arsenalNoPositionId, 0, 1e6, 0.25e6);
         
-        // User B: Buy Barcelona No @ 0.75
-        orders[1] = _createOrderIntent(user2, barcelonaNoPositionId, 0, 1e6, 0.75e6);
+        // User B: Buy Barcelona No @ 0.25
+        orders[1] = _createOrderIntent(user2, barcelonaNoPositionId, 0, 1e6, 0.25e6);
         
-        // User C: Buy Chelsea No @ 0.75
-        orders[2] = _createOrderIntent(user3, chelseaNoPositionId, 0, 1e6, 0.75e6);
+        // User C: Buy Chelsea No @ 0.25
+        orders[2] = _createOrderIntent(user3, chelseaNoPositionId, 0, 1e6, 0.25e6);
         
-        // User D: Buy Spurs No @ 0.75
-        orders[3] = _createOrderIntent(user4, spursNoPositionId, 0, 1e6, 0.75e6);
+        // User D: Buy Spurs No @ 0.25
+        orders[3] = _createOrderIntent(user4, spursNoPositionId, 0, 1e6, 0.25e6);
         
-        // Total combined price: 0.75 + 0.75 + 0.75 + 0.75 = 3.0
-        // This equals makerOrder.length * ONE = 3 * 1e6 = 3e6 for short orders validation
+        // Total combined price: 0.25 + 0.25 + 0.25 + 0.25 = 1.0
         
         return orders;
     }
@@ -283,9 +282,6 @@ contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
         _mintSpecificToken(user2, barcelonaQuestionId, 50*1e6);
         _mintSpecificToken(user4, spursQuestionId, 50*1e6);
         
-        // User A: Buy Arsenal No @ 1.0 (must pay full cost for position splits)
-        orders[0] = _createOrderIntent(user1, arsenalNoPositionId, 0, 1e6, 1.0e6);
-        
         // Approve adapter to spend tokens
         vm.prank(user2);
         ctf.setApprovalForAll(address(adapter), true);
@@ -293,19 +289,18 @@ contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
         ctf.setApprovalForAll(address(adapter), true);
         
         // User A: Buy Arsenal No @ 0.75
-        orders[0] = _createOrderIntent(user1, arsenalNoPositionId, 0, 1e6, 0.75e6);
+        orders[0] = _createOrderIntent(user1, arsenalNoPositionId, 0, 1e6, 0.25e6);
         
-        // User B: Sell Barcelona Yes @ 0.75 (equivalent to Shorting Barcelona @ 0.25)
-        orders[1] = _createOrderIntent(user2, barcelonaYesPositionId, 1, 1e6, 0.75e6);
+        // User B: Sell Barcelona Yes @ 0.35 (equivalent to Shorting Barcelona @ 0.65)
+        orders[1] = _createOrderIntent(user2, barcelonaYesPositionId, 1, 1e6, 0.35e6);
         
         // User C: Buy Chelsea No @ 0.75
-        orders[2] = _createOrderIntent(user3, chelseaNoPositionId, 0, 1e6, 0.75e6);
+        orders[2] = _createOrderIntent(user3, chelseaNoPositionId, 0, 1e6, 0.25e6);
         
-        // User D: Sell Spurs Yes @ 0.75 (equivalent to Shorting Spurs @ 0.25)
-        orders[3] = _createOrderIntent(user4, spursYesPositionId, 1, 1e6, 0.75e6);
+        // User D: Sell Spurs Yes @ 0.15 (equivalent to Shorting Spurs @ 0.85)
+        orders[3] = _createOrderIntent(user4, spursYesPositionId, 1, 1e6, 0.15e6);
         
-        // Total combined price: 0.75 + 0.75 + 0.75 + 0.75 = 3.0
-        // This equals makerOrder.length * ONE = 3 * 1e6 = 3e6 for short orders validation
+        // Total combined price: 0.25 + 0.35 + 0.25 + 0.15 = 1.0
         
         return orders;
     }
@@ -409,9 +404,9 @@ contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
         
         // Check USDC balances
         assertEq(usdc.balanceOf(user1), user1InitialBalance - 0.75e6 * fillAmount/1e6, "User1 (Arsenal) should have spent USDC");
-        assertEq(usdc.balanceOf(user2), user2InitialBalance + 0.25e6 * fillAmount/1e6, "User2 (Barcelona) should have received USDC");
+        assertEq(usdc.balanceOf(user2), user2InitialBalance + 0.35e6 * fillAmount/1e6, "User2 (Barcelona) should have received USDC");
         assertEq(usdc.balanceOf(user3), user3InitialBalance - 0.75e6 * fillAmount/1e6, "User3 (Chelsea) should have spent USDC");
-        assertEq(usdc.balanceOf(user4), user4InitialBalance + 0.25e6 * fillAmount/1e6, "User4 (Spurs) should have received USDC");
+        assertEq(usdc.balanceOf(user4), user4InitialBalance + 0.15e6 * fillAmount/1e6, "User4 (Spurs) should have received USDC");
         
         // Verify token distributions
         _verifyScenario2TokenBalances(marketId, fillAmount);

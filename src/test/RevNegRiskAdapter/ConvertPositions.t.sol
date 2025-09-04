@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.15;
 
-import {console, RevNegRiskAdapter_SetUp} from "src/test/RevNegRiskAdapter/RevNegRiskAdapterSetUp.sol";
+import {console, RevNegRiskAdapter_SetUp} from "src/test/RevNegRiskAdapter/RevNegRiskAdapterSetUp.t.sol";
 import {NegRiskIdLib} from "src/libraries/NegRiskIdLib.sol";
 
 contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
