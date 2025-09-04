@@ -48,7 +48,7 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
     uint256 public noPositionId;
     
     // Test constants
-    uint256 public constant INITIAL_USDC_BALANCE = 1000000e6; // 1,000,000 USDC (6 decimals) - enough for orders
+    uint256 public constant INITIAL_USDC_BALANCE = 100000000e6; // 100,000,000 USDC (6 decimals) - enough for orders
     uint256 public constant TOKEN_AMOUNT = 2e6; // 2 tokens (6 decimals to match USDC)
 
     function setUp() public {
@@ -76,7 +76,7 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         adapter = new CrossMatchingAdapter(INegRiskAdapter(address(negRiskAdapter)), IERC20(address(usdc)), ICTFExchange(address(ctfExchange)), IRevNegRiskAdapter(address(revNegRiskAdapter)));
         vm.label(address(adapter), "CrossMatchingAdapter");
         
-        MockUSDC(address(usdc)).mint(address(vault), 1000000e6);
+        MockUSDC(address(usdc)).mint(address(vault), 10000000e6); // 10M USDC for vault
         vm.startPrank(address(vault));
         // MockUSDC(address(usdc)).approve(address(negRiskAdapter), type(uint256).max);
         MockUSDC(address(usdc)).approve(address(adapter), type(uint256).max);
@@ -259,7 +259,6 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         // We need at least 2 questions to do cross-matching
         
         // Create additional questions for the market
-        // bytes32 question1Id = negRiskAdapter.prepareQuestion(marketId, "Question 1");
         bytes32 question2Id = negRiskAdapter.prepareQuestion(marketId, "Question 2");
         
         // Get position IDs for the new questions
@@ -267,19 +266,18 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         uint256 no2PositionId = negRiskAdapter.getPositionId(question2Id, false);
         
         // Mint specific tokens for the users in the new questions
-        // _mintSpecificToken(user1, yes1PositionId, question1Id, 1e6);
         _mintSpecificToken(user2, question2Id, 50*1e6);
 
         vm.prank(user2);
         ctf.setApprovalForAll(address(adapter), true);
         
-        // User1: Buy YES tokens from Question 1 at 0.7 price
-        orders[0] = _createOrderIntent(user1, yesPositionId, 0, 1e18, 0.7e6);
+        // User1: Buy YES tokens from Question 0 (pivot) at 0.7 price
+        orders[0] = _createOrderIntent(user1, yesPositionId, 0, 1e6, 0.7e6);
         
-        // User2: Sell NO tokens from Question 2 at 0.7 price (equivalent to 0.3 for YES)
+        // User2: Sell NO tokens from Question 2 at 0.3 price
         // For sell orders, we need to ensure combined price = 1.0
-        // Buy price: 0.7, Sell price: 0.7, so 0.7 + (1-0.7) = 1.0
-        orders[1] = _createOrderIntent(user2, no2PositionId, 1, 1e18, 0.3e6);
+        // Buy price: 0.7, Sell price: 0.3, so 0.7 + 0.3 = 1.0
+        orders[1] = _createOrderIntent(user2, no2PositionId, 1, 1e6, 0.3e6);
         
         return orders;
     }
@@ -303,14 +301,14 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
             makerOrders[i - 1] = orders[i];
         }
         
-        uint256 fillAmount = 100;
+        uint256 fillAmount = 100 * 1e6;
         adapter.crossMatchLongOrders(marketId, takerOrder, makerOrders, fillAmount);
         
         // Verify that users spent USDC
-        assertEq(usdc.balanceOf(user1), user1InitialBalance - 0.25e6 * fillAmount, "User1 should have spent USDC");
-        assertEq(usdc.balanceOf(user2), user2InitialBalance - 0.25e6 * fillAmount, "User2 should have spent USDC");
-        assertEq(usdc.balanceOf(user3), user3InitialBalance - 0.25e6 * fillAmount, "User3 should have spent USDC");
-        assertEq(usdc.balanceOf(user4), user4InitialBalance - 0.25e6 * fillAmount, "User4 should have spent USDC");
+        assertEq(usdc.balanceOf(user1), user1InitialBalance - 0.25e6 * fillAmount/1e6, "User1 should have spent USDC");
+        assertEq(usdc.balanceOf(user2), user2InitialBalance - 0.25e6 * fillAmount/1e6, "User2 should have spent USDC");
+        assertEq(usdc.balanceOf(user3), user3InitialBalance - 0.25e6 * fillAmount/1e6, "User3 should have spent USDC");
+        assertEq(usdc.balanceOf(user4), user4InitialBalance - 0.25e6 * fillAmount/1e6, "User4 should have spent USDC");
         
         // Verify that users received the correct YES tokens
         _verifyUserTokenBalances(marketId);
@@ -352,6 +350,12 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         // Check that User1 received YES4 tokens (from maker order) - exact amount
         uint256 user4Yes4Tokens = ctf.balanceOf(user4, yes4PositionId);
         assertEq(user4Yes4Tokens, expectedFillAmount, "User4 should have received exactly expectedFillAmount YES4 tokens");
+
+        // assert that adapter balances of Yes and No tokens are 0
+        assertEq(ctf.balanceOf(address(adapter), yes1PositionId), 0, "Adapter should have no YES1 tokens");
+        assertEq(ctf.balanceOf(address(adapter), yes2PositionId), 0, "Adapter should have no YES2 tokens");
+        assertEq(ctf.balanceOf(address(adapter), yes3PositionId), 0, "Adapter should have no YES3 tokens");
+        assertEq(ctf.balanceOf(address(adapter), yes4PositionId), 0, "Adapter should have no YES4 tokens");
     }
 
     function test_Scenario2_MixedBuySellOrders() public {
@@ -371,7 +375,8 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
             makerOrders[i - 1] = orders[i];
         }
         
-        adapter.crossMatchLongOrders(marketId, takerOrder, makerOrders, 50);
+        uint256 fillAmount = 50 * 1e6;
+        adapter.crossMatchLongOrders(marketId, takerOrder, makerOrders, fillAmount);
         
         // Verify the cross-matching worked correctly
         // User1 should have received YES tokens and paid USDC
@@ -379,22 +384,28 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         // The adapter should have distributed all USDC and not kept any
         // The vault provides liquidity and gets it back, so its balance should remain the same
         
-        // Check that user1 received YES tokens from Question 1
+        // Check that user1 received YES tokens from Question 0 (pivot)
         uint256 user1YesTokens = ctf.balanceOf(user1, orders[0].tokenId);
-        assertEq(user1YesTokens, 50 * 1e6, "User1 should have received YES tokens");
+        assertEq(user1YesTokens, fillAmount, "User1 should have received YES tokens");
         
         // Check that user2's NO tokens from Question 2 were consumed
         uint256 user2NoTokens = ctf.balanceOf(user2, orders[1].tokenId);
         assertEq(user2NoTokens, 0, "User2's NO tokens should have been consumed");
 
-        assertEq(usdc.balanceOf(user1), user1InitialBalance - 0.7e6 * 50, "User1 should have spent USDC");
-        assertEq(usdc.balanceOf(user2), user2InitialBalance + 0.7e6 * 50, "User2 should have received USDC");
+        // User1 pays 0.7 * fillAmount for buying YES tokens
+        assertEq(usdc.balanceOf(user1), user1InitialBalance - 0.7e6 * fillAmount / 1e6, "User1 should have spent USDC");
+        // User2 receives (1 - 0.3) * fillAmount = 0.7 * fillAmount for selling NO tokens
+        assertEq(usdc.balanceOf(user2), user2InitialBalance + 0.7e6 * fillAmount / 1e6, "User2 should have received USDC");
         
         // Check that the adapter has no USDC left (it distributed everything)
         assertEq(usdc.balanceOf(address(adapter)), 0, "Adapter should have distributed all USDC");
         
         // Check that the vault balance remains the same (it provides liquidity and gets it back)
         assertEq(usdc.balanceOf(vault), vaultInitialBalance, "Vault balance should remain the same after providing liquidity");
+    
+        // assert that adapter balances of Yes and No tokens are 0
+        assertEq(ctf.balanceOf(address(adapter), orders[0].tokenId), 0, "Adapter should have no YES tokens");
+        assertEq(ctf.balanceOf(address(adapter), orders[1].tokenId), 0, "Adapter should have no NO tokens");
     }
     
     function test_Scenario3_AllSellOrders() public {
@@ -415,7 +426,7 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
             makerOrders[i - 1] = orders[i];
         }
         
-        adapter.crossMatchLongOrders(marketId, takerOrder, makerOrders, 70);
+        adapter.crossMatchLongOrders(marketId, takerOrder, makerOrders, 70 * 1e6);
 
         assertEq(usdc.balanceOf(user1), user1BalanceBeforeCrossMatch + 0.75e6 * 70, "User1 should have spent USDC");
         assertEq(usdc.balanceOf(user2), user2BalanceBeforeCrossMatch + 0.6e6 * 70, "User2 should have received USDC");
@@ -491,14 +502,14 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         
         console.log("Executing cross-matching with taker order and", makerOrders.length, "maker orders");
         
-        uint256 fillAmount = 10;
+        uint256 fillAmount = 10 * 1e6;
         adapter.crossMatchLongOrders(marketId, takerOrder, makerOrders, fillAmount);
         
         // Add some basic assertions to understand what's happening
-        assertEq(usdc.balanceOf(user1), user1InitialBalance - 0.25e6 * fillAmount, "User1 should have spent USDC");
-        assertEq(usdc.balanceOf(user2), user2InitialBalance + 0.7e6 * fillAmount, "User2 should have received USDC");
-        assertEq(usdc.balanceOf(user3), user3InitialBalance - 0.1e6 * fillAmount, "User3 balance should have reduced");
-        assertEq(usdc.balanceOf(user4), user4InitialBalance + 0.65e6 * fillAmount, "User4 balance should have changed");
+        assertEq(usdc.balanceOf(user1), user1InitialBalance - 0.25e6 * fillAmount/1e6, "User1 should have spent USDC");
+        assertEq(usdc.balanceOf(user2), user2InitialBalance + 0.7e6 * fillAmount/1e6, "User2 should have received USDC");
+        assertEq(usdc.balanceOf(user3), user3InitialBalance - 0.1e6 * fillAmount/1e6, "User3 balance should have reduced");
+        assertEq(usdc.balanceOf(user4), user4InitialBalance + 0.65e6 * fillAmount/1e6, "User4 balance should have changed");
 
         assertEq(usdc.balanceOf(address(adapter)), adapterInitialBalance, "Adapter should have the same USDC balance after cross-matching");
         

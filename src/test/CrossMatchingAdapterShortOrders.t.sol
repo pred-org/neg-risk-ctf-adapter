@@ -330,14 +330,16 @@ contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
             makerOrders[i - 1] = orders[i];
         }
         
-        uint256 fillAmount = 100;
+        uint256 fillAmount = 100 * 1e6;
         adapter.crossMatchShortOrders(marketId, takerOrder, makerOrders, fillAmount);
         
         // Verify that users spent USDC
-        assertEq(usdc.balanceOf(user1), user1InitialBalance - 0.75e6 * fillAmount, "User1 (Arsenal) should have spent USDC");
-        assertEq(usdc.balanceOf(user2), user2InitialBalance - 0.75e6 * fillAmount, "User2 (Barcelona) should have spent USDC");
-        assertEq(usdc.balanceOf(user3), user3InitialBalance - 0.75e6 * fillAmount, "User3 (Chelsea) should have spent USDC");
-        assertEq(usdc.balanceOf(user4), user4InitialBalance - 0.75e6 * fillAmount, "User4 (Spurs) should have spent USDC");
+        // Price is 750000 (0.75 with 6 decimals), so USDC spent = price * fillAmount / 1e6
+        uint256 usdcSpent = (750000 * fillAmount) / 1e6;
+        assertEq(usdc.balanceOf(user1), user1InitialBalance - usdcSpent, "User1 (Arsenal) should have spent USDC");
+        assertEq(usdc.balanceOf(user2), user2InitialBalance - usdcSpent, "User2 (Barcelona) should have spent USDC");
+        assertEq(usdc.balanceOf(user3), user3InitialBalance - usdcSpent, "User3 (Chelsea) should have spent USDC");
+        assertEq(usdc.balanceOf(user4), user4InitialBalance - usdcSpent, "User4 (Spurs) should have spent USDC");
         
         // Verify that users received the correct NO tokens
         _verifyScenario1TokenBalances(marketId, fillAmount);
@@ -364,7 +366,7 @@ contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
         uint256 spursNoPositionId = negRiskAdapter.getPositionId(spursQuestionId, false);
         
         // Expected fill amount
-        uint256 expectedFillAmount = fillAmount * 1e6;
+        uint256 expectedFillAmount = fillAmount;
         
         // Check that users received NO tokens
         uint256 user1NoTokens = ctf.balanceOf(user1, arsenalNoPositionId);
@@ -398,7 +400,7 @@ contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
             makerOrders[i - 1] = orders[i];
         }
         
-        uint256 fillAmount = 50;
+        uint256 fillAmount = 50 * 1e6;
         adapter.crossMatchShortOrders(marketId, takerOrder, makerOrders, fillAmount);
         
         // Verify the cross-matching worked correctly
@@ -406,10 +408,10 @@ contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
         // User2 and User4 should have received USDC for selling YES tokens
         
         // Check USDC balances
-        assertEq(usdc.balanceOf(user1), user1InitialBalance - 0.75e6 * fillAmount, "User1 (Arsenal) should have spent USDC");
-        assertEq(usdc.balanceOf(user2), user2InitialBalance + 0.25e6 * fillAmount, "User2 (Barcelona) should have received USDC");
-        assertEq(usdc.balanceOf(user3), user3InitialBalance - 0.75e6 * fillAmount, "User3 (Chelsea) should have spent USDC");
-        assertEq(usdc.balanceOf(user4), user4InitialBalance + 0.25e6 * fillAmount, "User4 (Spurs) should have received USDC");
+        assertEq(usdc.balanceOf(user1), user1InitialBalance - 0.75e6 * fillAmount/1e6, "User1 (Arsenal) should have spent USDC");
+        assertEq(usdc.balanceOf(user2), user2InitialBalance + 0.25e6 * fillAmount/1e6, "User2 (Barcelona) should have received USDC");
+        assertEq(usdc.balanceOf(user3), user3InitialBalance - 0.75e6 * fillAmount/1e6, "User3 (Chelsea) should have spent USDC");
+        assertEq(usdc.balanceOf(user4), user4InitialBalance + 0.25e6 * fillAmount/1e6, "User4 (Spurs) should have received USDC");
         
         // Verify token distributions
         _verifyScenario2TokenBalances(marketId, fillAmount);
@@ -437,7 +439,7 @@ contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
         uint256 spursYesPositionId = negRiskAdapter.getPositionId(spursQuestionId, true);
         
         // Expected fill amount
-        uint256 expectedFillAmount = fillAmount * 1e6;
+        uint256 expectedFillAmount = fillAmount;
         
         // Check that buyers received NO tokens
         uint256 user1NoTokens = ctf.balanceOf(user1, arsenalNoPositionId);
@@ -467,7 +469,7 @@ contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
             makerOrders[i - 1] = orders[i];
         }
         
-        uint256 fillAmount = 100;
+        uint256 fillAmount = 100 * 1e6;
         
         // This should revert due to invalid combined price
         vm.expectRevert(abi.encodeWithSignature("InvalidCombinedPrice()"));
