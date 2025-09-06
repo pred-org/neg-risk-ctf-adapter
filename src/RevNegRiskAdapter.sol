@@ -178,10 +178,27 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, IRevNegRiskAdapterEE, Auth {
         // convert all 0 to n-1 yes positions to nth no position
         // Then merge the nth no position with nth yes position to get USDC
         convertPositions(_marketId, 0, _amount, address(this));
-        require(ctf.balanceOf(address(this), neg.getPositionId(NegRiskIdLib.getQuestionId(_marketId, 0), false)) == _amount, "No tokens should be at the target no position");
-        ctf.safeTransferFrom(msg.sender, address(this), neg.getPositionId(NegRiskIdLib.getQuestionId(_marketId, 0), true), _amount, "");
-        neg.mergePositions(neg.getConditionId(NegRiskIdLib.getQuestionId(_marketId, 0)), _amount);
-        col.transfer(msg.sender, _amount);
+        
+        // Get the actual amount of NO tokens the adapter has (after fees)
+        uint256 noPositionId = neg.getPositionId(NegRiskIdLib.getQuestionId(_marketId, 0), false);
+        uint256 actualNoAmount = ctf.balanceOf(address(this), noPositionId);
+
+        // Calculate expected amount after fees
+        uint256 feeBips = neg.getFeeBips(_marketId);
+        uint256 feeAmount = (_amount * feeBips) / FEE_DENOMINATOR;
+        uint256 expectedNoAmount = _amount - feeAmount;
+        
+        require(actualNoAmount == expectedNoAmount, "Actual NO amount should be equal to the expected amount after fees");
+        
+        // Transfer the YES tokens from the user to the adapter for merging
+        uint256 yesPositionId = neg.getPositionId(NegRiskIdLib.getQuestionId(_marketId, 0), true);
+        ctf.safeTransferFrom(msg.sender, address(this), yesPositionId, _amount, "");
+        
+        // Merge the NO and YES tokens to get USDC (adapter has both tokens)
+        neg.mergePositions(neg.getConditionId(NegRiskIdLib.getQuestionId(_marketId, 0)), actualNoAmount);
+        
+        // Transfer the USDC to the user (amount after fees)
+        col.transfer(msg.sender, actualNoAmount);
     }
 
     /// @dev internal function to process target question and avoid stack too deep
