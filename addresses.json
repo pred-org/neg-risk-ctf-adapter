@@ -20,5 +20,10 @@
     "negRiskUmaCtfAdapter": "0x2F5e3684cb1F318ec51b00Edba38d79Ac2c0aA9d",
     "negRiskWrappedCollateral": "0x3A3BD7bb9528E159577F7C2e685CC81A765002E2",
     "usdc": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174"
+  },
+  "10143": {
+    "ctf": "0x52CD9f25AFcc9D007F72431842F811E8F21EE75F",
+    "usdc": "0x0CE1e03dD630cA1f402a18ac44Ab1C9C1DDBED93",
+    "negRiskVault": "0x9158807Daac54969220f0ba90572176C579AB3E9"
   }
 }
