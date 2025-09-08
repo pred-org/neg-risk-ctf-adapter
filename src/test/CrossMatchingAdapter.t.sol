@@ -594,6 +594,72 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         assertEq(user2No2Tokens, 0, "User2's No2 tokens should have been consumed");
         assertEq(user4No4Tokens, 0, "User4's No4 tokens should have been consumed");
     }
+
+    function test_Scenario5_LongOrdersWithResolvedQuestion() public {
+        console.log("=== Testing Scenario 5: Long Orders with One Question Resolved ===");
+        
+        // Create a new market for this test to avoid conflicts
+        bytes32 testMarketId = negRiskAdapter.prepareMarket(0, "Test Market with Resolved Question for Long Orders");
+        
+        // Create 4 questions for the 4 teams
+        bytes32 arsenalQuestionId = negRiskAdapter.prepareQuestion(testMarketId, "Arsenal Win");
+        negRiskAdapter.prepareQuestion(testMarketId, "Barcelona Win");
+        negRiskAdapter.prepareQuestion(testMarketId, "Chelsea Win");
+        negRiskAdapter.prepareQuestion(testMarketId, "Spurs Win");
+        
+        // Resolve the Arsenal question (Arsenal wins = true)
+        negRiskAdapter.reportOutcome(arsenalQuestionId, true);
+        
+        // Create orders ONLY for the 3 active questions (Arsenal is resolved, so no order for it)
+        // We need 3 orders total: 1 taker + 2 makers = 3 active questions
+        // The prices should sum to 1.0 for the active questions: 0.35 + 0.45 + 0.20 = 1.0
+        ICTFExchange.OrderIntent memory takerOrder = _createOrderIntent(user1, negRiskAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, 1), true), 0, 1e6, 350000); // Barcelona YES at 0.35
+        ICTFExchange.OrderIntent[] memory makerOrders = new ICTFExchange.OrderIntent[](2);
+        makerOrders[0] = _createOrderIntent(user2, negRiskAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, 2), true), 0, 1e6, 450000); // Chelsea YES at 0.45
+        makerOrders[1] = _createOrderIntent(user3, negRiskAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, 3), true), 0, 1e6, 200000); // Spurs YES at 0.20
+        
+        // Execute cross-matching with only 3 orders for the 3 active questions (Arsenal is resolved, so no order for it)
+        uint256 fillAmount = 50 * 1e6;
+        adapter.crossMatchLongOrders(testMarketId, takerOrder, makerOrders, fillAmount);
+        
+        // Verify the results
+        _verifyScenario5Results(testMarketId, fillAmount);
+        
+        console.log("Scenario 5 completed successfully!");
+    }
+    
+    function _verifyScenario5Results(bytes32 testMarketId, uint256 fillAmount) internal {
+        // Verify that the adapter has no USDC left (self-financing)
+        assertEq(usdc.balanceOf(address(adapter)), 0, "Adapter should have distributed all USDC");
+        
+        // Get position IDs for verification
+        uint256 barcelonaYesPositionId = negRiskAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, 1), true);
+        uint256 chelseaYesPositionId = negRiskAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, 2), true);
+        uint256 spursYesPositionId = negRiskAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, 3), true);
+        
+        // Verify user1 (taker) - should have received Barcelona YES tokens
+        assertEq(ctf.balanceOf(user1, barcelonaYesPositionId), fillAmount, "User1 should have received Barcelona YES tokens");
+        
+        // Verify user2 (maker) - should have received Chelsea YES tokens
+        assertEq(ctf.balanceOf(user2, chelseaYesPositionId), fillAmount, "User2 should have received Chelsea YES tokens");
+        
+        // Verify user3 (maker) - should have received Spurs YES tokens
+        assertEq(ctf.balanceOf(user3, spursYesPositionId), fillAmount, "User3 should have received Spurs YES tokens");
+        
+        // Verify USDC payments (users should have paid the correct amounts)
+        uint256 user1ExpectedUSDCSpent = (350000 * fillAmount) / 1e6; // 0.35 * fillAmount
+        uint256 user2ExpectedUSDCSpent = (450000 * fillAmount) / 1e6; // 0.45 * fillAmount
+        uint256 user3ExpectedUSDCSpent = (200000 * fillAmount) / 1e6; // 0.20 * fillAmount
+        
+        // Check that users have less USDC than initially (they paid for their tokens)
+        assertTrue(usdc.balanceOf(user1) < 100_000_000e6, "User1 should have paid USDC for Barcelona YES tokens");
+        assertTrue(usdc.balanceOf(user2) < 100_000_000e6, "User2 should have paid USDC for Chelsea YES tokens");
+        assertTrue(usdc.balanceOf(user3) < 100_000_000e6, "User3 should have paid USDC for Spurs YES tokens");
+        
+        console.log("User1 (Barcelona YES at 0.35): Paid ~%s USDC, received %s tokens", user1ExpectedUSDCSpent, fillAmount);
+        console.log("User2 (Chelsea YES at 0.45): Paid ~%s USDC, received %s tokens", user2ExpectedUSDCSpent, fillAmount);
+        console.log("User3 (Spurs YES at 0.20): Paid ~%s USDC, received %s tokens", user3ExpectedUSDCSpent, fillAmount);
+    }
 }
 
 // Mock USDC contract

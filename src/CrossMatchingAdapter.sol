@@ -158,9 +158,11 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         uint256 totalSellUSDC = 0;
         uint256 totalCombinedPrice = 0;
 
-        // Check that the question count of this market should be equal to length of multiOrderMaker + 1
+        // Check that we have orders for at least some questions in the market
+        // The function can handle cases where some questions are already resolved
         uint256 questionCount = neg.getQuestionCount(marketId);
-        require(questionCount == multiOrderMaker.length + 1, "Question count should be equal to length of multiOrderMaker + 1");
+        require(multiOrderMaker.length + 1 <= questionCount, "Cannot have more orders than questions in the market");
+        require(multiOrderMaker.length + 1 > 0, "Must have at least one order");
         
         // Parse taker order
         parsedOrders[0] = _parseOrder(takerOrder, fillAmount, marketId);
@@ -263,7 +265,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
             revert InvalidFillAmount();
         }
 
-        // Cross-matching function that handles two scenarios:
+        // Cross-matching function that handles scenarios including resolved questions:
         // 
         // Scenario 1: All buy orders (e.g., 4 users buying Yes1, Yes2, Yes3, Yes4)
         // - Collect USDC from all buyers
@@ -282,6 +284,17 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         // - Merge YES tokens with NO tokens from sellers to get USDC
         // - Return USDC to sellers
         // - Burn remaining WCOL to maintain self-financing
+        //
+        // Scenario 3: Some questions resolved (e.g., Arsenal resolved, users trading on Barcelona, Chelsea, Spurs)
+        // - Only process orders for active (unresolved) questions
+        // - Use taker's question ID as pivot instead of hardcoded 0
+        // - Handle USDC flow correctly for partial market scenarios
+        
+        // Check that we have orders for at least some questions in the market
+        // The function can handle cases where some questions are already resolved
+        uint256 questionCount = neg.getQuestionCount(marketId);
+        require(multiOrderMaker.length + 1 <= questionCount, "Cannot have more orders than questions in the market");
+        require(multiOrderMaker.length + 1 > 0, "Must have at least one order");
         
         Parsed[] memory parsedOrders = new Parsed[](multiOrderMaker.length + 1);
         uint256 totalBuyUSDC = 0;
@@ -365,27 +378,29 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         
         uint256 questionCount = neg.getQuestionCount(marketId);
         
-        // STEP 1: Split position for pivot question (index 0) to create YES0 + NO0
-        bytes32 pivotQuestionId = NegRiskIdLib.getQuestionId(marketId, 0);
+        // STEP 1: Split position for pivot question (use taker's question ID) to create YES + NO
+        // Use the taker's question ID as the pivot since we know it's active (unresolved)
+        uint8 pivotId = parsedOrders[0].qIndex;
+        bytes32 pivotQuestionId = NegRiskIdLib.getQuestionId(marketId, pivotId);
         bytes32 pivotConditionId = neg.getConditionId(pivotQuestionId);
         
         // We need to split enough USDC to cover the CTF operation
         
-        // Split the available USDC on pivot question to get YES0 + NO0
+        // Split the available USDC on pivot question to get YES + NO
         neg.splitPosition(pivotConditionId, totalCollateral);
         
-        // STEP 2: Use convertPositions to convert NO0 to other YES tokens (YES1, YES2, YES3...)
+        // STEP 2: Use convertPositions to convert NO tokens to other YES tokens
         if (questionCount > 1) {
             // The indexSet for convertPositions represents which NO positions we want to convert
-            // We want to convert NO0 (index 0) to get YES1, YES2, YES3...
-            // So we need to provide an indexSet that represents the NO0 position
-            uint256 indexSet = 1; // This represents NO0 (index 0 = bit 0 = 2^0 = 1)
+            // We want to convert NO tokens from the pivot question to get YES tokens for other questions
+            // So we need to provide an indexSet that represents the pivot NO position
+            uint256 indexSet = 1 << pivotId; // This represents NO position for the pivot question
             
             // Approve NegRiskAdapter to handle our tokens
             ctf.setApprovalForAll(address(neg), true);
             
-            // Convert NO0 to YES1, YES2, YES3... using NegRiskAdapter's convertPositions
-            // We can only convert as much as we have NO0 tokens from the split operation
+            // Convert NO tokens to YES tokens for other questions using NegRiskAdapter's convertPositions
+            // We can only convert as much as we have NO tokens from the split operation
             neg.convertPositions(marketId, indexSet, totalCollateral);
         }
         

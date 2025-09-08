@@ -175,12 +175,20 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, IRevNegRiskAdapterEE, Auth {
     /// @param _marketId - the marketId
     /// @param _amount   - the amount of tokens to convert
     function mergeAllYesTokens(bytes32 _marketId, uint256 _amount) public {
-        // convert all 0 to n-1 yes positions to nth no position
-        // Then merge the nth no position with nth yes position to get USDC
-        convertPositions(_marketId, 0, _amount, address(this));
+        mergeAllYesTokens(_marketId, _amount, 0);
+    }
+
+    /// @notice Convert all yes positions to a single no position and then merge to get collateral
+    /// @param _marketId - the marketId
+    /// @param _amount   - the amount of tokens to convert
+    /// @param _pivotId  - the index of the question to use as pivot for merging
+    function mergeAllYesTokens(bytes32 _marketId, uint256 _amount, uint256 _pivotId) public {
+        // convert all yes positions to the pivot no position
+        // Then merge the pivot no position with pivot yes position to get USDC
+        convertPositions(_marketId, _pivotId, _amount, address(this));
         
         // Get the actual amount of NO tokens the adapter has (after fees)
-        uint256 noPositionId = neg.getPositionId(NegRiskIdLib.getQuestionId(_marketId, 0), false);
+        uint256 noPositionId = neg.getPositionId(NegRiskIdLib.getQuestionId(_marketId, uint8(_pivotId)), false);
         uint256 actualNoAmount = ctf.balanceOf(address(this), noPositionId);
 
         // Calculate expected amount after fees
@@ -191,11 +199,11 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, IRevNegRiskAdapterEE, Auth {
         require(actualNoAmount == expectedNoAmount, "Actual NO amount should be equal to the expected amount after fees");
         
         // Transfer the YES tokens from the user to the adapter for merging
-        uint256 yesPositionId = neg.getPositionId(NegRiskIdLib.getQuestionId(_marketId, 0), true);
+        uint256 yesPositionId = neg.getPositionId(NegRiskIdLib.getQuestionId(_marketId, uint8(_pivotId)), true);
         ctf.safeTransferFrom(msg.sender, address(this), yesPositionId, _amount, "");
         
         // Merge the NO and YES tokens to get USDC (adapter has both tokens)
-        neg.mergePositions(neg.getConditionId(NegRiskIdLib.getQuestionId(_marketId, 0)), actualNoAmount);
+        neg.mergePositions(neg.getConditionId(NegRiskIdLib.getQuestionId(_marketId, uint8(_pivotId))), actualNoAmount);
         
         // Transfer the USDC to the user (amount after fees)
         col.transfer(msg.sender, actualNoAmount);

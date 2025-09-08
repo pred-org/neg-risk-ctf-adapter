@@ -54,6 +54,7 @@ interface IRevNegRiskAdapter is IAuth {
     function mergePositions(address _collateralToken, bytes32, bytes32 _conditionId, uint256[] calldata, uint256 _amount) external;
     function mergePositions(bytes32 _conditionId, uint256 _amount) external;
     function mergeAllYesTokens(bytes32 _marketId, uint256 _amount) external;
+    function mergeAllYesTokens(bytes32 _marketId, uint256 _amount, uint256 _pivotId) external;
 
     // ERC1155 operations
     function balanceOf(address _owner, uint256 _id) external view returns (uint256);
