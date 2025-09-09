@@ -122,25 +122,36 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
     }
 
     function hybridMatchOrders(
+        bytes32 marketId,
         ICTFExchange.OrderIntent calldata takerOrder, 
         ICTFExchange.OrderIntent[][] calldata makerOrders, 
         uint256 takerFillAmount, 
         uint256[] calldata makerFillAmounts
     ) external nonReentrant {
+        uint256[] memory singleMakerFillAmount = new uint256[](1);
+        singleMakerFillAmount[0] = 0;
+        ICTFExchange.OrderIntent[] memory singleMakerOrder = new ICTFExchange.OrderIntent[](1);
         for (uint256 i = 0; i < makerOrders.length;) {
             ICTFExchange.OrderIntent[] calldata makerOrder = makerOrders[i];
             if (makerOrder.length == 1) {
+                singleMakerFillAmount[0] += makerFillAmounts[i];
+                singleMakerOrder[0] = makerOrder[0];
                 // normal match
-                uint256[] memory singleMakerFillAmount = new uint256[](1);
-                singleMakerFillAmount[0] = makerFillAmounts[i];
-                ctfExchange.matchOrders(takerOrder, makerOrder, takerFillAmount, singleMakerFillAmount);
             } else {
                 // cross match
+                if (takerOrder.order.intent == 0) {
+                    // LONG
+                    crossMatchLongOrders(marketId, takerOrder, makerOrder, makerFillAmounts[i]);
+                } else {
+                    // SHORT
+                    crossMatchShortOrders(marketId, takerOrder, makerOrder, makerFillAmounts[i]);
+                }
             }
             unchecked {
                 ++i;
             }
         }
+        ctfExchange.matchOrders(takerOrder, singleMakerOrder, takerFillAmount, singleMakerFillAmount);
     }
 
     function crossMatchShortOrders(
@@ -148,7 +159,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         ICTFExchange.OrderIntent calldata takerOrder,
         ICTFExchange.OrderIntent[] calldata multiOrderMaker,
         uint256 fillAmount
-    ) external nonReentrant {
+    ) public nonReentrant {
         if (fillAmount == 0) {
             revert InvalidFillAmount();
         }
@@ -224,8 +235,8 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         }
 
         // Merge all the YES tokens to get USDC
-        require(ctf.balanceOf(address(this), neg.getPositionId(NegRiskIdLib.getQuestionId(marketId, 0), true)) == fillAmount, "YES tokens should be at the target yes position");
-        revNeg.mergeAllYesTokens(marketId, fillAmount);
+        require(ctf.balanceOf(address(this), neg.getPositionId(NegRiskIdLib.getQuestionId(marketId, parsedOrders[0].qIndex), true)) == fillAmount, "YES tokens should be at the target yes position");
+        revNeg.mergeAllYesTokens(marketId, fillAmount, parsedOrders[0].qIndex);
 
         // transfer the shares * ONE of USDC to the vault, since we took it from the vault
         usdc.transfer(neg.vault(), fillAmount + totalSellUSDC);
@@ -260,7 +271,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         ICTFExchange.OrderIntent calldata takerOrder,
         ICTFExchange.OrderIntent[] calldata multiOrderMaker,
         uint256 fillAmount
-    ) external nonReentrant {
+    ) public nonReentrant {
         if (fillAmount == 0) {
             revert InvalidFillAmount();
         }

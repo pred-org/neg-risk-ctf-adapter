@@ -511,8 +511,8 @@ contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
         negRiskAdapter.prepareQuestion(testMarketId, "Chelsea Win");
         negRiskAdapter.prepareQuestion(testMarketId, "Spurs Win");
         
-        // Resolve the Arsenal question (Arsenal wins = true)
-        negRiskAdapter.reportOutcome(arsenalQuestionId, true);
+        // Resolve the Arsenal question (Arsenal wins = false)
+        negRiskAdapter.reportOutcome(arsenalQuestionId, false);
         
         // Create orders ONLY for the 3 active questions (Arsenal is resolved, so no order for it)
         // We need 3 orders total: 1 taker + 2 makers = 3 active questions
