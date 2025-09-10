@@ -48,6 +48,7 @@ interface ICTFExchange {
         uint256 expiration;
         uint256 nonce;
         uint256 feeRateBps;
+        bytes32 questionId;
         uint8   intent; // 0 = LONG, 1 = SHORT
         uint8   signatureType;
         bytes   signature;
@@ -566,7 +567,9 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         // the usdc amount that we need to return to the seller
         uint256 usdcToReturn = (ONE - priceQ6) * fillAmount / ONE;
 
-        
+        bytes32 questionId = NegRiskIdLib.getQuestionId(marketId, qIndex);
+        require(questionId == order.order.questionId, "Question ID mismatch");
+
         return Parsed({
             maker: order.order.maker,
             side: order.side,
