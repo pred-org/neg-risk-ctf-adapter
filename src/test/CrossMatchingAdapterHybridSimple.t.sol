@@ -209,8 +209,8 @@ contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
         ICTFExchange.OrderIntent memory takerOrder = _createOrderIntent(user1, yesPositionId, 0, 1e6, 0.25e6, questionId, 0);
         uint256 takerFillAmount = 100 * 1e6;
         
-        // Execute hybrid match orders
-        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, makerFillAmounts);
+        // Execute hybrid match orders (2 single orders)
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, makerFillAmounts, 2);
         
         // Verify that matchOrders was called only once (batch optimization)
         assertEq(ctfExchange.matchOrdersCallCount(), 1, "matchOrders should be called only once for batch processing");
@@ -258,8 +258,8 @@ contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
         ICTFExchange.OrderIntent memory takerOrder = _createOrderIntent(user1, yesPositionId, 0, 1e6, 0.15e6, questionId, 0);
         uint256 takerFillAmount = 100 * 1e6;
         
-        // Execute hybrid match orders
-        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, makerFillAmounts);
+        // Execute hybrid match orders (0 single orders, all cross-match)
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, makerFillAmounts, 0);
         
         // Verify that matchOrders was NOT called (all orders are cross-match)
         assertEq(ctfExchange.matchOrdersCallCount(), 0, "matchOrders should not be called for cross-match orders");
@@ -301,8 +301,8 @@ contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
         ICTFExchange.OrderIntent memory takerOrder = _createOrderIntent(user1, yesPositionId, 0, 1e6, 0.4e6, questionId, 0);
         uint256 takerFillAmount = 100 * 1e6;
         
-        // Execute hybrid match orders
-        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, makerFillAmounts);
+        // Execute hybrid match orders (1 single order, 1 cross-match)
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, makerFillAmounts, 1);
         
         // Verify that matchOrders was called only once for the 1 single order
         assertEq(ctfExchange.matchOrdersCallCount(), 1, "matchOrders should be called once for single orders");
@@ -316,6 +316,42 @@ contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
         assertEq(lastMakerOrders[0].order.maker, user2, "Single maker should be user2");
         
         console.log("Mixed single and cross-match orders test passed!");
+    }
+
+    function test_HybridMatchOrders_EdgeCaseZeroSingleOrders() public {
+        console.log("=== Testing Hybrid Match Orders: Zero Single Orders ===");
+        
+        // Reset mock exchange
+        ctfExchange.reset();
+        
+        // Create 1 cross-match maker order (no single orders)
+        ICTFExchange.OrderIntent[][] memory makerOrders = new ICTFExchange.OrderIntent[][](1);
+        uint256[] memory makerFillAmounts = new uint256[](1);
+        
+        // Create additional questions for cross-matching
+        bytes32 question1Id = negRiskAdapter.prepareQuestion(marketId, "Question 1");
+        bytes32 question2Id = negRiskAdapter.prepareQuestion(marketId, "Question 2");
+        
+        uint256 yes1PositionId = negRiskAdapter.getPositionId(question1Id, true);
+        uint256 yes2PositionId = negRiskAdapter.getPositionId(question2Id, true);
+        
+        // Create cross-match maker order (with 2 orders)
+        makerOrders[0] = new ICTFExchange.OrderIntent[](2);
+        makerOrders[0][0] = _createOrderIntent(user2, yes1PositionId, 0, 1e6, 0.4e6, question1Id, 0);
+        makerOrders[0][1] = _createOrderIntent(user3, yes2PositionId, 0, 1e6, 0.4e6, question2Id, 0);
+        makerFillAmounts[0] = 100 * 1e6;
+        
+        // Create taker order
+        ICTFExchange.OrderIntent memory takerOrder = _createOrderIntent(user1, yesPositionId, 0, 1e6, 0.2e6, questionId, 0);
+        uint256 takerFillAmount = 100 * 1e6;
+        
+        // Execute with 0 single orders (correct count)
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, makerFillAmounts, 0);
+        
+        // Verify that matchOrders was NOT called (all orders are cross-match)
+        assertEq(ctfExchange.matchOrdersCallCount(), 0, "matchOrders should not be called for cross-match orders");
+        
+        console.log("Zero single orders test passed!");
     }
 }
 
