@@ -117,8 +117,8 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         uint8   side;
         uint256 tokenId;
         uint256 priceQ6;    // USDC/share (≤ 1e6) - updated from priceQ18
-        uint256 payUSDC;    // = shares * price (for buy orders)
-        uint256 usdcToReturn; // = shares * (1 - price) (for sell orders)
+        uint256 payAmount;    // = shares * price (for buy orders)
+        uint256 counterPayAmount; // = shares * (1 - price) (for sell orders)
         bytes32 questionId;     // which question id
     }
 
@@ -187,9 +187,9 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         // Parse taker order
         parsedOrders[0] = _parseOrder(takerOrder, fillAmount);
         if (parsedOrders[0].side == SIDE_BUY) {
-            totalBuyUSDC += parsedOrders[0].usdcToReturn;
+            totalBuyUSDC += parsedOrders[0].counterPayAmount;
         } else {
-            totalSellUSDC += parsedOrders[0].usdcToReturn;
+            totalSellUSDC += parsedOrders[0].counterPayAmount;
         }
 
         totalCombinedPrice += parsedOrders[0].priceQ6;
@@ -199,10 +199,10 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
             parsedOrders[i + 1] = _parseOrder(multiOrderMaker[i], fillAmount);
             totalCombinedPrice += parsedOrders[i + 1].priceQ6;
             if (parsedOrders[i + 1].side == SIDE_BUY) {
-                totalBuyUSDC += parsedOrders[i + 1].usdcToReturn;
+                totalBuyUSDC += parsedOrders[i + 1].counterPayAmount;
             } else {
                 // For sell orders, amount that we need for minting 
-                totalSellUSDC += parsedOrders[i + 1].usdcToReturn;
+                totalSellUSDC += parsedOrders[i + 1].counterPayAmount;
             }
         }
 
@@ -272,7 +272,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         // The NO tokens are already in the adapter from the split operation
         bytes32 conditionId = neg.getConditionId(order.questionId);
         neg.mergePositions(conditionId, fillAmount);
-        usdc.transfer(order.maker, order.payUSDC);
+        usdc.transfer(order.maker, order.payAmount);
     }
 
     function crossMatchLongOrders(
@@ -316,27 +316,21 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         require(multiOrderMaker.length + 1 <= questionCount, "Cannot have more orders than questions in the market");
         
         Parsed[] memory parsedOrders = new Parsed[](multiOrderMaker.length + 1);
-        uint256 totalBuyUSDC = 0;
         uint256 totalSellUSDC = 0;
         uint256 totalCombinedPrice = 0;
         
         // Parse taker order
         parsedOrders[0] = _parseOrder(takerOrder, fillAmount);
-        if (parsedOrders[0].side == SIDE_BUY) {
-            totalBuyUSDC += parsedOrders[0].payUSDC;
-        } else {
-            totalSellUSDC += parsedOrders[0].payUSDC;
+        if (parsedOrders[0].side == SIDE_SELL) {
+            totalSellUSDC += parsedOrders[0].payAmount;
         }
         totalCombinedPrice += parsedOrders[0].priceQ6;
         
         // Parse maker orders
         for (uint256 i = 0; i < multiOrderMaker.length; i++) {
             parsedOrders[i + 1] = _parseOrder(multiOrderMaker[i], fillAmount);
-            if (parsedOrders[i + 1].side == SIDE_BUY) {
-                totalBuyUSDC += parsedOrders[i + 1].payUSDC;
-            } else {
-                // For sell orders, amount that we need for minting 
-                totalSellUSDC += parsedOrders[i + 1].payUSDC;
+            if (parsedOrders[i + 1].side == SIDE_SELL) {
+                totalSellUSDC += parsedOrders[i + 1].payAmount;
             }
             totalCombinedPrice += parsedOrders[i + 1].priceQ6;
         }
@@ -367,18 +361,15 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         }
         
         // Execute cross-matching logic
-        _executeLongCrossMatch(parsedOrders, marketId, totalBuyUSDC, totalSellUSDC, fillAmount);
+        _executeLongCrossMatch(parsedOrders, marketId, totalSellUSDC, fillAmount);
     }
     
     function _executeLongCrossMatch(
         Parsed[] memory parsedOrders,
         bytes32 marketId,
-        uint256 totalBuyUSDC,
         uint256 totalSellUSDC,
         uint256 fillAmount
     ) internal {
-        uint256 totalCollateral = totalBuyUSDC + totalSellUSDC;
-
         // Collect USDC from buyers before we can use it
         _collectBuyerUSDC(parsedOrders, false);
         
@@ -398,7 +389,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         // We need to split enough USDC to cover the CTF operation
         
         // Split the available USDC on pivot question to get YES + NO
-        neg.splitPosition(pivotConditionId, totalCollateral);
+        neg.splitPosition(pivotConditionId, fillAmount);
         
         // STEP 2: Use convertPositions to convert NO tokens to other YES tokens
         if (questionCount > 1) {
@@ -412,7 +403,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
             
             // Convert NO tokens to YES tokens for other questions using NegRiskAdapter's convertPositions
             // We can only convert as much as we have NO tokens from the split operation
-            neg.convertPositions(marketId, indexSet, totalCollateral);
+            neg.convertPositions(marketId, indexSet, fillAmount);
         }
         
         // STEP 3: Distribute YES tokens to buyers
@@ -472,7 +463,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         
         // Check if adapter has enough YES tokens for this question
         uint256 adapterYesBalance = ctf.balanceOf(address(this), yesPositionId);
-        require(adapterYesBalance >= order.usdcToReturn, "Adapter doesn't have enough YES tokens for merge");
+        require(adapterYesBalance >= order.counterPayAmount, "Adapter doesn't have enough YES tokens for merge");
         
         // Get the condition ID for this question from the NegRiskAdapter
         bytes32 conditionId = neg.getConditionId(order.questionId);
@@ -483,8 +474,8 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         
         // Now we have USDC from the merge operation
         // USDC TO pay to the seller
-        uint256 usdcToPay = order.usdcToReturn;
-        uint256 vaultUSDC = order.payUSDC;
+        uint256 usdcToPay = order.counterPayAmount;
+        uint256 vaultUSDC = order.payAmount;
         
         // Transfer USDC to seller
         usdc.transfer(order.maker, usdcToPay);
@@ -499,33 +490,20 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
     ) internal {
         for (uint256 i = 0; i < parsedOrders.length; i++) {
             if (parsedOrders[i].side == SIDE_BUY) {
-                // Each buyer ordered a specific YES token for a specific question
-                // uint256 buyerShares = fillAmount;
                 
                 // Get the YES token position ID for this specific question
                 uint256 yesPositionId = parsedOrders[i].tokenId;
                 
-                // Check if the adapter has enough YES tokens to distribute
-                uint256 adapterBalance = ctf.balanceOf(address(this), yesPositionId);
-                
-                if (fillAmount > 0) {
-                    // Transfer the specific YES token to the buyer
-                    ctf.safeTransferFrom(
-                        address(this),
-                        parsedOrders[i].maker,
-                        yesPositionId,
-                        fillAmount,
-                        ""
-                    );
-                }
-                // burn remaining YES tokens
+                // Transfer the specific YES token to the buyer
                 ctf.safeTransferFrom(
                     address(this),
-                    YES_TOKEN_BURN_ADDRESS,
+                    parsedOrders[i].maker,
                     yesPositionId,
-                    adapterBalance - fillAmount,
+                    fillAmount,
                     ""
                 );
+                
+                // No YES tokens are left in the adapter
             }
         }
     }
@@ -534,7 +512,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         for (uint256 i = 0; i < parsedOrders.length; i++) {
             if (parsedOrders[i].side == SIDE_BUY) {
                 // For buy orders, we need to collect USDC from the buyer
-                uint256 usdcAmount = isShort ? parsedOrders[i].usdcToReturn : parsedOrders[i].payUSDC;
+                uint256 usdcAmount = isShort ? parsedOrders[i].counterPayAmount : parsedOrders[i].payAmount;
                 
                 // Transfer USDC from buyer to this contract
                 usdc.transferFrom(parsedOrders[i].maker, address(this), usdcAmount);
@@ -546,16 +524,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         ICTFExchange.OrderIntent calldata order,
         uint256 fillAmount
     ) internal view returns (Parsed memory) {
-        // In production, the tokenId should be the actual position ID that the user wants to trade
-        // We need to determine which question this position belongs to by checking all possible questions
-        // uint8 qIndex = _getQuestionIndexFromPositionId(order.tokenId, marketId);
-    
-        
-        // Validate price (must be <= 1)
-        if (order.order.price > ONE) {
-            revert PriceOutOfRange();
-        }
-        
         uint256 priceQ6 = order.order.price;
         uint256 payUSDC = (priceQ6 * fillAmount) / ONE;
         // the usdc amount that we need to return to the seller
@@ -584,8 +552,8 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
             side: order.side,
             tokenId: order.tokenId,
             priceQ6: priceQ6,
-            payUSDC: payUSDC,
-            usdcToReturn: usdcToReturn,
+            payAmount: payUSDC,
+            counterPayAmount: usdcToReturn,
             questionId: order.order.questionId
         });
     }
