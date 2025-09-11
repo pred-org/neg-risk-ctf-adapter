@@ -129,15 +129,18 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         uint256 takerFillAmount, 
         uint256[] calldata makerFillAmounts
     ) external nonReentrant {
-        uint256[] memory singleMakerFillAmount = new uint256[](1);
-        singleMakerFillAmount[0] = 0;
-        ICTFExchange.OrderIntent[] memory singleMakerOrder = new ICTFExchange.OrderIntent[](1);
+        // Collect all single maker orders and their fill amounts for batch processing
+        ICTFExchange.OrderIntent[] memory allSingleMakerOrders = new ICTFExchange.OrderIntent[](makerOrders.length);
+        uint256[] memory allSingleMakerFillAmounts = new uint256[](makerOrders.length);
+        uint256 singleOrderCount = 0;
+        
         for (uint256 i = 0; i < makerOrders.length;) {
             ICTFExchange.OrderIntent[] calldata makerOrder = makerOrders[i];
             if (makerOrder.length == 1) {
-                singleMakerFillAmount[0] += makerFillAmounts[i];
-                singleMakerOrder[0] = makerOrder[0];
-                // normal match
+                // Collect single maker orders for batch processing
+                allSingleMakerOrders[singleOrderCount] = makerOrder[0];
+                allSingleMakerFillAmounts[singleOrderCount] = makerFillAmounts[i];
+                singleOrderCount++;
             } else {
                 // cross match
                 if (takerOrder.order.intent == 0) {
@@ -152,7 +155,23 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
                 ++i;
             }
         }
-        ctfExchange.matchOrders(takerOrder, singleMakerOrder, takerFillAmount, singleMakerFillAmount);
+        
+        // Process all single maker orders in a single batch call
+        if (singleOrderCount > 0) {
+            // Create properly sized arrays for the batch call
+            ICTFExchange.OrderIntent[] memory batchMakerOrders = new ICTFExchange.OrderIntent[](singleOrderCount);
+            uint256[] memory batchFillAmounts = new uint256[](singleOrderCount);
+            uint256 totalTakerFillAmount = 0;
+            
+            for (uint256 i = 0; i < singleOrderCount; i++) {
+                batchMakerOrders[i] = allSingleMakerOrders[i];
+                batchFillAmounts[i] = allSingleMakerFillAmounts[i];
+                totalTakerFillAmount += allSingleMakerFillAmounts[i];
+            }
+            
+            // Single call to match all orders at once
+            ctfExchange.matchOrders(takerOrder, batchMakerOrders, totalTakerFillAmount, batchFillAmounts);
+        }
     }
 
     function crossMatchShortOrders(
@@ -160,7 +179,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         ICTFExchange.OrderIntent calldata takerOrder,
         ICTFExchange.OrderIntent[] calldata multiOrderMaker,
         uint256 fillAmount
-    ) public nonReentrant {
+    ) public {
         if (fillAmount == 0) {
             revert InvalidFillAmount();
         }
@@ -272,7 +291,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         ICTFExchange.OrderIntent calldata takerOrder,
         ICTFExchange.OrderIntent[] calldata multiOrderMaker,
         uint256 fillAmount
-    ) public nonReentrant {
+    ) public {
         if (fillAmount == 0) {
             revert InvalidFillAmount();
         }
