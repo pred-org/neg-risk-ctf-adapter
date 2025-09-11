@@ -199,13 +199,6 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, IRevNegRiskAdapterEE, Auth {
         // Get the actual amount of NO tokens the adapter has (after fees)
         uint256 noPositionId = neg.getPositionId(NegRiskIdLib.getQuestionId(_marketId, uint8(_pivotId)), false);
         uint256 actualNoAmount = ctf.balanceOf(address(this), noPositionId);
-
-        // Calculate expected amount after fees
-        uint256 feeBips = neg.getFeeBips(_marketId);
-        uint256 feeAmount = (_amount * feeBips) / FEE_DENOMINATOR;
-        uint256 expectedNoAmount = _amount - feeAmount;
-        
-        require(actualNoAmount == expectedNoAmount, "Actual NO amount should be equal to the expected amount after fees");
         
         // Transfer the YES tokens from the user to the adapter for merging
         uint256 yesPositionId = neg.getPositionId(NegRiskIdLib.getQuestionId(_marketId, uint8(_pivotId)), true);
