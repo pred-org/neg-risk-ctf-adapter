@@ -205,7 +205,8 @@ contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
         uint256 tokenId,
         uint8 side,
         uint256 makerAmount,
-        uint256 takerAmount
+        uint256 takerAmount,
+        bytes32 questionId
     ) internal pure returns (ICTFExchange.OrderIntent memory) {
         ICTFExchange.Order memory order = ICTFExchange.Order({
             salt: 1,
@@ -214,6 +215,7 @@ contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
             taker: address(0),
             price: takerAmount,
             quantity: makerAmount,
+            questionId: questionId,
             expiration: 0,
             nonce: 0,
             feeRateBps: 0,
@@ -247,16 +249,16 @@ contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
         uint256 spursNoPositionId = negRiskAdapter.getPositionId(spursQuestionId, false);
         
         // User A: Buy Arsenal No @ 0.25
-        orders[0] = _createOrderIntent(user1, arsenalNoPositionId, 0, 1e6, 0.25e6);
+        orders[0] = _createOrderIntent(user1, arsenalNoPositionId, 0, 1e6, 0.25e6, questionId);
         
         // User B: Buy Barcelona No @ 0.25
-        orders[1] = _createOrderIntent(user2, barcelonaNoPositionId, 0, 1e6, 0.25e6);
+        orders[1] = _createOrderIntent(user2, barcelonaNoPositionId, 0, 1e6, 0.25e6, barcelonaQuestionId);
         
         // User C: Buy Chelsea No @ 0.25
-        orders[2] = _createOrderIntent(user3, chelseaNoPositionId, 0, 1e6, 0.25e6);
+        orders[2] = _createOrderIntent(user3, chelseaNoPositionId, 0, 1e6, 0.25e6, chelseaQuestionId);
         
         // User D: Buy Spurs No @ 0.25
-        orders[3] = _createOrderIntent(user4, spursNoPositionId, 0, 1e6, 0.25e6);
+        orders[3] = _createOrderIntent(user4, spursNoPositionId, 0, 1e6, 0.25e6, spursQuestionId);
         
         // Total combined price: 0.25 + 0.25 + 0.25 + 0.25 = 1.0
         
@@ -289,16 +291,16 @@ contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
         ctf.setApprovalForAll(address(adapter), true);
         
         // User A: Buy Arsenal No @ 0.75
-        orders[0] = _createOrderIntent(user1, arsenalNoPositionId, 0, 1e6, 0.25e6);
+        orders[0] = _createOrderIntent(user1, arsenalNoPositionId, 0, 1e6, 0.25e6, questionId);
         
         // User B: Sell Barcelona Yes @ 0.35 (equivalent to Shorting Barcelona @ 0.65)
-        orders[1] = _createOrderIntent(user2, barcelonaYesPositionId, 1, 1e6, 0.35e6);
+        orders[1] = _createOrderIntent(user2, barcelonaYesPositionId, 1, 1e6, 0.35e6, barcelonaQuestionId);
         
         // User C: Buy Chelsea No @ 0.75
-        orders[2] = _createOrderIntent(user3, chelseaNoPositionId, 0, 1e6, 0.25e6);
+        orders[2] = _createOrderIntent(user3, chelseaNoPositionId, 0, 1e6, 0.25e6, chelseaQuestionId);
         
         // User D: Sell Spurs Yes @ 0.15 (equivalent to Shorting Spurs @ 0.85)
-        orders[3] = _createOrderIntent(user4, spursYesPositionId, 1, 1e6, 0.15e6);
+        orders[3] = _createOrderIntent(user4, spursYesPositionId, 1, 1e6, 0.15e6, spursQuestionId);
         
         // Total combined price: 0.25 + 0.35 + 0.25 + 0.15 = 1.0
         
@@ -489,10 +491,10 @@ contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
         uint256 spursNoPositionId = negRiskAdapter.getPositionId(spursQuestionId, false);
         
         // Create orders with prices that don't sum to 4.0
-        orders[0] = _createOrderIntent(user1, arsenalNoPositionId, 0, 1e6, 0.50e6);  // 0.50
-        orders[1] = _createOrderIntent(user2, barcelonaNoPositionId, 0, 1e6, 0.50e6); // 0.50
-        orders[2] = _createOrderIntent(user3, chelseaNoPositionId, 0, 1e6, 0.50e6);     // 0.50
-        orders[3] = _createOrderIntent(user4, spursNoPositionId, 0, 1e6, 0.50e6);      // 0.50
+        orders[0] = _createOrderIntent(user1, arsenalNoPositionId, 0, 1e6, 0.50e6, questionId);  // 0.50
+        orders[1] = _createOrderIntent(user2, barcelonaNoPositionId, 0, 1e6, 0.50e6, barcelonaQuestionId); // 0.50
+        orders[2] = _createOrderIntent(user3, chelseaNoPositionId, 0, 1e6, 0.50e6, chelseaQuestionId);     // 0.50
+        orders[3] = _createOrderIntent(user4, spursNoPositionId, 0, 1e6, 0.50e6, spursQuestionId);      // 0.50
         
         // Total: 0.50 + 0.50 + 0.50 + 0.50 = 2.0, but should equal 4.0 for short orders
         
@@ -507,9 +509,9 @@ contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
         
         // Create 4 questions for the 4 teams
         bytes32 arsenalQuestionId = negRiskAdapter.prepareQuestion(testMarketId, "Arsenal Win");
-        negRiskAdapter.prepareQuestion(testMarketId, "Barcelona Win");
-        negRiskAdapter.prepareQuestion(testMarketId, "Chelsea Win");
-        negRiskAdapter.prepareQuestion(testMarketId, "Spurs Win");
+        bytes32 barcelonaQuestionId = negRiskAdapter.prepareQuestion(testMarketId, "Barcelona Win");
+        bytes32 chelseaQuestionId = negRiskAdapter.prepareQuestion(testMarketId, "Chelsea Win");
+        bytes32 spursQuestionId = negRiskAdapter.prepareQuestion(testMarketId, "Spurs Win");
         
         // Resolve the Arsenal question (Arsenal wins = false)
         negRiskAdapter.reportOutcome(arsenalQuestionId, false);
@@ -517,10 +519,10 @@ contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
         // Create orders ONLY for the 3 active questions (Arsenal is resolved, so no order for it)
         // We need 3 orders total: 1 taker + 2 makers = 3 active questions
         // The prices should sum to 1.0 for the active questions: 0.35 + 0.45 + 0.20 = 1.0
-        ICTFExchange.OrderIntent memory takerOrder = _createOrderIntent(user1, negRiskAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, 1), false), 0, 1e6, 350000); // Barcelona NO at 0.35
+        ICTFExchange.OrderIntent memory takerOrder = _createOrderIntent(user1, negRiskAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, 1), false), 0, 1e6, 350000, barcelonaQuestionId); // Barcelona NO at 0.35
         ICTFExchange.OrderIntent[] memory makerOrders = new ICTFExchange.OrderIntent[](2);
-        makerOrders[0] = _createOrderIntent(user2, negRiskAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, 2), false), 0, 1e6, 450000); // Chelsea NO at 0.45
-        makerOrders[1] = _createOrderIntent(user3, negRiskAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, 3), false), 0, 1e6, 200000); // Spurs NO at 0.20
+        makerOrders[0] = _createOrderIntent(user2, negRiskAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, 2), false), 0, 1e6, 450000, chelseaQuestionId); // Chelsea NO at 0.45
+        makerOrders[1] = _createOrderIntent(user3, negRiskAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, 3), false), 0, 1e6, 200000, spursQuestionId); // Spurs NO at 0.20
         
         // Execute cross-matching with only 3 orders for the 3 active questions (Arsenal is resolved, so no order for it)
         uint256 fillAmount = 50 * 1e6;
