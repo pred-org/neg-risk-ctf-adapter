@@ -392,19 +392,17 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         neg.splitPosition(pivotConditionId, fillAmount);
         
         // STEP 2: Use convertPositions to convert NO tokens to other YES tokens
-        if (questionCount > 1) {
-            // The indexSet for convertPositions represents which NO positions we want to convert
-            // We want to convert NO tokens from the pivot question to get YES tokens for other questions
-            // So we need to provide an indexSet that represents the pivot NO position
-            uint256 indexSet = 1 << pivotId; // This represents NO position for the pivot question
-            
-            // Approve NegRiskAdapter to handle our tokens
-            ctf.setApprovalForAll(address(neg), true);
-            
-            // Convert NO tokens to YES tokens for other questions using NegRiskAdapter's convertPositions
-            // We can only convert as much as we have NO tokens from the split operation
-            neg.convertPositions(marketId, indexSet, fillAmount);
-        }
+        // The indexSet for convertPositions represents which NO positions we want to convert
+        // We want to convert NO tokens from the pivot question to get YES tokens for other questions
+        // So we need to provide an indexSet that represents the pivot NO position
+        uint256 indexSet = 1 << pivotId; // This represents NO position for the pivot question
+        
+        // Approve NegRiskAdapter to handle our tokens
+        ctf.setApprovalForAll(address(neg), true);
+        
+        // Convert NO tokens to YES tokens for other questions using NegRiskAdapter's convertPositions
+        // We can only convert as much as we have NO tokens from the split operation
+        neg.convertPositions(marketId, indexSet, fillAmount);
         
         // STEP 3: Distribute YES tokens to buyers
         _distributeYesTokens(parsedOrders, fillAmount);
@@ -447,10 +445,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         uint256 yesPositionId = neg.getPositionId(order.questionId, true);
 
         uint256 mergeAmount = fillAmount;
-        
-        // Get the user's NO token balance
-        uint256 userNoBalance = ctf.balanceOf(order.maker, noPositionId);
-        require(userNoBalance >= mergeAmount, "User doesn't have enough NO tokens to sell");
         
         // Transfer NO tokens from user to adapter
         ctf.safeTransferFrom(
@@ -502,7 +496,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
                     fillAmount,
                     ""
                 );
-                
+
                 // No YES tokens are left in the adapter
             }
         }
