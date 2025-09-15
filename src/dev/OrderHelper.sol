@@ -38,13 +38,13 @@ contract OrderHelper is Script {
         // Calculate price: for BUY orders, price = (takerAmount * ONE_SIX) / makerAmount
         // This ensures that makerAmount = (price * fillAmount) / ONE_SIX
         uint256 price;
-        uint256 fillAmount;
+        uint256 quantity;
         if (_side == Side.BUY) {
-            price = (_takerAmount * 1e6) / _makerAmount;
-            fillAmount = _makerAmount;
-        } else {
             price = (_makerAmount * 1e6) / _takerAmount;
-            fillAmount = _takerAmount;
+            quantity = _takerAmount;
+        } else {
+            price = (_takerAmount * 1e6) / _makerAmount;
+            quantity = _makerAmount;
         }
         
         ICTFExchange.Order memory order = ICTFExchange.Order({
@@ -53,7 +53,7 @@ contract OrderHelper is Script {
             maker: _maker,
             taker: address(0),
             price: price,
-            quantity: fillAmount, // This should be the amount of tokens to receive
+            quantity: quantity, // This should be the amount of tokens to receive
             expiration: 0,
             nonce: 0,
             questionId: bytes32(0),
