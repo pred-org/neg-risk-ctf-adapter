@@ -2,13 +2,15 @@
 pragma solidity ^0.8.19;
 
 import {Test, console} from "forge-std/Test.sol";
-import {CrossMatchingAdapter, ICTFExchange} from "src/CrossMatchingAdapter.sol";
+import {CrossMatchingAdapter} from "src/CrossMatchingAdapter.sol";
 import {NegRiskAdapter} from "src/NegRiskAdapter.sol";
 import {RevNegRiskAdapter} from "src/RevNegRiskAdapter.sol";
 import {IRevNegRiskAdapter} from "src/interfaces/IRevNegRiskAdapter.sol";
 import {IConditionalTokens} from "src/interfaces/IConditionalTokens.sol";
 import {IERC20} from "openzeppelin-contracts/token/ERC20/IERC20.sol";
 import {INegRiskAdapter} from "src/interfaces/INegRiskAdapter.sol";
+import {ICTFExchange} from "src/interfaces/ICTFExchange.sol";
+
 import {Deployer} from "lib/ctf-exchange/src/dev/util/Deployer.sol";
 import {TestHelper} from "lib/ctf-exchange/src/dev/TestHelper.sol";
 
@@ -165,14 +167,14 @@ contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
             nonce: 0,
             feeRateBps: 0,
             questionId: questionIdParam,
-            intent: intent,
-            signatureType: 0,
+            intent: ICTFExchange.Intent(intent),
+            signatureType: ICTFExchange.SignatureType.EOA,
             signature: new bytes(0)
         });
         
         return ICTFExchange.OrderIntent({
             tokenId: tokenId,
-            side: side,
+            side: ICTFExchange.Side(side),
             makerAmount: makerAmount,
             takerAmount: takerAmount,
             order: order

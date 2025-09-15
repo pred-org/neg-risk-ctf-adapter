@@ -2,7 +2,7 @@
 pragma solidity ^0.8.15;
 
 import {Test, console} from "forge-std/Test.sol";
-import {CrossMatchingAdapter, ICTFExchange} from "src/CrossMatchingAdapter.sol";
+import {CrossMatchingAdapter} from "src/CrossMatchingAdapter.sol";
 import {NegRiskAdapter} from "src/NegRiskAdapter.sol";
 import {RevNegRiskAdapter} from "src/RevNegRiskAdapter.sol";
 import {IRevNegRiskAdapter} from "src/interfaces/IRevNegRiskAdapter.sol";
@@ -13,7 +13,7 @@ import {INegRiskAdapter} from "src/interfaces/INegRiskAdapter.sol";
 import {Deployer} from "lib/ctf-exchange/src/dev/util/Deployer.sol";
 import {TestHelper} from "lib/ctf-exchange/src/dev/TestHelper.sol";
 import {NegRiskIdLib} from "src/libraries/NegRiskIdLib.sol";
-
+import {ICTFExchange} from "src/interfaces/ICTFExchange.sol";
 contract MockCTFExchange {
     function matchOrders(
         ICTFExchange.OrderIntent memory takerOrder,
@@ -208,14 +208,14 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
             nonce: 0,
             feeRateBps: 0,
             questionId: questionId,
-            intent: 0, // LONG
-            signatureType: 0,
+            intent: ICTFExchange.Intent.LONG,
+            signatureType: ICTFExchange.SignatureType.EOA,
             signature: new bytes(0)
         });
         
         return ICTFExchange.OrderIntent({
             tokenId: tokenId,
-            side: side,
+            side: ICTFExchange.Side(side),
             makerAmount: makerAmount,
             takerAmount: takerAmount,
             order: order

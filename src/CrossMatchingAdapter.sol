@@ -11,7 +11,7 @@ import {IRevNegRiskAdapter} from "./interfaces/IRevNegRiskAdapter.sol";
 import {WrappedCollateral} from "src/WrappedCollateral.sol";
 import {NegRiskIdLib} from "./libraries/NegRiskIdLib.sol";
 
-import {console2} from "forge-std/console2.sol";
+import {ICTFExchange} from "src/interfaces/ICTFExchange.sol";
 
 /*
  * Cross-matching adapter for NegRisk events.
@@ -25,42 +25,6 @@ import {console2} from "forge-std/console2.sol";
  *
  * Uses pivot index 0 (no external field) via neg.getQuestionId(marketId, 0).
  */
-
-interface ICTFExchange {
-    struct OrderIntent {
-      /// @notice Token Id of the CTF ERC1155 asset to be bought or sold
-      /// If BUY, this is the tokenId of the asset to be bought, i.e the makerAssetId
-      /// If SELL, this is the tokenId of the asset to be sold, i.e the takerAssetId
-      uint256 tokenId;
-      /// @notice The side of the order: BUY or SELL
-      uint8 side; // 0 = BUY, 1 = SELL
-      uint256 makerAmount;
-      uint256 takerAmount;
-      Order order;
-    }
-    struct Order {
-        uint256 salt;
-        address maker;       // funder (USDC for BUY, NO for SELL)
-        address signer;
-        address taker;       // unused here
-        uint256 price;       // USDC per share (fixed-point 6 decimals)
-        uint256 quantity;    // number of shares to trade
-        uint256 expiration;
-        uint256 nonce;
-        uint256 feeRateBps;
-        bytes32 questionId;
-        uint8   intent; // 0 = LONG, 1 = SHORT
-        uint8   signatureType;
-        bytes   signature;
-    }
-
-    function matchOrders(
-        OrderIntent memory takerOrder,
-        OrderIntent[] memory makerOrders,
-        uint256 takerFillAmount,
-        uint256[] memory makerFillAmounts
-    ) external;
-}
 
 contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
     // constants
@@ -144,7 +108,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
                 singleOrderIndex++;
             } else {
                 // cross match
-                if (takerOrder.order.intent == 0) {
+                if (takerOrder.order.intent == ICTFExchange.Intent.LONG) {
                     // LONG
                     crossMatchLongOrders(marketId, takerOrder, makerOrder, makerFillAmounts[i]);
                 } else {
@@ -525,14 +489,14 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
 
         // token side
         bool isYes = true;
-        if (order.order.intent == 0) {
-            if (order.side == SIDE_BUY) {
+        if (order.order.intent == ICTFExchange.Intent.LONG) {
+            if (order.side == ICTFExchange.Side.BUY) {
                 isYes = true;
             } else {
                 isYes = false;
             }
         } else {
-            if (order.side == SIDE_SELL) {
+            if (order.side == ICTFExchange.Side.SELL) {
                 isYes = true;
             } else {
                 isYes = false;
@@ -543,7 +507,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
 
         return Parsed({
             maker: order.order.maker,
-            side: order.side,
+            side: uint8(order.side),
             tokenId: order.tokenId,
             priceQ6: priceQ6,
             payAmount: payUSDC,

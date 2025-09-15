@@ -20,6 +20,35 @@ contract NegRiskCtfExchange_Test is NegRiskCtfExchangeTestHelper {
         ICTFExchange(negRiskCtfExchange).registerToken(yesPositionId, noPositionId, conditionId);
     }
 
+    function _convertOrderToOrderIntent(ICTFExchange.Order memory order, uint256 tokenId, uint8 side, uint256 fillAmount) 
+        internal 
+        pure 
+        returns (ICTFExchange.OrderIntent memory) 
+    {
+        uint256 makerAmount;
+        uint256 takerAmount;
+        
+        if (side == uint8(ICTFExchange.Side.BUY)) {
+            // For BUY orders: validation expects makerAmount = (order.price * fillAmount) / ONE_SIX
+            // and takerAmount = fillAmount
+            takerAmount = (order.price * fillAmount) / 1e6; // (price * fillAmount) / ONE_SIX
+            makerAmount = fillAmount; // Payment amount
+        } else {
+            // For SELL orders: validation expects takerAmount = (order.price * fillAmount) / ONE_SIX
+            // and makerAmount = fillAmount
+            takerAmount = fillAmount; // (price * fillAmount) / ONE_SIX
+            makerAmount = (order.price * fillAmount) / 1e6; // Payment amount
+        }
+        
+        return ICTFExchange.OrderIntent({
+            tokenId: tokenId,
+            side: ICTFExchange.Side(side),
+            makerAmount: makerAmount,
+            takerAmount: takerAmount,
+            order: order
+        });
+    }
+
     function test_NegRiskCtfExchange_fillOrderBuy() public {
         uint256 USDC_AMOUNT = 50_000_000;
         uint256 TOKEN_AMOUNT = 100_000_000;
@@ -63,7 +92,11 @@ contract NegRiskCtfExchange_Test is NegRiskCtfExchangeTestHelper {
 
         // -- FILL ORDER
         vm.prank(operator.addr);
-        ICTFExchange(negRiskCtfExchange).fillOrder(order, USDC_AMOUNT);
+        ICTFExchange.OrderIntent memory orderIntent = _convertOrderToOrderIntent(order, yesPositionId, uint8(Side.BUY), USDC_AMOUNT);
+        require(orderIntent.makerAmount == USDC_AMOUNT, "Incorrect maker amount");
+        require(orderIntent.takerAmount == TOKEN_AMOUNT, "Incorrect taker amount");
+
+        ICTFExchange(negRiskCtfExchange).fillOrder(orderIntent, USDC_AMOUNT); // Use makerAmount as fill amount
 
         // after
         assertEq(IConditionalTokens(ctf).balanceOf(alice.addr, yesPositionId), TOKEN_AMOUNT);
@@ -116,7 +149,8 @@ contract NegRiskCtfExchange_Test is NegRiskCtfExchangeTestHelper {
 
         // -- FILL ORDER
         vm.prank(operator.addr);
-        ICTFExchange(negRiskCtfExchange).fillOrder(order, TOKEN_AMOUNT);
+        ICTFExchange.OrderIntent memory orderIntent = _convertOrderToOrderIntent(order, yesPositionId, uint8(Side.BUY), TOKEN_AMOUNT);
+        ICTFExchange(negRiskCtfExchange).fillOrder(orderIntent, TOKEN_AMOUNT);
 
         // after
         assertEq(IConditionalTokens(ctf).balanceOf(alice.addr, yesPositionId), 0);
@@ -172,12 +206,12 @@ contract NegRiskCtfExchange_Test is NegRiskCtfExchangeTestHelper {
         });
 
         // takerOrder + takerFillAmount
-        ICTFExchange.Order memory takerOrder = aliceOrder;
+        ICTFExchange.OrderIntent memory takerOrder = _convertOrderToOrderIntent(aliceOrder, yesPositionId, uint8(Side.BUY), USDC_AMOUNT);
         uint256 takerFillAmount = USDC_AMOUNT;
 
         // makerOrders + makerFillAmounts
-        ICTFExchange.Order[] memory makerOrders = new ICTFExchange.Order[](1);
-        makerOrders[0] = brianOrder;
+        ICTFExchange.OrderIntent[] memory makerOrders = new ICTFExchange.OrderIntent[](1);
+        makerOrders[0] = _convertOrderToOrderIntent(brianOrder, yesPositionId, uint8(Side.SELL), TOKEN_AMOUNT);
         uint256[] memory makerFillAmounts = new uint256[](1);
         makerFillAmounts[0] = TOKEN_AMOUNT;
 
@@ -246,12 +280,12 @@ contract NegRiskCtfExchange_Test is NegRiskCtfExchangeTestHelper {
         });
 
         // takerOrder + takerFillAmount
-        ICTFExchange.Order memory takerOrder = brianOrder;
+        ICTFExchange.OrderIntent memory takerOrder = _convertOrderToOrderIntent(brianOrder, yesPositionId, uint8(Side.SELL), TOKEN_AMOUNT);
         uint256 takerFillAmount = TOKEN_AMOUNT;
 
         // makerOrders + makerFillAmounts
-        ICTFExchange.Order[] memory makerOrders = new ICTFExchange.Order[](1);
-        makerOrders[0] = aliceOrder;
+        ICTFExchange.OrderIntent[] memory makerOrders = new ICTFExchange.OrderIntent[](1);
+        makerOrders[0] = _convertOrderToOrderIntent(aliceOrder, yesPositionId, uint8(Side.BUY), USDC_AMOUNT);
         uint256[] memory makerFillAmounts = new uint256[](1);
         makerFillAmounts[0] = USDC_AMOUNT;
 
@@ -308,11 +342,11 @@ contract NegRiskCtfExchange_Test is NegRiskCtfExchangeTestHelper {
             _side: Side.BUY
         });
 
-        ICTFExchange.Order memory takerOrder = aliceOrder;
+        ICTFExchange.OrderIntent memory takerOrder = _convertOrderToOrderIntent(aliceOrder, yesPositionId, uint8(Side.BUY), USDC_AMOUNT);
         uint256 takerFillAmount = USDC_AMOUNT;
 
-        ICTFExchange.Order[] memory makerOrders = new ICTFExchange.Order[](1);
-        makerOrders[0] = brianOrder;
+        ICTFExchange.OrderIntent[] memory makerOrders = new ICTFExchange.OrderIntent[](1);
+        makerOrders[0] = _convertOrderToOrderIntent(brianOrder, yesPositionId, uint8(Side.SELL), TOKEN_AMOUNT);
         uint256[] memory makerFillAmounts = new uint256[](1);
         makerFillAmounts[0] = USDC_AMOUNT;
 
@@ -385,12 +419,12 @@ contract NegRiskCtfExchange_Test is NegRiskCtfExchangeTestHelper {
         });
 
         // takerOrder + takerFillAmount
-        ICTFExchange.Order memory takerOrder = aliceOrder;
+        ICTFExchange.OrderIntent memory takerOrder = _convertOrderToOrderIntent(aliceOrder, yesPositionId, uint8(Side.BUY), USDC_AMOUNT);
         uint256 takerFillAmount = TOKEN_AMOUNT;
 
         // makerOrders + makerFillAmounts
-        ICTFExchange.Order[] memory makerOrders = new ICTFExchange.Order[](1);
-        makerOrders[0] = brianOrder;
+        ICTFExchange.OrderIntent[] memory makerOrders = new ICTFExchange.OrderIntent[](1);
+        makerOrders[0] = _convertOrderToOrderIntent(brianOrder, yesPositionId, uint8(Side.SELL), TOKEN_AMOUNT);
         uint256[] memory makerFillAmounts = new uint256[](1);
         makerFillAmounts[0] = TOKEN_AMOUNT;
 
