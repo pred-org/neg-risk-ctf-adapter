@@ -138,6 +138,14 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
             revert InvalidFillAmount();
         }
 
+        // Validate taker order signature and parameters
+        ctfExchange.validateOrder(takerOrder);
+
+        // Validate all maker orders signatures and parameters
+        for (uint256 i = 0; i < multiOrderMaker.length; i++) {
+            ctfExchange.validateOrder(multiOrderMaker[i]);
+        }
+
         Parsed[] memory parsedOrders = new Parsed[](multiOrderMaker.length + 1);
         uint256 totalBuyUSDC = 0;
         uint256 totalSellUSDC = 0;
@@ -247,6 +255,14 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
     ) public {
         if (fillAmount == 0) {
             revert InvalidFillAmount();
+        }
+
+        // Validate taker order signature and parameters
+        ctfExchange.validateOrder(takerOrder);
+
+        // Validate all maker orders signatures and parameters
+        for (uint256 i = 0; i < multiOrderMaker.length; i++) {
+            ctfExchange.validateOrder(multiOrderMaker[i]);
         }
 
         // Cross-matching function that handles scenarios including resolved questions:

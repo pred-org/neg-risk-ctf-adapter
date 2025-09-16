@@ -10,6 +10,7 @@ import {IConditionalTokens} from "src/interfaces/IConditionalTokens.sol";
 import {IERC20} from "openzeppelin-contracts/token/ERC20/IERC20.sol";
 import {INegRiskAdapter} from "src/interfaces/INegRiskAdapter.sol";
 import {ICTFExchange} from "src/interfaces/ICTFExchange.sol";
+import {Side, SignatureType} from "lib/ctf-exchange/src/exchange/libraries/OrderStructs.sol";
 
 import {Deployer} from "lib/ctf-exchange/src/dev/util/Deployer.sol";
 import {TestHelper} from "lib/ctf-exchange/src/dev/TestHelper.sol";
@@ -62,6 +63,16 @@ contract MockCTFExchange {
     function getLastMakerFillAmounts() external view returns (uint256[] memory) {
         return lastMakerFillAmounts;
     }
+    
+    function hashOrder(ICTFExchange.Order memory order) external pure returns (bytes32) {
+        return keccak256(abi.encode(order));
+    }
+    
+    function validateOrder(ICTFExchange.OrderIntent memory orderIntent) external pure {
+        // Mock validation - always passes
+        require(orderIntent.order.maker != address(0), "Invalid maker");
+        require(orderIntent.order.signer != address(0), "Invalid signer");
+    }
 }
 
 contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
@@ -78,6 +89,12 @@ contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
     address public user2;
     address public user3;
     address public user4;
+    
+    // Private keys for signing
+    uint256 internal user1PK = 0x1111;
+    uint256 internal user2PK = 0x2222;
+    uint256 internal user3PK = 0x3333;
+    uint256 internal user4PK = 0x4444;
 
     // Market and question IDs
     bytes32 public marketId;
@@ -120,10 +137,10 @@ contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
         vm.stopPrank();
 
         // Set up test users
-        user1 = address(0x1111);
-        user2 = address(0x2222);
-        user3 = address(0x3333);
-        user4 = address(0x4444);
+        user1 = vm.addr(user1PK);
+        user2 = vm.addr(user2PK);
+        user3 = vm.addr(user3PK);
+        user4 = vm.addr(user4PK);
         vm.label(user1, "User1");
         vm.label(user2, "User2");
         vm.label(user3, "User3");
@@ -180,6 +197,53 @@ contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
             order: order
         });
     }
+    
+    function _createAndSignOrder(
+        address maker,
+        uint256 tokenId,
+        uint8 side,
+        uint256 makerAmount,
+        uint256 takerAmount,
+        bytes32 questionIdParam,
+        uint8 intent,
+        uint256 privateKey
+    ) internal returns (ICTFExchange.OrderIntent memory) {
+        // For hybrid orders, the price calculation follows the same pattern as the original
+        // price = takerAmount, quantity = makerAmount
+        uint256 price = takerAmount;
+        uint256 quantity = makerAmount;
+        
+        ICTFExchange.Order memory order = ICTFExchange.Order({
+            salt: 1,
+            signer: maker,
+            maker: maker,
+            taker: address(0),
+            price: price,
+            quantity: quantity,
+            expiration: 0,
+            nonce: 0,
+            feeRateBps: 0,
+            questionId: questionIdParam,
+            intent: ICTFExchange.Intent(intent),
+            signatureType: ICTFExchange.SignatureType.EOA,
+            signature: new bytes(0)
+        });
+        
+        order.signature = _signMessage(privateKey, ctfExchange.hashOrder(order));
+        
+        return ICTFExchange.OrderIntent({
+            tokenId: tokenId,
+            side: ICTFExchange.Side(side),
+            makerAmount: makerAmount,
+            takerAmount: takerAmount,
+            order: order
+        });
+    }
+    
+    function _signMessage(uint256 pk, bytes32 message) internal pure returns (bytes memory sig) {
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, message);
+        sig = abi.encodePacked(r, s, v);
+    }
 
     function test_HybridMatchOrders_AllSingleOrders() public {
         console.log("=== Testing Hybrid Match Orders: All Single Orders ===");
@@ -200,15 +264,15 @@ contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
         
         // Create single maker orders
         makerOrders[0] = new ICTFExchange.OrderIntent[](1);
-        makerOrders[0][0] = _createOrderIntent(user2, yes1PositionId, 0, 1e6, 0.75e6, question1Id, 0);
+        makerOrders[0][0] = _createAndSignOrder(user2, yes1PositionId, 0, 1e6, 0.75e6, question1Id, 0, user2PK);
         makerFillAmounts[0] = 30 * 1e6;
         
         makerOrders[1] = new ICTFExchange.OrderIntent[](1);
-        makerOrders[1][0] = _createOrderIntent(user3, yes2PositionId, 0, 1e6, 0.75e6, question2Id, 0);
+        makerOrders[1][0] = _createAndSignOrder(user3, yes2PositionId, 0, 1e6, 0.75e6, question2Id, 0, user3PK);
         makerFillAmounts[1] = 70 * 1e6;
         
         // Create taker order
-        ICTFExchange.OrderIntent memory takerOrder = _createOrderIntent(user1, yesPositionId, 0, 1e6, 0.25e6, questionId, 0);
+        ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionId, 0, 1e6, 0.25e6, questionId, 0, user1PK);
         uint256 takerFillAmount = 100 * 1e6;
         
         // Execute hybrid match orders (2 single orders)
@@ -252,12 +316,12 @@ contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
         
         // Create cross-match maker order (with 2 orders)
         makerOrders[0] = new ICTFExchange.OrderIntent[](2);
-        makerOrders[0][0] = _createOrderIntent(user2, yes1PositionId, 0, 1e6, 0.35e6, question1Id, 0);
-        makerOrders[0][1] = _createOrderIntent(user3, yes2PositionId, 0, 1e6, 0.5e6, question2Id, 0);
+        makerOrders[0][0] = _createAndSignOrder(user2, yes1PositionId, 0, 1e6, 0.35e6, question1Id, 0, user2PK);
+        makerOrders[0][1] = _createAndSignOrder(user3, yes2PositionId, 0, 1e6, 0.5e6, question2Id, 0, user3PK);
         makerFillAmounts[0] = 100 * 1e6;
         
         // Create taker order
-        ICTFExchange.OrderIntent memory takerOrder = _createOrderIntent(user1, yesPositionId, 0, 1e6, 0.15e6, questionId, 0);
+        ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionId, 0, 1e6, 0.15e6, questionId, 0, user1PK);
         uint256 takerFillAmount = 100 * 1e6;
         
         // Execute hybrid match orders (0 single orders, all cross-match)
@@ -290,17 +354,17 @@ contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
         
         // First maker order: Single order
         makerOrders[0] = new ICTFExchange.OrderIntent[](1);
-        makerOrders[0][0] = _createOrderIntent(user2, yes1PositionId, 0, 1e6, 0.6e6, question1Id, 0);
+        makerOrders[0][0] = _createAndSignOrder(user2, yes1PositionId, 0, 1e6, 0.6e6, question1Id, 0, user2PK);
         makerFillAmounts[0] = 40 * 1e6;
         
         // Second maker order: Cross-match order (2 orders)
         makerOrders[1] = new ICTFExchange.OrderIntent[](2);
-        makerOrders[1][0] = _createOrderIntent(user3, yes2PositionId, 0, 1e6, 0.25e6, question2Id, 0);
-        makerOrders[1][1] = _createOrderIntent(user4, yes3PositionId, 0, 1e6, 0.35e6, question3Id, 0);
+        makerOrders[1][0] = _createAndSignOrder(user3, yes2PositionId, 0, 1e6, 0.25e6, question2Id, 0, user3PK);
+        makerOrders[1][1] = _createAndSignOrder(user4, yes3PositionId, 0, 1e6, 0.35e6, question3Id, 0, user4PK);
         makerFillAmounts[1] = 60 * 1e6;
         
         // Create taker order
-        ICTFExchange.OrderIntent memory takerOrder = _createOrderIntent(user1, yesPositionId, 0, 1e6, 0.4e6, questionId, 0);
+        ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionId, 0, 1e6, 0.4e6, questionId, 0, user1PK);
         uint256 takerFillAmount = 100 * 1e6;
         
         // Execute hybrid match orders (1 single order, 1 cross-match)
@@ -339,12 +403,12 @@ contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
         
         // Create cross-match maker order (with 2 orders)
         makerOrders[0] = new ICTFExchange.OrderIntent[](2);
-        makerOrders[0][0] = _createOrderIntent(user2, yes1PositionId, 0, 1e6, 0.4e6, question1Id, 0);
-        makerOrders[0][1] = _createOrderIntent(user3, yes2PositionId, 0, 1e6, 0.4e6, question2Id, 0);
+        makerOrders[0][0] = _createAndSignOrder(user2, yes1PositionId, 0, 1e6, 0.4e6, question1Id, 0, user2PK);
+        makerOrders[0][1] = _createAndSignOrder(user3, yes2PositionId, 0, 1e6, 0.4e6, question2Id, 0, user3PK);
         makerFillAmounts[0] = 100 * 1e6;
         
         // Create taker order
-        ICTFExchange.OrderIntent memory takerOrder = _createOrderIntent(user1, yesPositionId, 0, 1e6, 0.2e6, questionId, 0);
+        ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionId, 0, 1e6, 0.2e6, questionId, 0, user1PK);
         uint256 takerFillAmount = 100 * 1e6;
         
         // Execute with 0 single orders (correct count)
