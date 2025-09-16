@@ -150,11 +150,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         uint256 totalBuyUSDC = 0;
         uint256 totalSellUSDC = 0;
         uint256 totalCombinedPrice = 0;
-
-        // Check that we have orders for at least some questions in the market
-        // The function can handle cases where some questions are already resolved
-        uint256 questionCount = neg.getQuestionCount(marketId);
-        require(multiOrderMaker.length + 1 <= questionCount, "Cannot have more orders than questions in the market");
         
         // Parse taker order
         parsedOrders[0] = _parseOrder(takerOrder, fillAmount);
@@ -217,7 +212,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         }
 
         // Merge all the YES tokens to get USDC
-        require(ctf.balanceOf(address(this), neg.getPositionId(parsedOrders[0].questionId, true)) == fillAmount, "YES tokens should be at the target yes position");
         uint8 pivotIndex = _getQuestionIndexFromPositionId(parsedOrders[0].tokenId, marketId);
         revNeg.mergeAllYesTokens(marketId, fillAmount, pivotIndex);
 
@@ -289,11 +283,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         // - Only process orders for active (unresolved) questions
         // - Use taker's question ID as pivot instead of hardcoded 0
         // - Handle USDC flow correctly for partial market scenarios
-        
-        // Check that we have orders for at least some questions in the market
-        // The function can handle cases where some questions are already resolved
-        uint256 questionCount = neg.getQuestionCount(marketId);
-        require(multiOrderMaker.length + 1 <= questionCount, "Cannot have more orders than questions in the market");
         
         Parsed[] memory parsedOrders = new Parsed[](multiOrderMaker.length + 1);
         uint256 totalSellUSDC = 0;
@@ -422,7 +411,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         
         require(order.side == SIDE_SELL, "Order must be a sell order");
         uint256 noPositionId = order.tokenId;
-        uint256 yesPositionId = neg.getPositionId(order.questionId, true);
 
         uint256 mergeAmount = fillAmount;
         
@@ -434,10 +422,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
             mergeAmount,
             ""
         );
-        
-        // Check if adapter has enough YES tokens for this question
-        uint256 adapterYesBalance = ctf.balanceOf(address(this), yesPositionId);
-        require(adapterYesBalance >= order.counterPayAmount, "Adapter doesn't have enough YES tokens for merge");
         
         // Get the condition ID for this question from the NegRiskAdapter
         bytes32 conditionId = neg.getConditionId(order.questionId);
@@ -518,8 +502,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
                 isYes = false;
             }
         }
-        uint256 positionId = neg.getPositionId(order.order.questionId, isYes);
-        require(positionId == order.tokenId, "Question ID mismatch");
 
         return Parsed({
             maker: order.order.maker,
