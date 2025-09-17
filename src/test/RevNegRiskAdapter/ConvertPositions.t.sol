@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.15;
 
-import {console, RevNegRiskAdapter_SetUp} from "src/test/RevNegRiskAdapter/RevNegRiskAdapterSetUp.sol";
+import {console, RevNegRiskAdapter_SetUp} from "src/test/RevNegRiskAdapter/RevNegRiskAdapterSetUp.t.sol";
 import {NegRiskIdLib} from "src/libraries/NegRiskIdLib.sol";
 
 contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
@@ -13,37 +13,41 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
         // prepare market
         vm.prank(oracle);
-        marketId = revAdapter.prepareMarket(_feeBips, data);
+        marketId = nrAdapter.prepareMarket(_feeBips, data);
 
         uint8 i = 0;
 
         // prepare questions and split initial liquidity to alice
         while (i < _questionCount) {
             vm.prank(oracle);
-            bytes32 questionId = revAdapter.prepareQuestion(marketId, data);
-            bytes32 conditionId = revAdapter.getConditionId(questionId);
+            bytes32 questionId = nrAdapter.prepareQuestion(marketId, data);
+            bytes32 conditionId = nrAdapter.getConditionId(questionId);
 
             // split position to alice
             vm.startPrank(alice);
             usdc.mint(alice, _amount);
-            usdc.approve(address(revAdapter), _amount);
-            revAdapter.splitPosition(conditionId, _amount);
+            usdc.approve(address(nrAdapter), _amount);
+            nrAdapter.splitPosition(conditionId, _amount);
             vm.stopPrank();
 
             ++i;
         }
 
-        assertEq(revAdapter.getQuestionCount(marketId), _questionCount);
+        assertEq(nrAdapter.getQuestionCount(marketId), _questionCount);
 
-        // send YES positions to brian for ALL questions (except target)
-        // The convertPositions function will burn the target YES position
+        // Give Brian USDC for the reverse conversion operation
+        // vm.prank(brian);
+        // usdc.mint(brian, _amount);
+
+        // send YES positions to brian for ALL questions
+        // The convertPositions function will burn all YES positions
         {
             i = 0;
 
             while (i < _questionCount) {
-                if (i != _targetIndex){
-                uint256 positionId = revAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, i), true);
-                ctf.balanceOf(alice, positionId);
+                if (i != _targetIndex) {
+                    uint256 positionId = nrAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, i), true);
+                    ctf.balanceOf(alice, positionId);
                     vm.prank(alice);
                     ctf.safeTransferFrom(alice, brian, positionId, _amount, "");
                     assertEq(ctf.balanceOf(brian, positionId), _amount);
@@ -65,30 +69,30 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
             while (i < _questionCount) {
                 if (i != _targetIndex) {
                     // YES positions should be gone from brian
-                    uint256 yesPositionId = revAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, i), true);
-                    uint256 noPositionId = revAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, i), false);
+                    uint256 yesPositionId = nrAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, i), true);
+                    uint256 noPositionId = nrAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, i), false);
 
                     // brian has no more of the yes tokens
-                    assertEq(ctf.balanceOf(brian, yesPositionId), 0);
+                    assertEq(ctf.balanceOf(brian, yesPositionId), 0, "Brian yes tokens should be 0");
                     // they are all at the yes token burn address
-                    assertEq(ctf.balanceOf(revAdapter.YES_TOKEN_BURN_ADDRESS(), yesPositionId), _amount);
+                    assertEq(ctf.balanceOf(revAdapter.getYesTokenBurnAddress(), yesPositionId), _amount, "Yes tokens should be at the yes token burn address");
                     // rev adapter should have no conditional tokens
-                    assertEq(ctf.balanceOf(address(revAdapter), yesPositionId), 0);
-                    assertEq(ctf.balanceOf(address(revAdapter), noPositionId), 0);
+                    assertEq(ctf.balanceOf(address(revAdapter), yesPositionId), 0, "Yes tokens should be 0");
+                    assertEq(ctf.balanceOf(address(revAdapter), noPositionId), 0, "No tokens should be 0");
                     ++yesPositionsCount;
                 } else {
                     // Target NO position
-                    uint256 targetYesPositionId = revAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, i), true);
-                    uint256 targetNoPositionId = revAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, i), false);
+                    uint256 targetYesPositionId = nrAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, i), true);
+                    uint256 targetNoPositionId = nrAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, i), false);
 
                     // brian should have the NO token, after fees
-                    assertEq(ctf.balanceOf(brian, targetNoPositionId), amountOut);
+                    assertEq(ctf.balanceOf(brian, targetNoPositionId), amountOut, "Brian no tokens should be at the target no position");
                     // vault has the rest of no tokens as fees
-                    assertEq(ctf.balanceOf(vault, targetNoPositionId), feeAmount);
+                    assertEq(ctf.balanceOf(vault, targetNoPositionId), feeAmount, "Vault no tokens should be at the target no position");
                     // User's target YES tokens are burned (not kept)
-                    assertEq(ctf.balanceOf(brian, targetYesPositionId), 0);
+                    assertEq(ctf.balanceOf(brian, targetYesPositionId), 0, "Brian yes tokens should be 0");
                     // The target YES position gets burned from split
-                    assertEq(ctf.balanceOf(revAdapter.YES_TOKEN_BURN_ADDRESS(), targetYesPositionId), _amount);
+                    assertEq(ctf.balanceOf(revAdapter.getYesTokenBurnAddress(), targetYesPositionId), _amount, "Yes tokens should be at the yes token burn address");
                     // rev adapter should have no conditional tokens
                     assertEq(ctf.balanceOf(address(revAdapter), targetYesPositionId), 0);
                     assertEq(ctf.balanceOf(address(revAdapter), targetNoPositionId), 0);
@@ -99,12 +103,12 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
             assertEq(yesPositionsCount + 1, _questionCount);
 
             // brian should have no USDC (no collateral is returned in reverse conversion)
-            assertEq(usdc.balanceOf(brian), 0);
+            assertEq(usdc.balanceOf(brian), 0, "Brian USDC should be 0");
 
             // The CTF WCOL balance is affected by the convertPositions operations
             // We can't predict the exact final balance due to the complex operations
             // Just verify that the adapter has no WCOL left (which it does)
-            assertEq(wcol.balanceOf(address(revAdapter)), 0);
+            assertEq(wcol.balanceOf(address(revAdapter)), 0, "WCOL balance should be 0");
         }
     }
 
@@ -119,6 +123,11 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
         _before(_questionCount, _feeBips, _targetIndex, _amount);
 
+        // Give Brian approval for the reverse conversion (USDC already minted in _before)
+        vm.startPrank(brian);
+        usdc.approve(address(revAdapter), _amount);
+        ctf.setApprovalForAll(address(revAdapter), true);
+
         // convert positions
         {
             vm.startPrank(brian);
@@ -126,7 +135,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
             vm.expectEmit();
             emit PositionsConverted(brian, marketId, _targetIndex, _amount);
-            revAdapter.convertPositions(marketId, _targetIndex, _amount);
+            revAdapter.convertPositions(marketId, _targetIndex, _amount, brian);
         }
 
         _after(_questionCount, _feeBips, _targetIndex, _amount);
@@ -141,6 +150,11 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
         _before(_questionCount, _feeBips, _targetIndex, _amount);
 
+        // Give Brian approval for the reverse conversion (USDC already minted in _before)
+        vm.startPrank(brian);
+        usdc.approve(address(revAdapter), _amount);
+        ctf.setApprovalForAll(address(revAdapter), true);
+
         // convert positions
         {
             vm.startPrank(brian);
@@ -148,7 +162,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
             vm.expectEmit();
             emit PositionsConverted(brian, marketId, _targetIndex, _amount);
-            revAdapter.convertPositions(marketId, _targetIndex, _amount);
+            revAdapter.convertPositions(marketId, _targetIndex, _amount, brian);
         }
 
         _after(_questionCount, _feeBips, _targetIndex, _amount);
@@ -163,6 +177,11 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
         _before(_questionCount, _feeBips, _targetIndex, _amount);
 
+        // Give Brian approval for the reverse conversion (USDC already minted in _before)
+        vm.startPrank(brian);
+        usdc.approve(address(revAdapter), _amount);
+        ctf.setApprovalForAll(address(revAdapter), true);
+
         // convert positions
         {
             vm.startPrank(brian);
@@ -170,7 +189,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
             vm.expectEmit();
             emit PositionsConverted(brian, marketId, _targetIndex, _amount);
-            revAdapter.convertPositions(marketId, _targetIndex, _amount);
+            revAdapter.convertPositions(marketId, _targetIndex, _amount, brian);
         }
 
         _after(_questionCount, _feeBips, _targetIndex, _amount);
@@ -185,6 +204,11 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
         _before(_questionCount, _feeBips, _targetIndex, _amount);
 
+        // Give Brian approval for the reverse conversion (USDC already minted in _before)
+        vm.startPrank(brian);
+        usdc.approve(address(revAdapter), _amount);
+        ctf.setApprovalForAll(address(revAdapter), true);
+
         // convert positions
         {
             vm.startPrank(brian);
@@ -192,7 +216,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
             vm.expectEmit();
             emit PositionsConverted(brian, marketId, _targetIndex, _amount);
-            revAdapter.convertPositions(marketId, _targetIndex, _amount);
+            revAdapter.convertPositions(marketId, _targetIndex, _amount, brian);
         }
 
         _after(_questionCount, _feeBips, _targetIndex, _amount);
@@ -208,7 +232,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
         {
             vm.prank(brian);
-            revAdapter.convertPositions(marketId, _targetIndex, amount);
+            revAdapter.convertPositions(marketId, _targetIndex, amount, brian);
         }
     }
 
@@ -221,6 +245,11 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
         _before(_questionCount, _feeBips, _targetIndex, _amount);
 
+        // Give Brian approval for the reverse conversion (USDC already minted in _before)
+        vm.startPrank(brian);
+        usdc.approve(address(revAdapter), _amount);
+        ctf.setApprovalForAll(address(revAdapter), true);
+
         // convert positions
         {
             vm.startPrank(brian);
@@ -228,7 +257,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
             vm.expectEmit();
             emit PositionsConverted(brian, marketId, _targetIndex, _amount);
-            revAdapter.convertPositions(marketId, _targetIndex, _amount);
+            revAdapter.convertPositions(marketId, _targetIndex, _amount, brian);
         }
 
         _after(_questionCount, _feeBips, _targetIndex, _amount);
@@ -243,6 +272,11 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
         _before(_questionCount, _feeBips, _targetIndex, _amount);
 
+        // Give Brian approval for the reverse conversion (USDC already minted in _before)
+        vm.startPrank(brian);
+        usdc.approve(address(revAdapter), _amount);
+        ctf.setApprovalForAll(address(revAdapter), true);
+
         // convert positions
         {
             vm.startPrank(brian);
@@ -250,38 +284,38 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
             vm.expectEmit();
             emit PositionsConverted(brian, marketId, _targetIndex, _amount);
-            revAdapter.convertPositions(marketId, _targetIndex, _amount);
+            revAdapter.convertPositions(marketId, _targetIndex, _amount, brian);
         }
 
         _after(_questionCount, _feeBips, _targetIndex, _amount);
     }
 
     function test_revert_convertPositions_marketNotPrepared(bytes32 _marketId) public {
-        vm.expectRevert(MarketNotPrepared.selector);
-        revAdapter.convertPositions(_marketId, 0, 0);
+        vm.expectRevert(NoConvertiblePositions.selector);
+        revAdapter.convertPositions(_marketId, 0, 0, brian);
     }
 
     function test_revert_convertPositions_noConvertiblePositions() public {
         vm.prank(oracle);
-        marketId = revAdapter.prepareMarket(0, "");
+        marketId = nrAdapter.prepareMarket(0, "");
 
         // 0 questions prepared
         vm.expectRevert(NoConvertiblePositions.selector);
-        revAdapter.convertPositions(marketId, 0, 0);
+        revAdapter.convertPositions(marketId, 0, 0, brian);
 
         vm.prank(oracle);
-        revAdapter.prepareQuestion(marketId, "");
+        nrAdapter.prepareQuestion(marketId, "");
 
         // 1 question prepared
         vm.expectRevert(NoConvertiblePositions.selector);
-        revAdapter.convertPositions(marketId, 0, 0);
+        revAdapter.convertPositions(marketId, 0, 0, brian);
 
         vm.prank(oracle);
-        revAdapter.prepareQuestion(marketId, "");
+        nrAdapter.prepareQuestion(marketId, "");
 
         // 2 questions prepared - should work
         vm.prank(brian);
-        revAdapter.convertPositions(marketId, 0, 0);
+        revAdapter.convertPositions(marketId, 0, 0, brian);
     }
 
     function test_revert_convertPositions_invalidTargetIndex(uint256 _questionCount, uint256 _targetIndex) public {
@@ -289,16 +323,16 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
         _targetIndex = bound(_targetIndex, _questionCount, type(uint256).max);
 
         vm.prank(oracle);
-        marketId = revAdapter.prepareMarket(0, "");
+        marketId = nrAdapter.prepareMarket(0, "");
 
         // Prepare questions
         for (uint256 i = 0; i < _questionCount; i++) {
             vm.prank(oracle);
-            revAdapter.prepareQuestion(marketId, "");
+            nrAdapter.prepareQuestion(marketId, "");
         }
 
         vm.expectRevert(InvalidTargetIndex.selector);
-        revAdapter.convertPositions(marketId, _targetIndex, 0);
+        revAdapter.convertPositions(marketId, _targetIndex, 0, brian);
     }
 
     function test_revert_convertPositions_userNotApproved(uint256 _questionCount, uint256 _targetIndex, uint128 _amount) public {
@@ -317,7 +351,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
             // The function should revert when trying to transfer tokens without approval
             vm.expectRevert();
-            revAdapter.convertPositions(marketId, _targetIndex, _amount);
+            revAdapter.convertPositions(marketId, _targetIndex, _amount, brian);
         }
     }
 
@@ -332,7 +366,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
         // Remove some YES tokens from brian for a non-target question
         // This will cause the function to revert when trying to transfer insufficient tokens
         uint256 nonTargetIndex = (_targetIndex == 0) ? 1 : 0;
-        uint256 yesPositionId = revAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, uint8(nonTargetIndex)), true);
+        uint256 yesPositionId = nrAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, uint8(nonTargetIndex)), true);
         vm.prank(brian);
         ctf.safeTransferFrom(brian, alice, yesPositionId, _amount, "");
 
@@ -343,7 +377,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
             // The function should revert when trying to transfer insufficient YES tokens
             vm.expectRevert();
-            revAdapter.convertPositions(marketId, _targetIndex, _amount);
+            revAdapter.convertPositions(marketId, _targetIndex, _amount, brian);
         }
     }
 
@@ -355,11 +389,16 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
         _before(_questionCount, 0, _targetIndex, _amount);
 
+        // Give Brian approval for the reverse conversion (USDC already minted in _before)
+        vm.startPrank(brian);
+        usdc.approve(address(revAdapter), _amount);
+        ctf.setApprovalForAll(address(revAdapter), true);
+
         // convert positions
         {
             vm.startPrank(brian);
             ctf.setApprovalForAll(address(revAdapter), true);
-            revAdapter.convertPositions(marketId, _targetIndex, _amount);
+            revAdapter.convertPositions(marketId, _targetIndex, _amount, brian);
         }
 
         // WCOL balance should always be 0 after execution
@@ -378,7 +417,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
         _questionCount = bound(_questionCount, 2, QUESTION_COUNT_MAX);
         _targetIndex = bound(_targetIndex, 0, _questionCount - 1);
 
-        _before(_questionCount, _feeBips, _targetIndex, _amount);
+        _before(_questionCount, 0, _targetIndex, _amount);
 
         // Record initial WCOL balance
         uint256 initialWcolBalance = revAdapter.wcol().balanceOf(address(revAdapter));
@@ -388,7 +427,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
             vm.startPrank(brian);
             ctf.setApprovalForAll(address(revAdapter), true);
 
-            revAdapter.convertPositions(marketId, _targetIndex, _amount);
+            revAdapter.convertPositions(marketId, _targetIndex, _amount, brian);
         }
 
         // Verify WCOL balance is exactly 0 after execution
@@ -413,29 +452,29 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
         for (uint256 i = 0; i < questionCounts.length; i++) {
             uint256 questionCount = questionCounts[i];
             uint256 targetIndex = 0; // Always target first question
-            uint256 amount = 1000;
+            uint128 amount = 1000; // Fixed amount for this test
 
             // Create a new market for each iteration
             vm.prank(oracle);
-            bytes32 newMarketId = revAdapter.prepareMarket(0, bytes(string.concat("market_", vm.toString(i))));
+            bytes32 newMarketId = nrAdapter.prepareMarket(0, bytes(string.concat("market_", vm.toString(i))));
 
             // Prepare questions
             for (uint256 j = 0; j < questionCount; j++) {
                 vm.prank(oracle);
-                revAdapter.prepareQuestion(newMarketId, "");
+                nrAdapter.prepareQuestion(newMarketId, "");
             }
 
             // Give brian YES positions for all questions
             for (uint256 j = 0; j < questionCount; j++) {
                 bytes32 questionId = NegRiskIdLib.getQuestionId(newMarketId, uint8(j));
-                bytes32 conditionId = revAdapter.getConditionId(questionId);
-                uint256 yesPositionId = revAdapter.getPositionId(questionId, true);
+                bytes32 conditionId = nrAdapter.getConditionId(questionId);
+                uint256 yesPositionId = nrAdapter.getPositionId(questionId, true);
 
                 // Split position to get YES tokens
                 vm.startPrank(alice);
                 usdc.mint(alice, amount);
-                usdc.approve(address(revAdapter), amount);
-                revAdapter.splitPosition(conditionId, amount);
+                usdc.approve(address(nrAdapter), amount);
+                nrAdapter.splitPosition(conditionId, amount);
                 vm.stopPrank();
 
                 // Transfer YES tokens to brian
@@ -443,11 +482,16 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
                 ctf.safeTransferFrom(alice, brian, yesPositionId, amount, "");
             }
 
+            // Give Brian USDC for the conversion operation
+            vm.prank(brian);
+            usdc.mint(brian, amount);
+            usdc.approve(address(revAdapter), amount);
+
             // convert positions
             {
                 vm.startPrank(brian);
                 ctf.setApprovalForAll(address(revAdapter), true);
-                revAdapter.convertPositions(newMarketId, targetIndex, amount);
+                revAdapter.convertPositions(newMarketId, targetIndex, amount, brian);
             }
 
             // Verify WCOL balance is 0
@@ -463,7 +507,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
     function test_convertPositions_wcolBalanceDifferentFees() public {
         uint256 questionCount = 3;
         uint256 targetIndex = 0;
-        uint256 amount = 1000;
+        uint128 amount = 1000; // Fixed amount for this test
 
         uint256[] memory feeBips = new uint256[](4);
         feeBips[0] = 0;      // No fees
@@ -476,25 +520,25 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
             // Create a new market for each iteration
             vm.prank(oracle);
-            bytes32 newMarketId = revAdapter.prepareMarket(feeBipsValue, bytes(string.concat("market_", vm.toString(i))));
+            bytes32 newMarketId = nrAdapter.prepareMarket(feeBipsValue, bytes(string.concat("market_", vm.toString(i))));
 
             // Prepare questions
             for (uint256 j = 0; j < questionCount; j++) {
                 vm.prank(oracle);
-                revAdapter.prepareQuestion(newMarketId, "");
+                nrAdapter.prepareQuestion(newMarketId, "");
             }
 
             // Give brian YES positions for all questions
             for (uint256 j = 0; j < questionCount; j++) {
                 bytes32 questionId = NegRiskIdLib.getQuestionId(newMarketId, uint8(j));
-                bytes32 conditionId = revAdapter.getConditionId(questionId);
-                uint256 yesPositionId = revAdapter.getPositionId(questionId, true);
+                bytes32 conditionId = nrAdapter.getConditionId(questionId);
+                uint256 yesPositionId = nrAdapter.getPositionId(questionId, true);
 
                 // Split position to get YES tokens
                 vm.startPrank(alice);
                 usdc.mint(alice, amount);
-                usdc.approve(address(revAdapter), amount);
-                revAdapter.splitPosition(conditionId, amount);
+                usdc.approve(address(nrAdapter), amount);
+                nrAdapter.splitPosition(conditionId, amount);
                 vm.stopPrank();
 
                 // Transfer YES tokens to brian
@@ -502,11 +546,16 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
                 ctf.safeTransferFrom(alice, brian, yesPositionId, amount, "");
             }
 
+            // Give Brian USDC for the conversion operation
+            vm.prank(brian);
+            usdc.mint(brian, amount);
+            usdc.approve(address(revAdapter), amount);
+
             // convert positions
             {
                 vm.startPrank(brian);
                 ctf.setApprovalForAll(address(revAdapter), true);
-                revAdapter.convertPositions(newMarketId, targetIndex, amount);
+                revAdapter.convertPositions(newMarketId, targetIndex, amount, brian);
             }
 
             // Verify WCOL balance is 0 regardless of fee level
@@ -522,54 +571,59 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
     function test_convertPositions_wcolBalanceEdgeCaseAmounts() public {
         uint256 questionCount = 3;
         uint256 targetIndex = 0;
-
+        
         uint256[] memory amounts = new uint256[](4);
-        amounts[0] = 1;           // Minimum amount
-        amounts[1] = 100;         // Small amount
-        amounts[2] = 1000000;     // Large amount
-        amounts[3] = 10000;       // Reasonable large amount (avoiding uint128.max for gas)
+        amounts[0] = 1;
+        amounts[1] = 1000;
+        amounts[2] = 1e6;
+        amounts[3] = 1e9;
 
         for (uint256 i = 0; i < amounts.length; i++) {
-            uint256 amount = amounts[i];
+            uint256 currentAmount = amounts[i];
 
             // Create a new market for each iteration
             vm.prank(oracle);
-            bytes32 newMarketId = revAdapter.prepareMarket(0, bytes(string.concat("market_", vm.toString(i))));
+            bytes32 newMarketId = nrAdapter.prepareMarket(0, bytes(string.concat("market_", vm.toString(i))));
 
             // Prepare questions
             for (uint256 j = 0; j < questionCount; j++) {
                 vm.prank(oracle);
-                revAdapter.prepareQuestion(newMarketId, "");
+                nrAdapter.prepareQuestion(newMarketId, "");
             }
 
             // Give brian YES positions for all questions
             for (uint256 j = 0; j < questionCount; j++) {
                 bytes32 questionId = NegRiskIdLib.getQuestionId(newMarketId, uint8(j));
-                bytes32 conditionId = revAdapter.getConditionId(questionId);
-                uint256 yesPositionId = revAdapter.getPositionId(questionId, true);
+                bytes32 conditionId = nrAdapter.getConditionId(questionId);
+                uint256 yesPositionId = nrAdapter.getPositionId(questionId, true);
 
                 // Split position to get YES tokens
                 vm.startPrank(alice);
-                usdc.mint(alice, amount);
-                usdc.approve(address(revAdapter), amount);
-                revAdapter.splitPosition(conditionId, amount);
+                usdc.mint(alice, currentAmount);
+                usdc.approve(address(nrAdapter), currentAmount);
+                nrAdapter.splitPosition(conditionId, currentAmount);
                 vm.stopPrank();
 
                 // Transfer YES tokens to brian
                 vm.prank(alice);
-                ctf.safeTransferFrom(alice, brian, yesPositionId, amount, "");
+                ctf.safeTransferFrom(alice, brian, yesPositionId, currentAmount, "");
             }
+
+            // Give Brian USDC for the conversion operation
+            vm.prank(brian);
+            usdc.mint(brian, currentAmount);
+            usdc.approve(address(revAdapter), currentAmount);
 
             // convert positions
             {
                 vm.startPrank(brian);
                 ctf.setApprovalForAll(address(revAdapter), true);
-                revAdapter.convertPositions(newMarketId, targetIndex, amount);
+                revAdapter.convertPositions(newMarketId, targetIndex, currentAmount, brian);
             }
 
             // Verify WCOL balance is 0 regardless of amount
             uint256 finalWcolBalance = revAdapter.wcol().balanceOf(address(revAdapter));
-            assertEq(finalWcolBalance, 0, string.concat("WCOL balance must be 0 for amount ", vm.toString(amount)));
+            assertEq(finalWcolBalance, 0, string.concat("WCOL balance must be 0 for amount ", vm.toString(currentAmount)));
 
             // Reset for next iteration
             vm.stopPrank();
@@ -579,30 +633,30 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
     /// @notice Test WCOL balance consistency with different target indices
     function test_convertPositions_wcolBalanceDifferentTargetIndices() public {
         uint256 questionCount = 5;
-        uint256 amount = 1000;
+        uint128 amount = 1000; // Fixed amount for this test
 
         for (uint256 targetIndex = 0; targetIndex < questionCount; targetIndex++) {
             // Create a new market for each iteration
             vm.prank(oracle);
-            bytes32 newMarketId = revAdapter.prepareMarket(0, bytes(string.concat("market_", vm.toString(targetIndex))));
+            bytes32 newMarketId = nrAdapter.prepareMarket(0, bytes(string.concat("market_", vm.toString(targetIndex))));
 
             // Prepare questions
             for (uint256 j = 0; j < questionCount; j++) {
                 vm.prank(oracle);
-                revAdapter.prepareQuestion(newMarketId, "");
+                nrAdapter.prepareQuestion(newMarketId, "");
             }
 
             // Give brian YES positions for all questions
             for (uint256 j = 0; j < questionCount; j++) {
                 bytes32 questionId = NegRiskIdLib.getQuestionId(newMarketId, uint8(j));
-                bytes32 conditionId = revAdapter.getConditionId(questionId);
-                uint256 yesPositionId = revAdapter.getPositionId(questionId, true);
+                bytes32 conditionId = nrAdapter.getConditionId(questionId);
+                uint256 yesPositionId = nrAdapter.getPositionId(questionId, true);
 
                 // Split position to get YES tokens
                 vm.startPrank(alice);
                 usdc.mint(alice, amount);
-                usdc.approve(address(revAdapter), amount);
-                revAdapter.splitPosition(conditionId, amount);
+                usdc.approve(address(nrAdapter), amount);
+                nrAdapter.splitPosition(conditionId, amount);
                 vm.stopPrank();
 
                 // Transfer YES tokens to brian
@@ -610,11 +664,16 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
                 ctf.safeTransferFrom(alice, brian, yesPositionId, amount, "");
             }
 
+            // Give Brian USDC for the conversion operation
+            vm.prank(brian);
+            usdc.mint(brian, amount);
+            usdc.approve(address(revAdapter), amount);
+
             // convert positions
             {
                 vm.startPrank(brian);
                 ctf.setApprovalForAll(address(revAdapter), true);
-                revAdapter.convertPositions(newMarketId, targetIndex, amount);
+                revAdapter.convertPositions(newMarketId, targetIndex, amount, brian);
             }
 
             // Verify WCOL balance is 0 regardless of target index
@@ -641,7 +700,7 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
 
             vm.expectEmit(true, true, true, true);
             emit PositionsConverted(brian, marketId, _targetIndex, _amount);
-            revAdapter.convertPositions(marketId, _targetIndex, _amount);
+            revAdapter.convertPositions(marketId, _targetIndex, _amount, brian);
         }
     }
 } 

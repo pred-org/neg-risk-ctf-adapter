@@ -1,0 +1,17 @@
+{
+  "lib/exchange-fee-module": {
+    "rev": "9abb8cd0b9ce57ed1a8c2365dae4c9e7ea02cf20"
+  },
+  "lib/forge-gas-snapshot": {
+    "rev": "774be221e63df1a2b4e99b6fbf4d6770599f4068"
+  },
+  "lib/forge-std": {
+    "rev": "267acd30a625086b3f16e1a28cfe0c5097fa46b8"
+  },
+  "lib/ctf-exchange": {
+    "rev": "2745c3017400dbc1925711005fe76b018b999155"
+  },
+  "lib/solmate": {
+    "rev": "bfc9c25865a274a7827fea5abf6e4fb64fc64e6c"
+  }
+}
