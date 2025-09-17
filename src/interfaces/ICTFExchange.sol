@@ -2,6 +2,8 @@
 pragma solidity ^0.8.15;
 
 interface ICTFExchange {
+    error MakingGtRemaining();
+
     event FeeCharged(address indexed receiver, uint256 tokenId, uint256 amount);
     event NewAdmin(address indexed newAdminAddress, address indexed admin);
     event NewOperator(address indexed newOperatorAddress, address indexed admin);
@@ -141,4 +143,5 @@ interface ICTFExchange {
     function validateOrder(OrderIntent memory order) external view;
     function validateOrderSignature(bytes32 orderHash, Order memory order) external view;
     function validateTokenId(uint256 tokenId) external view;
+    function updateOrderStatus(OrderIntent memory orderIntent, uint256 makingAmount) external;
 }

@@ -33,6 +33,11 @@ contract MockCTFExchange {
         require(orderIntent.order.maker != address(0), "Invalid maker");
         require(orderIntent.order.signer != address(0), "Invalid signer");
     }
+    
+    function updateOrderStatus(ICTFExchange.OrderIntent memory orderIntent, uint256 makingAmount) external pure {
+        // Mock implementation - always succeeds for testing
+        // In a real implementation, this would update order status in storage
+    }
 }
 
 contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {

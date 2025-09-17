@@ -32,6 +32,11 @@ contract MockCTFExchange {
         // Mock validation - always passes for testing
         // In a real implementation, this would validate signatures, expiration, etc.
     }
+    
+    function updateOrderStatus(ICTFExchange.OrderIntent memory orderIntent, uint256 makingAmount) external pure {
+        // Mock implementation - always succeeds for testing
+        // In a real implementation, this would update order status in storage
+    }
 }
 
 contract CrossMatchingAdapterTest is Test, TestHelper {

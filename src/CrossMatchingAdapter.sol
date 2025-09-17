@@ -12,6 +12,7 @@ import {WrappedCollateral} from "src/WrappedCollateral.sol";
 import {NegRiskIdLib} from "./libraries/NegRiskIdLib.sol";
 
 import {ICTFExchange} from "src/interfaces/ICTFExchange.sol";
+import {OrderStatus} from "lib/ctf-exchange/src/exchange/libraries/OrderStructs.sol";
 
 /*
  * Cross-matching adapter for NegRisk events.
@@ -34,6 +35,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
     uint256  constant ONE = 1e6; // fixed-point for price (6 decimals to match USDC)
     address public constant YES_TOKEN_BURN_ADDRESS = address(bytes20(bytes32(keccak256("YES_TOKEN_BURN_ADDRESS"))));    
     address public constant NO_TOKEN_BURN_ADDRESS = address(bytes20(bytes32(keccak256("NO_TOKEN_BURN_ADDRESS"))));
+    mapping(bytes32 => OrderStatus) public orderStatus;
 
 
     INegRiskAdapter public immutable neg;
@@ -140,10 +142,12 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
 
         // Validate taker order signature and parameters
         ctfExchange.validateOrder(takerOrder);
+        ctfExchange.updateOrderStatus(takerOrder, fillAmount);
 
-        // Validate all maker orders signatures and parameters
+        // Validate all maker orders signatures and parameters and update the order status
         for (uint256 i = 0; i < multiOrderMaker.length; i++) {
             ctfExchange.validateOrder(multiOrderMaker[i]);
+            ctfExchange.updateOrderStatus(multiOrderMaker[i], fillAmount);
         }
 
         Parsed[] memory parsedOrders = new Parsed[](multiOrderMaker.length + 1);
@@ -253,10 +257,12 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
 
         // Validate taker order signature and parameters
         ctfExchange.validateOrder(takerOrder);
+        ctfExchange.updateOrderStatus(takerOrder, fillAmount);
 
         // Validate all maker orders signatures and parameters
         for (uint256 i = 0; i < multiOrderMaker.length; i++) {
             ctfExchange.validateOrder(multiOrderMaker[i]);
+            ctfExchange.updateOrderStatus(multiOrderMaker[i], fillAmount);
         }
 
         // Cross-matching function that handles scenarios including resolved questions:
@@ -346,9 +352,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
             // get from vault
             usdc.transferFrom(neg.vault(), address(this), totalSellUSDC);
         }
-
-        
-        uint256 questionCount = neg.getQuestionCount(marketId);
         
         // STEP 1: Split position for pivot question (use taker's question ID) to create YES + NO
         // Use the taker's question ID as the pivot since we know it's active (unresolved)
