@@ -7,7 +7,21 @@ optimizer = true
 optimizer_runs = 1_000_000
 
 ffi = true
-fs_permissions = [{ access = "read-write", path = ".forge-snapshots/"},{ access = "read", path = "./artifacts/"}, { access = "read", path = "./out/"}]
+fs_permissions = [
+    { access = "read-write", path = ".forge-snapshots/"}, 
+    { access = "read", path = "./artifacts/"}, 
+    { access = "read", path = "./out/"}, 
+    { access = "read", path = "./addresses.json"}
+]
+
+# Metadata configuration for contract verification
+metadata = true
+metadata_hash = "none"  # disable ipfs
+use_literal_content = true # use source code
+
+# Monad Testnet Configuration
+eth-rpc-url = "https://monad-testnet.g.alchemy.com/v2/pw_4UOF9xIy14mkrmw-1zxFeZQZm6MYx"
+chain_id = 10143
 
 [fmt]
 line_length = 120
