@@ -506,6 +506,9 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
             }
         }
 
+        uint256 positionId = neg.getPositionId(order.order.questionId, isYes);
+        require(positionId == order.tokenId, "Question ID mismatch");
+
         return Parsed({
             maker: order.order.maker,
             side: uint8(order.side),
