@@ -35,7 +35,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
     uint256  constant ONE = 1e6; // fixed-point for price (6 decimals to match USDC)
     address public constant YES_TOKEN_BURN_ADDRESS = address(bytes20(bytes32(keccak256("YES_TOKEN_BURN_ADDRESS"))));    
     address public constant NO_TOKEN_BURN_ADDRESS = address(bytes20(bytes32(keccak256("NO_TOKEN_BURN_ADDRESS"))));
-    mapping(bytes32 => OrderStatus) public orderStatus;
 
 
     INegRiskAdapter public immutable neg;
@@ -505,7 +504,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
                 isYes = false;
             }
         }
-
         uint256 positionId = neg.getPositionId(order.order.questionId, isYes);
         require(positionId == order.tokenId, "Question ID mismatch");
 
