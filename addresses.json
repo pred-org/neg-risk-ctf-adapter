@@ -30,7 +30,7 @@
     "negRiskAdapter": "0x78B13D06A4E92152EF2A3230702DaEb465896Ce7",
     "negRiskCtfExchange": "0x7665E67C14848CEA89Ad7D07017624a341b97620",
     "negRiskFeeModule": "",
-    "negRiskOperator": "",
+    "negRiskOperator": "0x36909587D03C1De2cd105B8134D0d23F55Ac3A7f",
     "negRiskVault": "0x7496014dd7ec0C825c3BC1e91bd5C01E2961318B",
     "negRiskUmaCtfAdapter": "",
     "negRiskWrappedCollateral": "",
