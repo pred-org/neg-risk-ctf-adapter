@@ -2,7 +2,7 @@
 pragma solidity ^0.8.15;
 
 import {Test, console} from "forge-std/Test.sol";
-import {CrossMatchingAdapter, ICTFExchange} from "src/CrossMatchingAdapter.sol";
+import {CrossMatchingAdapter} from "src/CrossMatchingAdapter.sol";
 import {NegRiskAdapter} from "src/NegRiskAdapter.sol";
 import {RevNegRiskAdapter} from "src/RevNegRiskAdapter.sol";
 import {IRevNegRiskAdapter} from "src/interfaces/IRevNegRiskAdapter.sol";
@@ -13,7 +13,8 @@ import {INegRiskAdapter} from "src/interfaces/INegRiskAdapter.sol";
 import {Deployer} from "lib/ctf-exchange/src/dev/util/Deployer.sol";
 import {TestHelper} from "lib/ctf-exchange/src/dev/TestHelper.sol";
 import {NegRiskIdLib} from "src/libraries/NegRiskIdLib.sol";
-
+import {ICTFExchange} from "src/interfaces/ICTFExchange.sol";
+import {Side, SignatureType} from "lib/ctf-exchange/src/exchange/libraries/OrderStructs.sol";
 contract MockCTFExchange {
     function matchOrders(
         ICTFExchange.OrderIntent memory takerOrder,
@@ -21,6 +22,21 @@ contract MockCTFExchange {
         uint256 takerFillAmount,
         uint256[] memory makerFillAmounts
     ) external {}
+    
+    function hashOrder(ICTFExchange.Order memory order) external pure returns (bytes32) {
+        // Simple hash implementation for testing
+        return keccak256(abi.encode(order));
+    }
+    
+    function validateOrder(ICTFExchange.OrderIntent memory order) external pure {
+        // Mock validation - always passes for testing
+        // In a real implementation, this would validate signatures, expiration, etc.
+    }
+    
+    function updateOrderStatus(ICTFExchange.OrderIntent memory orderIntent, uint256 makingAmount) external pure {
+        // Mock implementation - always succeeds for testing
+        // In a real implementation, this would update order status in storage
+    }
 }
 
 contract CrossMatchingAdapterTest is Test, TestHelper {
@@ -37,6 +53,12 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
     address public user2;
     address public user3;
     address public user4;
+    
+    // Private keys for signing orders
+    uint256 public user1PK = 0x1111;
+    uint256 public user2PK = 0x2222;
+    uint256 public user3PK = 0x3333;
+    uint256 public user4PK = 0x4444;
 
     // Market and question IDs
     bytes32 public marketId;
@@ -83,10 +105,10 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         vm.stopPrank();
 
         // Set up test users
-        user1 = address(0x1111);
-        user2 = address(0x2222);
-        user3 = address(0x3333);
-        user4 = address(0x4444);
+        user1 = vm.addr(user1PK);
+        user2 = vm.addr(user2PK);
+        user3 = vm.addr(user3PK);
+        user4 = vm.addr(user4PK);
         vm.label(user1, "User1");
         vm.label(user2, "User2");
         vm.label(user3, "User3");
@@ -208,18 +230,72 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
             nonce: 0,
             feeRateBps: 0,
             questionId: questionId,
-            intent: 0, // LONG
-            signatureType: 0,
+            intent: ICTFExchange.Intent.LONG,
+            signatureType: ICTFExchange.SignatureType.EOA,
             signature: new bytes(0)
         });
         
         return ICTFExchange.OrderIntent({
             tokenId: tokenId,
-            side: side,
+            side: ICTFExchange.Side(side),
             makerAmount: makerAmount,
             takerAmount: takerAmount,
             order: order
         });
+    }
+
+    function _createAndSignOrder(
+        address maker,
+        uint256 tokenId,
+        uint8 side,
+        uint256 makerAmount,
+        uint256 takerAmount,
+        bytes32 questionId,
+        uint256 privateKey
+    ) internal view returns (ICTFExchange.OrderIntent memory) {
+        // Calculate price: for BUY orders, price = (makerAmount * ONE_SIX) / takerAmount
+        // This ensures that makerAmount = (price * fillAmount) / ONE_SIX
+        uint256 price;
+        uint256 quantity;
+        if (side == uint8(ICTFExchange.Side.BUY)) {
+            price = (makerAmount * 1e6) / takerAmount;
+            quantity = takerAmount;
+        } else {
+            price = (takerAmount * 1e6) / makerAmount;
+            quantity = makerAmount;
+        }
+        
+        ICTFExchange.Order memory order = ICTFExchange.Order({
+            salt: 1,
+            signer: maker,
+            maker: maker,
+            taker: address(0),
+            price: price,
+            quantity: quantity,
+            expiration: 0,
+            nonce: 0,
+            questionId: questionId,
+            intent: ICTFExchange.Intent.LONG,
+            feeRateBps: 0,
+            signatureType: ICTFExchange.SignatureType.EOA,
+            signature: new bytes(0)
+        });
+        
+        // Sign the order
+        order.signature = _signMessage(privateKey, ctfExchange.hashOrder(order));
+        
+        return ICTFExchange.OrderIntent({
+            tokenId: tokenId,
+            side: ICTFExchange.Side(side),
+            makerAmount: makerAmount,
+            takerAmount: takerAmount,
+            order: order
+        });
+    }
+
+    function _signMessage(uint256 privateKey, bytes32 message) internal pure returns (bytes memory) {
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, message);
+        return abi.encodePacked(r, s, v);
     }
     
     function _createScenario1Orders() internal returns (ICTFExchange.OrderIntent[] memory) {
@@ -240,16 +316,16 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         uint256 yes4PositionId = negRiskAdapter.getPositionId(question4Id, true);
         
         // User1: Buy YES1 tokens at 0.25 price
-        orders[0] = _createOrderIntent(user1, yes1PositionId, 0, 1e6, 0.25e6, question1Id);
+        orders[0] = _createAndSignOrder(user1, yes1PositionId, 0, 0.25e6, 1e6, question1Id, user1PK);
         
         // User2: Buy YES2 tokens at 0.25 price
-        orders[1] = _createOrderIntent(user2, yes2PositionId, 0, 1e6, 0.25e6, question2Id);
+        orders[1] = _createAndSignOrder(user2, yes2PositionId, 0, 0.25e6, 1e6, question2Id, user2PK);
         
         // User3: Buy YES3 tokens at 0.25 price
-        orders[2] = _createOrderIntent(user3, yes3PositionId, 0, 1e6, 0.25e6, question3Id);
+        orders[2] = _createAndSignOrder(user3, yes3PositionId, 0, 0.25e6, 1e6, question3Id, user3PK);
         
         // User4: Buy YES4 tokens at 0.25 price
-        orders[3] = _createOrderIntent(user4, yes4PositionId, 0, 1e6, 0.25e6, question4Id);
+        orders[3] = _createAndSignOrder(user4, yes4PositionId, 0, 0.25e6, 1e6, question4Id, user4PK);
         
         return orders;
     }
@@ -273,13 +349,13 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         vm.prank(user2);
         ctf.setApprovalForAll(address(adapter), true);
         
-        // User1: Buy YES tokens from Question 0 (pivot) at 0.7 price
-        orders[0] = _createOrderIntent(user1, yesPositionId, 0, 1e6, 0.7e6, questionId);
+        // User1: Buy YES tokens from Question 0 (pivot) at 0.5 price
+        orders[0] = _createAndSignOrder(user1, yesPositionId, 0, 0.7e6, 1e6, questionId, user1PK);
         
         // User2: Sell NO tokens from Question 2 at 0.3 price
         // For sell orders, we need to ensure combined price = 1.0
-        // Buy price: 0.7, Sell price: 0.3, so 0.7 + 0.3 = 1.0
-        orders[1] = _createOrderIntent(user2, no2PositionId, 1, 1e6, 0.3e6, question2Id);
+        // Buy price: 0.5, Sell price: 0.5, so 0.5 + (1-0.5) = 1.0
+        orders[1] = _createAndSignOrder(user2, no2PositionId, 1, 1e6, 0.3e6, question2Id, user2PK);
         
         return orders;
     }
@@ -466,19 +542,18 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         vm.prank(user3);
         ctf.setApprovalForAll(address(adapter), true);
         
-        // User1: Sell NO tokens from Question 1 at 0.75 price
-        // (1-0.75) = 0.25 contribution to the total
-        orders[0] = _createOrderIntent(user1, no1PositionId, 1, 1e18, 0.25e6, questionId);
+        // User1: Sell NO tokens from Question 1 at 0.5 price
+        // (1-0.5) = 0.5 contribution to the total
+        orders[0] = _createAndSignOrder(user1, no1PositionId, 1, 1e6, 0.25e6, questionId, user1PK);
         
-        // User2: Sell NO tokens from Question 2 at 0.6 price
-        // (1-0.6) = 0.4 contribution to the total
-        orders[1] = _createOrderIntent(user2, no2PositionId, 1, 1e18, 0.4e6, question2Id);
-        
+        // User2: Sell NO tokens from Question 2 at 0.5 price
+        // (1-0.5) = 0.5 contribution to the total
+        // Total: 0.5 + 0.5 = 1.0 ✓
+        orders[1] = _createAndSignOrder(user2, no2PositionId, 1, 1e6, 0.4e6, question2Id, user2PK);
+
         // User3: Sell NO tokens from Question 3 at 0.65 price
         // (1-0.65) = 0.35 contribution to the total
-        // Total: 0.25 + 0.4 + 0.35 = 1.0 (which equals the pivot question price)
-        orders[2] = _createOrderIntent(user3, no3PositionId, 1, 1e18, 0.35e6, question3Id);
-        
+        orders[2] = _createAndSignOrder(user3, no3PositionId, 1, 1e6, 0.35e6, question3Id, user3PK);
         return orders;
     }
 
@@ -555,16 +630,16 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         vm.stopPrank();
         
         // User A (user1): Buy Yes1 tokens at 0.25 price
-        orders[0] = _createOrderIntent(user1, yes1PositionId, 0, 1e6, 0.25e6, questionId);
+        orders[0] = _createAndSignOrder(user1, yes1PositionId, 0, 0.25e6, 1e6, questionId, user1PK);
         
-        // User B (user2): Sell No2 tokens at 0.3 price (contributes 0.3 to total)
-        orders[1] = _createOrderIntent(user2, no2PositionId, 1, 1e6, 0.3e6, question2Id);
+        // User B (user2): Sell No2 tokens at 0.7 price (contributes 0.3 to total: 1-0.7=0.3)
+        orders[1] = _createAndSignOrder(user2, no2PositionId, 1, 1e6, 0.3e6, question2Id, user2PK);
         
         // User C (user3): Buy Yes3 tokens at 0.1 price
-        orders[2] = _createOrderIntent(user3, yes3PositionId, 0, 1e6, 0.1e6, question3Id);
+        orders[2] = _createAndSignOrder(user3, yes3PositionId, 0, 0.1e6, 1e6, question3Id, user3PK);
         
-        // User D (user3): Sell No4 tokens at 0.35 price (contributes 0.35 to total)
-        orders[3] = _createOrderIntent(user4, no4PositionId, 1, 1e6, 0.35e6, question4Id);
+        // User D (user4): Sell No4 tokens at 0.65 price (contributes 0.35 to total: 1-0.65=0.35)
+        orders[3] = _createAndSignOrder(user4, no4PositionId, 1, 1e6, 0.35e6, question4Id, user4PK);
         
         // Total combined price: 0.25 + 0.3 + 0.1 + 0.35 = 1.0 ✓
         
@@ -615,10 +690,10 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         // Create orders ONLY for the 3 active questions (Arsenal is resolved, so no order for it)
         // We need 3 orders total: 1 taker + 2 makers = 3 active questions
         // The prices should sum to 1.0 for the active questions: 0.35 + 0.45 + 0.20 = 1.0
-        ICTFExchange.OrderIntent memory takerOrder = _createOrderIntent(user1, negRiskAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, 1), true), 0, 1e6, 350000, barcelonaQuestionId); // Barcelona YES at 0.35
+        ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, negRiskAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, 1), true), 0, 350000, 1e6, barcelonaQuestionId, user1PK); // Barcelona YES at 0.35
         ICTFExchange.OrderIntent[] memory makerOrders = new ICTFExchange.OrderIntent[](2);
-        makerOrders[0] = _createOrderIntent(user2, negRiskAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, 2), true), 0, 1e6, 450000, chelseaQuestionId); // Chelsea YES at 0.45
-        makerOrders[1] = _createOrderIntent(user3, negRiskAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, 3), true), 0, 1e6, 200000, spursQuestionId); // Spurs YES at 0.20
+        makerOrders[0] = _createAndSignOrder(user2, negRiskAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, 2), true), 0, 450000, 1e6, chelseaQuestionId, user2PK); // Chelsea YES at 0.45
+        makerOrders[1] = _createAndSignOrder(user3, negRiskAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, 3), true), 0, 200000, 1e6, spursQuestionId, user3PK); // Spurs YES at 0.20
         
         // Execute cross-matching with only 3 orders for the 3 active questions (Arsenal is resolved, so no order for it)
         uint256 fillAmount = 50 * 1e6;

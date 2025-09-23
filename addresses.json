@@ -8,7 +8,9 @@
     "negRiskVault": "0x7f91506c958cE8fb1A7a0A2bd255B22aDeF1053a",
     "negRiskUmaCtfAdapter": "0x4D002C1b0EaD4636cB200aEbE7729ed0AC871496",
     "negRiskWrappedCollateral": "0x9deB19a6904d39d2B7ED27aec9d0902701d557D3",
-    "usdc": "0x2e8dcfe708d44ae2e406a1c02dfe2fa13012f961"
+    "usdc": "0x2e8dcfe708d44ae2e406a1c02dfe2fa13012f961",
+    "proxyFactory": "0x0000000000000000000000000000000000000000",
+    "safeFactory": "0x0000000000000000000000000000000000000000"
   },
   "137": {
     "ctf": "0x4d97dcd97ec945f40cf65f87097ace5ea0476045",
@@ -19,6 +21,23 @@
     "negRiskVault": "0x7f67327E88c258932D7d8f72950bE0d46975E11D",
     "negRiskUmaCtfAdapter": "0x2F5e3684cb1F318ec51b00Edba38d79Ac2c0aA9d",
     "negRiskWrappedCollateral": "0x3A3BD7bb9528E159577F7C2e685CC81A765002E2",
-    "usdc": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174"
+    "usdc": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+    "proxyFactory": "0x0000000000000000000000000000000000000000",
+    "safeFactory": "0x0000000000000000000000000000000000000000"
+  },
+  "10143": {
+    "ctf": "0x52CD9f25AFcc9D007F72431842F811E8F21EE75F",
+    "negRiskAdapter": "0x78B13D06A4E92152EF2A3230702DaEb465896Ce7",
+    "negRiskCtfExchange": "0x7665E67C14848CEA89Ad7D07017624a341b97620",
+    "negRiskFeeModule": "",
+    "negRiskOperator": "0x36909587D03C1De2cd105B8134D0d23F55Ac3A7f",
+    "negRiskVault": "0x7496014dd7ec0C825c3BC1e91bd5C01E2961318B",
+    "negRiskUmaCtfAdapter": "",
+    "negRiskWrappedCollateral": "",
+    "revNegRiskAdapter": "0xd3889b3C1e794AA699c862610a14615c78121D90",
+    "crossMatchingAdapter": "0xEba6a0c426F21C1d120b14DeF2f4fcA1893AA08c",
+    "usdc": "0x0CE1e03dD630cA1f402a18ac44Ab1C9C1DDBED93",
+    "proxyFactory": "0x0aA981B52f8051961f52AB7531A2343704dE8292",
+    "safeFactory": "0x4055B2739F0552e15efa28ADDC4834EB4d5327B1"
   }
 }

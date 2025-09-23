@@ -2,7 +2,7 @@
 pragma solidity ^0.8.15;
 
 import {Test, console} from "forge-std/Test.sol";
-import {CrossMatchingAdapter, ICTFExchange} from "src/CrossMatchingAdapter.sol";
+import {CrossMatchingAdapter} from "src/CrossMatchingAdapter.sol";
 import {NegRiskAdapter} from "src/NegRiskAdapter.sol";
 import {RevNegRiskAdapter} from "src/RevNegRiskAdapter.sol";
 import {IConditionalTokens} from "src/interfaces/IConditionalTokens.sol";
@@ -14,7 +14,8 @@ import {Deployer} from "lib/ctf-exchange/src/dev/util/Deployer.sol";
 import {TestHelper} from "lib/ctf-exchange/src/dev/TestHelper.sol";
 import {NegRiskIdLib} from "src/libraries/NegRiskIdLib.sol";
 import {WrappedCollateral} from "src/WrappedCollateral.sol";
-
+import {ICTFExchange} from "src/interfaces/ICTFExchange.sol";
+import {Side, SignatureType} from "lib/ctf-exchange/src/exchange/libraries/OrderStructs.sol";
 contract MockCTFExchange {
     function matchOrders(
         ICTFExchange.OrderIntent memory takerOrder,
@@ -22,6 +23,21 @@ contract MockCTFExchange {
         uint256 takerFillAmount,
         uint256[] memory makerFillAmounts
     ) external {}
+    
+    function hashOrder(ICTFExchange.Order memory order) external pure returns (bytes32) {
+        return keccak256(abi.encode(order));
+    }
+    
+    function validateOrder(ICTFExchange.OrderIntent memory orderIntent) external pure {
+        // Mock validation - always passes
+        require(orderIntent.order.maker != address(0), "Invalid maker");
+        require(orderIntent.order.signer != address(0), "Invalid signer");
+    }
+    
+    function updateOrderStatus(ICTFExchange.OrderIntent memory orderIntent, uint256 makingAmount) external pure {
+        // Mock implementation - always succeeds for testing
+        // In a real implementation, this would update order status in storage
+    }
 }
 
 contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
@@ -38,6 +54,12 @@ contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
     address public user2; // Barcelona
     address public user3; // Chelsea
     address public user4; // Spurs
+    
+    // Private keys for signing
+    uint256 internal user1PK = 0x1111;
+    uint256 internal user2PK = 0x2222;
+    uint256 internal user3PK = 0x3333;
+    uint256 internal user4PK = 0x4444;
 
     // Market and question IDs
     bytes32 public marketId;
@@ -101,10 +123,10 @@ contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
         vm.stopPrank();
 
         // Set up test users
-        user1 = address(0x1111); // Arsenal
-        user2 = address(0x2222); // Barcelona
-        user3 = address(0x3333); // Chelsea
-        user4 = address(0x4444); // Spurs
+        user1 = vm.addr(user1PK); // Arsenal
+        user2 = vm.addr(user2PK); // Barcelona
+        user3 = vm.addr(user3PK); // Chelsea
+        user4 = vm.addr(user4PK); // Spurs
         vm.label(user1, "Arsenal");
         vm.label(user2, "Barcelona");
         vm.label(user3, "Chelsea");
@@ -215,22 +237,69 @@ contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
             taker: address(0),
             price: takerAmount,
             quantity: makerAmount,
-            questionId: questionId,
             expiration: 0,
             nonce: 0,
+            questionId: questionId,
+            intent: ICTFExchange.Intent.SHORT, // SHORT for short orders
             feeRateBps: 0,
-            intent: 1, // SHORT for short orders
-            signatureType: 0,
+            signatureType: ICTFExchange.SignatureType.EOA,
             signature: new bytes(0)
         });
         
         return ICTFExchange.OrderIntent({
             tokenId: tokenId,
-            side: side,
+            side: ICTFExchange.Side(side), // Convert uint8 to Side enum
             makerAmount: makerAmount,
             takerAmount: takerAmount,
             order: order
         });
+    }
+    
+    function _createAndSignOrder(
+        address maker,
+        uint256 tokenId,
+        uint8 side,
+        uint256 makerAmount,
+        uint256 takerAmount,
+        bytes32 questionId,
+        uint256 privateKey
+    ) internal returns (ICTFExchange.OrderIntent memory) {
+        // For short orders, the price calculation is different
+        // The original _createOrderIntent used: price = takerAmount, quantity = makerAmount
+        // So we need to maintain this logic
+        uint256 price = takerAmount;
+        uint256 quantity = makerAmount;
+        
+        ICTFExchange.Order memory order = ICTFExchange.Order({
+            salt: 1,
+            signer: maker,
+            maker: maker,
+            taker: address(0),
+            price: price,
+            quantity: quantity,
+            expiration: 0,
+            nonce: 0,
+            questionId: questionId,
+            intent: ICTFExchange.Intent.SHORT, // SHORT for short orders
+            feeRateBps: 0,
+            signatureType: ICTFExchange.SignatureType.EOA,
+            signature: new bytes(0)
+        });
+        
+        order.signature = _signMessage(privateKey, ctfExchange.hashOrder(order));
+        
+        return ICTFExchange.OrderIntent({
+            tokenId: tokenId,
+            side: ICTFExchange.Side(side),
+            makerAmount: makerAmount,
+            takerAmount: takerAmount,
+            order: order
+        });
+    }
+    
+    function _signMessage(uint256 pk, bytes32 message) internal returns (bytes memory sig) {
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, message);
+        sig = abi.encodePacked(r, s, v);
     }
     
     function _createScenario1Orders() internal returns (ICTFExchange.OrderIntent[] memory) {
@@ -249,16 +318,16 @@ contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
         uint256 spursNoPositionId = negRiskAdapter.getPositionId(spursQuestionId, false);
         
         // User A: Buy Arsenal No @ 0.25
-        orders[0] = _createOrderIntent(user1, arsenalNoPositionId, 0, 1e6, 0.25e6, questionId);
+        orders[0] = _createAndSignOrder(user1, arsenalNoPositionId, uint8(ICTFExchange.Side.BUY), 1e6, 0.25e6, questionId, user1PK);
         
         // User B: Buy Barcelona No @ 0.25
-        orders[1] = _createOrderIntent(user2, barcelonaNoPositionId, 0, 1e6, 0.25e6, barcelonaQuestionId);
+        orders[1] = _createAndSignOrder(user2, barcelonaNoPositionId, uint8(ICTFExchange.Side.BUY), 1e6, 0.25e6, barcelonaQuestionId, user2PK);
         
         // User C: Buy Chelsea No @ 0.25
-        orders[2] = _createOrderIntent(user3, chelseaNoPositionId, 0, 1e6, 0.25e6, chelseaQuestionId);
+        orders[2] = _createAndSignOrder(user3, chelseaNoPositionId, uint8(ICTFExchange.Side.BUY), 1e6, 0.25e6, chelseaQuestionId, user3PK);
         
         // User D: Buy Spurs No @ 0.25
-        orders[3] = _createOrderIntent(user4, spursNoPositionId, 0, 1e6, 0.25e6, spursQuestionId);
+        orders[3] = _createAndSignOrder(user4, spursNoPositionId, uint8(ICTFExchange.Side.BUY), 1e6, 0.25e6, spursQuestionId, user4PK);
         
         // Total combined price: 0.25 + 0.25 + 0.25 + 0.25 = 1.0
         
@@ -291,23 +360,23 @@ contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
         ctf.setApprovalForAll(address(adapter), true);
         
         // User A: Buy Arsenal No @ 0.75
-        orders[0] = _createOrderIntent(user1, arsenalNoPositionId, 0, 1e6, 0.25e6, questionId);
+        orders[0] = _createAndSignOrder(user1, arsenalNoPositionId, uint8(ICTFExchange.Side.BUY), 1e6, 0.25e6, questionId, user1PK);
         
         // User B: Sell Barcelona Yes @ 0.35 (equivalent to Shorting Barcelona @ 0.65)
-        orders[1] = _createOrderIntent(user2, barcelonaYesPositionId, 1, 1e6, 0.35e6, barcelonaQuestionId);
+        orders[1] = _createAndSignOrder(user2, barcelonaYesPositionId, uint8(ICTFExchange.Side.SELL), 1e6, 0.35e6, barcelonaQuestionId, user2PK);
         
         // User C: Buy Chelsea No @ 0.75
-        orders[2] = _createOrderIntent(user3, chelseaNoPositionId, 0, 1e6, 0.25e6, chelseaQuestionId);
+        orders[2] = _createAndSignOrder(user3, chelseaNoPositionId, uint8(ICTFExchange.Side.BUY), 1e6, 0.25e6, chelseaQuestionId, user3PK);
         
         // User D: Sell Spurs Yes @ 0.15 (equivalent to Shorting Spurs @ 0.85)
-        orders[3] = _createOrderIntent(user4, spursYesPositionId, 1, 1e6, 0.15e6, spursQuestionId);
+        orders[3] = _createAndSignOrder(user4, spursYesPositionId, uint8(ICTFExchange.Side.SELL), 1e6, 0.15e6, spursQuestionId, user4PK);
         
         // Total combined price: 0.25 + 0.35 + 0.25 + 0.15 = 1.0
         
         return orders;
     }
     
-    function test_Scenario1_AllBuyNoOrders() public {
+    function testScenario1AllBuyNoOrders() public {
         console.log("=== Testing Scenario 1: All Buy NO Orders (4 Users) ===");
         
         // Create orders for this scenario
@@ -318,7 +387,6 @@ contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
         uint256 user2InitialBalance = usdc.balanceOf(user2);
         uint256 user3InitialBalance = usdc.balanceOf(user3);
         uint256 user4InitialBalance = usdc.balanceOf(user4);
-        uint256 vaultInitialBalance = usdc.balanceOf(vault);
         
         // Execute cross-matching
         ICTFExchange.OrderIntent memory takerOrder = orders[0];
@@ -377,7 +445,7 @@ contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
         assertEq(user4NoTokens, expectedFillAmount, "User4 (Spurs) should have received NO tokens");
     }
     
-    function test_Scenario2_MixedBuySellOrders() public {
+    function testScenario2MixedBuySellOrders() public {
         console.log("=== Testing Scenario 2: Mixed Buy/Sell Orders (4 Users) ===");
         
         // Create orders for this scenario
@@ -388,7 +456,6 @@ contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
         uint256 user2InitialBalance = usdc.balanceOf(user2);
         uint256 user3InitialBalance = usdc.balanceOf(user3);
         uint256 user4InitialBalance = usdc.balanceOf(user4);
-        uint256 vaultInitialBalance = usdc.balanceOf(vault);
         
         // Execute cross-matching
         ICTFExchange.OrderIntent memory takerOrder = orders[0];
@@ -454,7 +521,7 @@ contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
         assertLt(user4YesTokens, 1e7, "User4 (Spurs) YES tokens should have been consumed");
     }
     
-    function test_InvalidCombinedPrice() public {
+    function testInvalidCombinedPrice() public {
         console.log("=== Testing Invalid Combined Price Validation ===");
         
         // Create orders with invalid combined price
@@ -491,17 +558,17 @@ contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
         uint256 spursNoPositionId = negRiskAdapter.getPositionId(spursQuestionId, false);
         
         // Create orders with prices that don't sum to 4.0
-        orders[0] = _createOrderIntent(user1, arsenalNoPositionId, 0, 1e6, 0.50e6, questionId);  // 0.50
-        orders[1] = _createOrderIntent(user2, barcelonaNoPositionId, 0, 1e6, 0.50e6, barcelonaQuestionId); // 0.50
-        orders[2] = _createOrderIntent(user3, chelseaNoPositionId, 0, 1e6, 0.50e6, chelseaQuestionId);     // 0.50
-        orders[3] = _createOrderIntent(user4, spursNoPositionId, 0, 1e6, 0.50e6, spursQuestionId);      // 0.50
+        orders[0] = _createAndSignOrder(user1, arsenalNoPositionId, uint8(ICTFExchange.Side.BUY), 1e6, 0.50e6, questionId, user1PK);  // 0.50
+        orders[1] = _createAndSignOrder(user2, barcelonaNoPositionId, uint8(ICTFExchange.Side.BUY), 1e6, 0.50e6, barcelonaQuestionId, user2PK); // 0.50
+        orders[2] = _createAndSignOrder(user3, chelseaNoPositionId, uint8(ICTFExchange.Side.BUY), 1e6, 0.50e6, chelseaQuestionId, user3PK);     // 0.50
+        orders[3] = _createAndSignOrder(user4, spursNoPositionId, uint8(ICTFExchange.Side.BUY), 1e6, 0.50e6, spursQuestionId, user4PK);      // 0.50
         
         // Total: 0.50 + 0.50 + 0.50 + 0.50 = 2.0, but should equal 4.0 for short orders
         
         return orders;
     }
     
-    function test_Scenario3_OneQuestionResolved() public {
+    function testScenario3OneQuestionResolved() public {
         console.log("=== Testing Scenario 3: One Question Already Resolved (3 Active Orders) ===");
         
         // Create a new market for this test to avoid conflicts
@@ -519,10 +586,10 @@ contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
         // Create orders ONLY for the 3 active questions (Arsenal is resolved, so no order for it)
         // We need 3 orders total: 1 taker + 2 makers = 3 active questions
         // The prices should sum to 1.0 for the active questions: 0.35 + 0.45 + 0.20 = 1.0
-        ICTFExchange.OrderIntent memory takerOrder = _createOrderIntent(user1, negRiskAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, 1), false), 0, 1e6, 350000, barcelonaQuestionId); // Barcelona NO at 0.35
+        ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, negRiskAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, 1), false), uint8(ICTFExchange.Side.BUY), 1e6, 350000, barcelonaQuestionId, user1PK); // Barcelona NO at 0.35
         ICTFExchange.OrderIntent[] memory makerOrders = new ICTFExchange.OrderIntent[](2);
-        makerOrders[0] = _createOrderIntent(user2, negRiskAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, 2), false), 0, 1e6, 450000, chelseaQuestionId); // Chelsea NO at 0.45
-        makerOrders[1] = _createOrderIntent(user3, negRiskAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, 3), false), 0, 1e6, 200000, spursQuestionId); // Spurs NO at 0.20
+        makerOrders[0] = _createAndSignOrder(user2, negRiskAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, 2), false), uint8(ICTFExchange.Side.BUY), 1e6, 450000, chelseaQuestionId, user2PK); // Chelsea NO at 0.45
+        makerOrders[1] = _createAndSignOrder(user3, negRiskAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, 3), false), uint8(ICTFExchange.Side.BUY), 1e6, 200000, spursQuestionId, user3PK); // Spurs NO at 0.20
         
         // Execute cross-matching with only 3 orders for the 3 active questions (Arsenal is resolved, so no order for it)
         uint256 fillAmount = 50 * 1e6;
@@ -570,9 +637,9 @@ contract CrossMatchingAdapterShortOrdersTest is Test, TestHelper {
 
 // Mock USDC contract
 contract MockUSDC {
-    string public constant name = "USD Coin";
-    string public constant symbol = "USDC";
-    uint8 public constant decimals = 6;
+    string public constant NAME = "USD Coin";
+    string public constant SYMBOL = "USDC";
+    uint8 public constant DECIMALS = 6;
     
     uint256 public totalSupply;
     mapping(address => uint256) public balanceOf;
@@ -602,6 +669,10 @@ contract MockUSDC {
         balanceOf[to] += amount;
         allowance[from][msg.sender] -= amount;
         return true;
+    }
+    
+    function decimals() external pure returns (uint8) {
+        return DECIMALS;
     }
 }
 

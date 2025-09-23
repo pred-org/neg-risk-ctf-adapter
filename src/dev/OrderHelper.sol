@@ -35,19 +35,31 @@ contract OrderHelper is Script {
         pure
         returns (ICTFExchange.Order memory)
     {
+        // Calculate price: for BUY orders, price = (takerAmount * ONE_SIX) / makerAmount
+        // This ensures that makerAmount = (price * fillAmount) / ONE_SIX
+        uint256 price;
+        uint256 quantity;
+        if (_side == Side.BUY) {
+            price = (_makerAmount * 1e6) / _takerAmount;
+            quantity = _takerAmount;
+        } else {
+            price = (_takerAmount * 1e6) / _makerAmount;
+            quantity = _makerAmount;
+        }
+        
         ICTFExchange.Order memory order = ICTFExchange.Order({
             salt: 1,
             signer: _maker,
             maker: _maker,
             taker: address(0),
-            tokenId: _tokenId,
-            makerAmount: _makerAmount,
-            takerAmount: _takerAmount,
+            price: price,
+            quantity: quantity, // This should be the amount of tokens to receive
             expiration: 0,
             nonce: 0,
+            questionId: bytes32(0),
+            intent: ICTFExchange.Intent.LONG,
             feeRateBps: 0,
-            signatureType: uint8(SignatureType.EOA),
-            side: uint8(_side),
+            signatureType: ICTFExchange.SignatureType.EOA,
             signature: new bytes(0)
         });
         return order;

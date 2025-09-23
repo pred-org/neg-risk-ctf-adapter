@@ -2,6 +2,8 @@
 pragma solidity ^0.8.15;
 
 interface ICTFExchange {
+    error MakingGtRemaining();
+
     event FeeCharged(address indexed receiver, uint256 tokenId, uint256 amount);
     event NewAdmin(address indexed newAdminAddress, address indexed admin);
     event NewOperator(address indexed newOperatorAddress, address indexed admin);
@@ -32,20 +34,50 @@ interface ICTFExchange {
     event TradingPaused(address indexed pauser);
     event TradingUnpaused(address indexed pauser);
 
+    enum SignatureType {
+        EOA,
+        POLY_PROXY,
+        POLY_GNOSIS_SAFE
+    }
+
+    enum Intent {
+        LONG,
+        SHORT
+    }
+
+    enum Side {
+        BUY,
+        SELL
+    }
+
+    enum MatchType {
+        COMPLEMENTARY,
+        MINT,
+        MERGE
+    }
+
     struct Order {
         uint256 salt;
         address maker;
         address signer;
         address taker;
-        uint256 tokenId;
-        uint256 makerAmount;
-        uint256 takerAmount;
+        uint256 price;
+        uint256 quantity;
         uint256 expiration;
         uint256 nonce;
+        bytes32 questionId;
+        Intent intent;
         uint256 feeRateBps;
-        uint8 side;
-        uint8 signatureType;
+        SignatureType signatureType;
         bytes signature;
+    }
+
+    struct OrderIntent {
+        uint256 tokenId;
+        Side side;
+        Order order;
+        uint256 makerAmount;
+        uint256 takerAmount;
     }
 
     struct OrderStatus {
@@ -57,14 +89,15 @@ interface ICTFExchange {
     function addOperator(address operator_) external;
     function admins(address) external view returns (uint256);
     function cancelOrder(Order memory order) external;
-    function cancelOrders(Order[] memory orders) external;
+    function cancelOrders(OrderIntent[] memory orders) external;
     function domainSeparator() external view returns (bytes32);
-    function fillOrder(Order memory order, uint256 fillAmount) external;
-    function fillOrders(Order[] memory orders, uint256[] memory fillAmounts) external;
+    function fillOrder(OrderIntent memory order, uint256 fillAmount) external;
+    function fillOrders(OrderIntent[] memory orders, uint256[] memory fillAmounts) external;
     function getCollateral() external view returns (address);
     function getComplement(uint256 token) external view returns (uint256);
     function getConditionId(uint256 token) external view returns (bytes32);
     function getCtf() external view returns (address);
+    function getCtfAddress() external view returns (address);
     function getMaxFeeRate() external pure returns (uint256);
     function getOrderStatus(bytes32 orderHash) external view returns (OrderStatus memory);
     function getPolyProxyFactoryImplementation() external view returns (address);
@@ -79,8 +112,8 @@ interface ICTFExchange {
     function isOperator(address usr) external view returns (bool);
     function isValidNonce(address usr, uint256 nonce) external view returns (bool);
     function matchOrders(
-        Order memory takerOrder,
-        Order[] memory makerOrders,
+        OrderIntent memory takerOrder,
+        OrderIntent[] memory makerOrders,
         uint256 takerFillAmount,
         uint256[] memory makerFillAmounts
     ) external;
@@ -107,7 +140,8 @@ interface ICTFExchange {
     function supportsInterface(bytes4 interfaceId) external view returns (bool);
     function unpauseTrading() external;
     function validateComplement(uint256 token, uint256 complement) external view;
-    function validateOrder(Order memory order) external view;
+    function validateOrder(OrderIntent memory order) external view;
     function validateOrderSignature(bytes32 orderHash, Order memory order) external view;
     function validateTokenId(uint256 tokenId) external view;
+    function updateOrderStatus(OrderIntent memory orderIntent, uint256 makingAmount) external;
 }

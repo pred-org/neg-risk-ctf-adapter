@@ -11,7 +11,8 @@ import {IRevNegRiskAdapter} from "./interfaces/IRevNegRiskAdapter.sol";
 import {WrappedCollateral} from "src/WrappedCollateral.sol";
 import {NegRiskIdLib} from "./libraries/NegRiskIdLib.sol";
 
-import {console2} from "forge-std/console2.sol";
+import {ICTFExchange} from "src/interfaces/ICTFExchange.sol";
+import {OrderStatus} from "lib/ctf-exchange/src/exchange/libraries/OrderStructs.sol";
 
 /*
  * Cross-matching adapter for NegRisk events.
@@ -25,42 +26,6 @@ import {console2} from "forge-std/console2.sol";
  *
  * Uses pivot index 0 (no external field) via neg.getQuestionId(marketId, 0).
  */
-
-interface ICTFExchange {
-    struct OrderIntent {
-      /// @notice Token Id of the CTF ERC1155 asset to be bought or sold
-      /// If BUY, this is the tokenId of the asset to be bought, i.e the makerAssetId
-      /// If SELL, this is the tokenId of the asset to be sold, i.e the takerAssetId
-      uint256 tokenId;
-      /// @notice The side of the order: BUY or SELL
-      uint8 side; // 0 = BUY, 1 = SELL
-      uint256 makerAmount;
-      uint256 takerAmount;
-      Order order;
-    }
-    struct Order {
-        uint256 salt;
-        address maker;       // funder (USDC for BUY, NO for SELL)
-        address signer;
-        address taker;       // unused here
-        uint256 price;       // USDC per share (fixed-point 6 decimals)
-        uint256 quantity;    // number of shares to trade
-        uint256 expiration;
-        uint256 nonce;
-        uint256 feeRateBps;
-        bytes32 questionId;
-        uint8   intent; // 0 = LONG, 1 = SHORT
-        uint8   signatureType;
-        bytes   signature;
-    }
-
-    function matchOrders(
-        OrderIntent memory takerOrder,
-        OrderIntent[] memory makerOrders,
-        uint256 takerFillAmount,
-        uint256[] memory makerFillAmounts
-    ) external;
-}
 
 contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
     // constants
@@ -144,7 +109,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
                 singleOrderIndex++;
             } else {
                 // cross match
-                if (takerOrder.order.intent == 0) {
+                if (takerOrder.order.intent == ICTFExchange.Intent.LONG) {
                     // LONG
                     crossMatchLongOrders(marketId, takerOrder, makerOrder, makerFillAmounts[i]);
                 } else {
@@ -174,15 +139,20 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
             revert InvalidFillAmount();
         }
 
+        // Validate taker order signature and parameters
+        ctfExchange.validateOrder(takerOrder);
+        ctfExchange.updateOrderStatus(takerOrder, fillAmount);
+
+        // Validate all maker orders signatures and parameters and update the order status
+        for (uint256 i = 0; i < multiOrderMaker.length; i++) {
+            ctfExchange.validateOrder(multiOrderMaker[i]);
+            ctfExchange.updateOrderStatus(multiOrderMaker[i], fillAmount);
+        }
+
         Parsed[] memory parsedOrders = new Parsed[](multiOrderMaker.length + 1);
         uint256 totalBuyUSDC = 0;
         uint256 totalSellUSDC = 0;
         uint256 totalCombinedPrice = 0;
-
-        // Check that we have orders for at least some questions in the market
-        // The function can handle cases where some questions are already resolved
-        uint256 questionCount = neg.getQuestionCount(marketId);
-        require(multiOrderMaker.length + 1 <= questionCount, "Cannot have more orders than questions in the market");
         
         // Parse taker order
         parsedOrders[0] = _parseOrder(takerOrder, fillAmount);
@@ -245,7 +215,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         }
 
         // Merge all the YES tokens to get USDC
-        require(ctf.balanceOf(address(this), neg.getPositionId(parsedOrders[0].questionId, true)) == fillAmount, "YES tokens should be at the target yes position");
         uint8 pivotIndex = _getQuestionIndexFromPositionId(parsedOrders[0].tokenId, marketId);
         revNeg.mergeAllYesTokens(marketId, fillAmount, pivotIndex);
 
@@ -285,6 +254,16 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
             revert InvalidFillAmount();
         }
 
+        // Validate taker order signature and parameters
+        ctfExchange.validateOrder(takerOrder);
+        ctfExchange.updateOrderStatus(takerOrder, fillAmount);
+
+        // Validate all maker orders signatures and parameters
+        for (uint256 i = 0; i < multiOrderMaker.length; i++) {
+            ctfExchange.validateOrder(multiOrderMaker[i]);
+            ctfExchange.updateOrderStatus(multiOrderMaker[i], fillAmount);
+        }
+
         // Cross-matching function that handles scenarios including resolved questions:
         // 
         // Scenario 1: All buy orders (e.g., 4 users buying Yes1, Yes2, Yes3, Yes4)
@@ -309,11 +288,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         // - Only process orders for active (unresolved) questions
         // - Use taker's question ID as pivot instead of hardcoded 0
         // - Handle USDC flow correctly for partial market scenarios
-        
-        // Check that we have orders for at least some questions in the market
-        // The function can handle cases where some questions are already resolved
-        uint256 questionCount = neg.getQuestionCount(marketId);
-        require(multiOrderMaker.length + 1 <= questionCount, "Cannot have more orders than questions in the market");
         
         Parsed[] memory parsedOrders = new Parsed[](multiOrderMaker.length + 1);
         uint256 totalSellUSDC = 0;
@@ -377,9 +351,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
             // get from vault
             usdc.transferFrom(neg.vault(), address(this), totalSellUSDC);
         }
-
-        
-        uint256 questionCount = neg.getQuestionCount(marketId);
         
         // STEP 1: Split position for pivot question (use taker's question ID) to create YES + NO
         // Use the taker's question ID as the pivot since we know it's active (unresolved)
@@ -442,7 +413,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         
         require(order.side == SIDE_SELL, "Order must be a sell order");
         uint256 noPositionId = order.tokenId;
-        uint256 yesPositionId = neg.getPositionId(order.questionId, true);
 
         uint256 mergeAmount = fillAmount;
         
@@ -454,10 +424,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
             mergeAmount,
             ""
         );
-        
-        // Check if adapter has enough YES tokens for this question
-        uint256 adapterYesBalance = ctf.balanceOf(address(this), yesPositionId);
-        require(adapterYesBalance >= order.counterPayAmount, "Adapter doesn't have enough YES tokens for merge");
         
         // Get the condition ID for this question from the NegRiskAdapter
         bytes32 conditionId = neg.getConditionId(order.questionId);
@@ -525,14 +491,14 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
 
         // token side
         bool isYes = true;
-        if (order.order.intent == 0) {
-            if (order.side == SIDE_BUY) {
+        if (order.order.intent == ICTFExchange.Intent.LONG) {
+            if (order.side == ICTFExchange.Side.BUY) {
                 isYes = true;
             } else {
                 isYes = false;
             }
         } else {
-            if (order.side == SIDE_SELL) {
+            if (order.side == ICTFExchange.Side.SELL) {
                 isYes = true;
             } else {
                 isYes = false;
@@ -543,7 +509,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
 
         return Parsed({
             maker: order.order.maker,
-            side: order.side,
+            side: uint8(order.side),
             tokenId: order.tokenId,
             priceQ6: priceQ6,
             payAmount: payUSDC,
