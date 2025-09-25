@@ -98,6 +98,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         // Pre-allocate arrays for single orders using the provided count
         ICTFExchange.OrderIntent[] memory singleMakerOrders = new ICTFExchange.OrderIntent[](singleOrderCount);
         uint256[] memory singleMakerFillAmounts = new uint256[](singleOrderCount);
+        uint256 singleOrdersTakerAmount = 0;
         uint256 singleOrderIndex = 0;
         
         for (uint256 i = 0; i < makerOrders.length;) {
@@ -106,6 +107,19 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
                 // Collect single maker orders for batch processing
                 singleMakerOrders[singleOrderIndex] = makerOrder[0];
                 singleMakerFillAmounts[singleOrderIndex] = makerFillAmounts[i];
+                
+                // For COMPLEMENTARY matches, calculate the correct taker fill amount
+                // The taker fill amount should be the USDC amount needed to buy the tokens
+                // For BUY orders: takerFillAmount = (makerFillAmount * takerOrder.price) / 1e6
+                // For SELL orders: takerFillAmount = makerFillAmount (taker receives tokens directly)
+                if (takerOrder.side == ICTFExchange.Side.BUY) {
+                    // Taker is buying, so calculate USDC amount needed
+                    uint256 usdcNeeded = (makerFillAmounts[i] * takerOrder.order.price) / 1e6;
+                    singleOrdersTakerAmount += usdcNeeded;
+                } else {
+                    // Taker is selling, so the fill amount is the token amount
+                    singleOrdersTakerAmount += makerFillAmounts[i];
+                }
                 singleOrderIndex++;
             } else {
                 // cross match
@@ -125,7 +139,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         // Process all single maker orders in a single batch call
         if (singleOrderCount > 0) {
             // Single call to match all orders at once
-            ctfExchange.matchOrders(takerOrder, singleMakerOrders, takerFillAmount, singleMakerFillAmounts);
+            ctfExchange.matchOrders(takerOrder, singleMakerOrders, singleOrdersTakerAmount, singleMakerFillAmounts);
         }
     }
 
@@ -257,7 +271,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         // Validate taker order signature and parameters
         ctfExchange.validateOrder(takerOrder);
         ctfExchange.updateOrderStatus(takerOrder, fillAmount);
-
         // Validate all maker orders signatures and parameters
         for (uint256 i = 0; i < multiOrderMaker.length; i++) {
             ctfExchange.validateOrder(multiOrderMaker[i]);
@@ -346,6 +359,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
     ) internal {
         // Collect USDC from buyers before we can use it
         _collectBuyerUSDC(parsedOrders, false);
+
         
         if (totalSellUSDC > 0) {
             // get from vault
