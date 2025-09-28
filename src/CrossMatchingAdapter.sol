@@ -91,7 +91,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         bytes32 marketId,
         ICTFExchange.OrderIntent calldata takerOrder, 
         ICTFExchange.OrderIntent[][] calldata makerOrders, 
-        uint256 takerFillAmount,
         uint256[] calldata makerFillAmounts,
         uint8 singleOrderCount
     ) external nonReentrant {

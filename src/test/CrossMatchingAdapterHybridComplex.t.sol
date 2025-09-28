@@ -630,6 +630,68 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         console.log("Self-financing property test passed!");
     }
 
+
+    // TODO: need to check this with vaibhav
+    function test_HybridMatchOrders_SelfFinancingProperty_mint_sell_order() public {
+        console.log("=== Testing Self-Financing Property with mint and sell order ===");
+        
+        // Create 4 questions
+        bytes32[] memory questionIds = new bytes32[](4);
+        uint256[] memory yesPositionIds = new uint256[](4);
+        
+        for (uint256 i = 0; i < 4; i++) {
+            questionIds[i] = negRiskAdapter.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)));
+            yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
+            uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
+            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
+        }
+        
+        // Record initial adapter balances
+        uint256 initialUSDCBalance = usdc.balanceOf(address(adapter));
+        uint256 initialWCOLBalance = negRiskAdapter.wcol().balanceOf(address(adapter));
+        
+        ICTFExchange.OrderIntent[][] memory makerOrders = new ICTFExchange.OrderIntent[][](2);
+        uint256[] memory makerFillAmounts = new uint256[](2);
+
+        uint256 noPositionId3 = negRiskAdapter.getPositionId(questionIds[3], false);
+        
+        // Single order - price 0.25
+        makerOrders[0] = new ICTFExchange.OrderIntent[](1);
+        // need to check this with vaibhav
+        makerOrders[0][0] = _createAndSignOrder(user2, noPositionId3, 0, 0.25e6, 1e6, questionIds[3], 1, user2PK);
+        makerFillAmounts[0] = 0.1e6;
+
+        // _mintTokensToUser(user2, yesPositionIds[3], 1e6);
+        MockUSDC(address(usdc)).mint(address(user2), 1e6);
+        MockUSDC(address(usdc)).mint(address(negRiskAdapter.wcol()), 1e6);
+
+        vm.prank(user2);
+        ctf.setApprovalForAll(address(negRiskAdapter), true);
+        
+        // Cross-match order - prices 0.25 + 0.25 = 0.5
+        makerOrders[1] = new ICTFExchange.OrderIntent[](2);
+        makerOrders[1][0] = _createAndSignOrder(user3, yesPositionIds[1], 0, 0.35e6, 1e6, questionIds[1], 0, user3PK);
+        makerOrders[1][1] = _createAndSignOrder(user4, yesPositionIds[2], 0, 0.4e6, 1e6, questionIds[2], 0, user4PK);
+        makerFillAmounts[1] = 0.1e6;
+        
+        // Taker order - price 0.25
+        // Total prices: 0.25 + 0.5 + 0.25 = 1.0
+        ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionIds[3], 0, 0.25e6, 1e6, questionIds[3], 0, user1PK);
+        uint256 takerFillAmount = 0.2e6;
+        
+        // Execute hybrid match orders
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, makerFillAmounts, 1);
+        
+        // Verify self-financing property
+        uint256 finalUSDCBalance = usdc.balanceOf(address(adapter));
+        uint256 finalWCOLBalance = negRiskAdapter.wcol().balanceOf(address(adapter));
+        
+        assertEq(finalUSDCBalance, initialUSDCBalance, "Adapter should have no net USDC change");
+        assertEq(finalWCOLBalance, initialWCOLBalance, "Adapter should have no net WCOL change");
+        
+        console.log("Self-financing property test passed!");
+    }
+
     function test_HybridMatchOrders_BalanceConservation() public {
         console.log("=== Testing Balance Conservation ===");
         
