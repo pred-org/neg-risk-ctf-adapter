@@ -291,13 +291,12 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         // Taker order: 0.3 (participates in cross-match)
         // Cross-match total: 0.7 + 0.3 = 1.0 ✓
         ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionIds[5], 0, 0.3e6, 1e6, questionIds[5], 0, user1PK);
-        uint256 takerFillAmount = 0.4e6;
         
         // Execute hybrid match orders (3 single orders, 1 cross-match)
-        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, makerFillAmounts, 3);
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, makerFillAmounts, 3);
         
         // Verify balances
-        assertEq(ctf.balanceOf(user1, yesPositionIds[5]), takerFillAmount, "User1 should receive YES tokens from cross-match");
+        assertEq(ctf.balanceOf(user1, yesPositionIds[5]), 0.4e6, "User1 should receive YES tokens from cross-match");
         assertEq(ctf.balanceOf(user2, yesPositionIds[5]), 2e6 - makerFillAmounts[0], "User2 should have sold YES tokens");
         assertEq(ctf.balanceOf(user3, yesPositionIds[5]), 2e6 - makerFillAmounts[1], "User3 should have sold YES tokens");
         assertEq(ctf.balanceOf(user4, yesPositionIds[5]), 2e6 - makerFillAmounts[2], "User4 should have sold YES tokens");
@@ -364,14 +363,13 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         // Taker order - price 0.0 (not buying, just participating in cross-match)
         // Total prices: 0.5 (single) + 0.2 (cross-match 1) + 0.3 (cross-match 2) + 0.0 (taker) = 1.0
         ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionIds[0], 0, 0.45e6, 1e6, questionIds[0], 0, user1PK);
-        uint256 takerFillAmount = 0.35e6;
 
         // Since minting of tokens didn't happen, we need to mint USDC to the NegRiskAdapter
         // TODO: Need to check it
         MockUSDC(address(usdc)).mint(address(ctfExchange), 3e6);
 
         // Execute hybrid match orders (5 single orders, 2 cross-match)
-        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, makerFillAmounts, 5);
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, makerFillAmounts, 5);
         
         console.log("Large scale scenario test passed!");
     }
@@ -428,13 +426,12 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         
         // Taker order: User1 selling NO tokens for question 0 - price 0.25
         ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, noPositionIds[0], 1, 1e6, 0.25e6, questionIds[0], 0, user1PK);
-        uint256 takerFillAmount = 1e6;
         
         // Since minting of tokens didn't happen, we need to mint USDC to the NegRiskAdapter
         MockUSDC(address(usdc)).mint(address(negRiskAdapter.wcol()), 3e6);
 
         // Execute hybrid match orders (0 single orders, 1 cross-match)
-        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, makerFillAmounts, 0);
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, makerFillAmounts, 0);
         
         // console.log("All sell orders scenario test passed!");
     }
@@ -467,11 +464,10 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         makerFillAmounts[0] = 0.1e6;
         
         ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionIds[2], 0, 0.2e6, 1e6, questionIds[2], 0, user1PK); // 0.2
-        uint256 takerFillAmount = 0.1e6;
         
         // Total price = 0.3 + 0.4 + 0.2 = 0.9 ≠ 1.0, should revert
         vm.expectRevert(CrossMatchingAdapter.InvalidCombinedPrice.selector);
-        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, makerFillAmounts, 0);
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, makerFillAmounts, 0);
         
         console.log("Invalid combined price edge case test passed!");
     }
@@ -496,11 +492,10 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         
         // Taker order requiring more USDC than user1 has
         ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionId, 0, 2e6, 1e6, questionId, 0, user1PK);
-        uint256 takerFillAmount = 0.1e6;
         
         // This should revert due to insufficient USDC balance
         vm.expectRevert();
-        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, makerFillAmounts, 1);
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, makerFillAmounts, 1);
         
         console.log("Insufficient USDC balance edge case test passed!");
     }
@@ -521,12 +516,11 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         makerFillAmounts[1] = 0.1e6;
         
         ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionId, 0, 1e6, 1e6, questionId, 0, user1PK);
-        uint256 takerFillAmount = 0.1e6;
         
         // Pass incorrect single order count (1 instead of 2)
         // This should cause array bounds issues
         vm.expectRevert();
-        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, makerFillAmounts, 1);
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, makerFillAmounts, 1);
         
         console.log("Invalid single order count edge case test passed!");
     }
@@ -563,10 +557,9 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         // Taker order - price 0.6
         // Total prices: 0.1 + 0.1 + 0.1 + 0.1 + 0.6 = 1.0
         ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionIds[4], 0, 0.6e6, 1e6, questionIds[4], 0, user1PK);
-        uint256 takerFillAmount = 0.1e6;
         
         // Execute hybrid match orders
-        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, makerFillAmounts, 0);
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, makerFillAmounts, 0);
         
         console.log("Extreme price distribution test passed!");
     }
@@ -615,10 +608,9 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         // Taker order - price 0.25
         // Total prices: 0.25 + 0.5 + 0.25 = 1.0
         ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionIds[3], 0, 0.25e6, 1e6, questionIds[3], 0, user1PK);
-        uint256 takerFillAmount = 0.2e6;
         
         // Execute hybrid match orders
-        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, makerFillAmounts, 1);
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, makerFillAmounts, 1);
         
         // Verify self-financing property
         uint256 finalUSDCBalance = usdc.balanceOf(address(adapter));
@@ -677,10 +669,9 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         // Taker order - price 0.25
         // Total prices: 0.25 + 0.5 + 0.25 = 1.0
         ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionIds[3], 0, 0.25e6, 1e6, questionIds[3], 0, user1PK);
-        uint256 takerFillAmount = 0.2e6;
         
         // Execute hybrid match orders
-        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, makerFillAmounts, 1);
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, makerFillAmounts, 1);
         
         // Verify self-financing property
         uint256 finalUSDCBalance = usdc.balanceOf(address(adapter));
@@ -719,10 +710,9 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         makerFillAmounts[0] = 0.1e6;
         
         ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionIds[2], 0, 0.3e6, 1e6, questionIds[2], 0, user1PK);
-        uint256 takerFillAmount = 0.1e6;
         
         // Execute hybrid match orders
-        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, makerFillAmounts, 0);
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, makerFillAmounts, 0);
         
         // Verify balance conservation
         uint256 finalTotalUSDC = usdc.totalSupply();

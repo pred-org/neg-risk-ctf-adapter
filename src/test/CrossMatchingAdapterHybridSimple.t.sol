@@ -284,10 +284,9 @@ contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
         // amount = price * quantity / 1e6 = 0.25e6 * 1e6 / 1e6 = 0.25e6
         // So OrderIntent.makerAmount should be 0.25e6, takerAmount should be 1e6
         ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, negRiskAdapter.getPositionId(question1Id, true), 0, 0.25e6, 1e6, question1Id, 0, user1PK);
-        uint256 takerFillAmount = 0.05e6; // 50K USDC - this should be the correct amount now
         
         // Execute hybrid match orders (2 single orders)
-        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, makerFillAmounts, 2);
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, makerFillAmounts, 2);
         
         // For real CTFExchange, we can't easily track call counts, so we'll verify the execution completed successfully
         // The test passes if no revert occurs during execution
@@ -329,10 +328,9 @@ contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
         
         // Create taker order - user1 buys YES tokens for question1
         ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yes1PositionId, 0, 0.15e6, 1e6, question1Id, 0, user1PK);
-        uint256 takerFillAmount = 0.1e6; // 100K tokens - smaller than makerAmount (1e6)
         
         // Execute hybrid match orders (0 single orders, all cross-match)
-        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, makerFillAmounts, 0);
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, makerFillAmounts, 0);
         
         // For real CTFExchange, we can't easily track call counts, so we'll verify the execution completed successfully
         // The test passes if no revert occurs during execution
@@ -380,17 +378,16 @@ contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
         
         // Create taker order - user1 buys YES tokens for questionId
         ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionId, 0, 0.4e6, 1e6, questionId, 0, user1PK);
-        uint256 takerFillAmount = 0.1e6; // 100K tokens
         
         // Execute hybrid match orders (1 single order, 1 cross-match)
-        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, makerFillAmounts, 1);
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, makerFillAmounts, 1);
         
         // Verify token balances after execution
         console.log("=== Verifying Token Balances After Hybrid Match ===");
         
         // User1 (taker) should receive YES tokens from both single order and cross-match
         // Single order: 100,000 tokens, Cross-match: 100,000 tokens = 200,000 total
-        assertEq(ctf.balanceOf(user1, yesPositionId), takerFillAmount * 2, "User1 should receive YES tokens from both single order and cross-match");
+        assertEq(ctf.balanceOf(user1, yesPositionId), 0.1e6 * 2, "User1 should receive YES tokens from both single order and cross-match");
         console.log("User1 YES tokens: %s", ctf.balanceOf(user1, yesPositionId));
         
         // User2 (single maker) should have sold YES tokens
@@ -460,10 +457,9 @@ contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
         
         // Create taker order - user1 buys YES tokens for question1
         ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yes1PositionId, 0, 0.2e6, 1e6, question1Id, 0, user1PK);
-        uint256 takerFillAmount = 0.1e6; // 100K tokens - smaller than makerAmount (1e6)
         
         // Execute with 0 single orders (correct count)
-        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, makerFillAmounts, 0);
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, makerFillAmounts, 0);
         
         // For real CTFExchange, we can't easily track call counts, so we'll verify the execution completed successfully
         // The test passes if no revert occurs during execution
