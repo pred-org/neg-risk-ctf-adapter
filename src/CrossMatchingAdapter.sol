@@ -99,6 +99,8 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         uint256[] memory singleMakerFillAmounts = new uint256[](singleOrderCount);
         uint256 singleOrdersTakerAmount = 0;
         uint256 singleOrderIndex = 0;
+
+        bool isTakerBuying = takerOrder.side == ICTFExchange.Side.BUY;
         
         for (uint256 i = 0; i < makerOrders.length;) {
             ICTFExchange.OrderIntent[] calldata makerOrder = makerOrders[i];
@@ -111,14 +113,12 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
                 // The taker fill amount should be the USDC amount needed to buy the tokens
                 // For BUY orders: takerFillAmount = (makerFillAmount * takerOrder.price) / 1e6
                 // For SELL orders: takerFillAmount = makerFillAmount (taker receives tokens directly)
-                if (takerOrder.side == ICTFExchange.Side.BUY) {
-                    // Taker is buying, so calculate USDC amount needed
-                    uint256 usdcNeeded = (makerFillAmounts[i] * takerOrder.order.price) / 1e6;
-                    singleOrdersTakerAmount += usdcNeeded;
+                if (isTakerBuying) {
+                    singleOrdersTakerAmount += (makerFillAmounts[i] * takerOrder.order.price) / 1e6;
                 } else {
-                    // Taker is selling, so the fill amount is the token amount
                     singleOrdersTakerAmount += makerFillAmounts[i];
                 }
+                
                 singleOrderIndex++;
             } else {
                 // cross match
