@@ -44,9 +44,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
     WrappedCollateral public immutable wcol; // wrapped USDC
     IERC20 public immutable usdc;
 
-    uint256[] internal PARTITION; // [YES, NO] = [1,2]
-    uint256   constant PIVOT_INDEX_BIT = 1; // index 0 -> bit 1
-
     constructor(INegRiskAdapter neg_, IERC20 usdc_, ICTFExchange ctfExchange_, IRevNegRiskAdapter revNeg_) {
         revNeg = revNeg_;
         neg  = neg_;
@@ -54,9 +51,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         ctf  = IConditionalTokens(neg_.ctf());
         wcol = WrappedCollateral(neg_.wcol());
         usdc = usdc_;
-        PARTITION = new uint256[](2);
-        PARTITION[0] = 1; // YES
-        PARTITION[1] = 2; // NO
         
         // Approve CTF contract to transfer WCOL on our behalf
         wcol.approve(address(ctf), type(uint256).max);
@@ -553,29 +547,5 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         
         // If we can't find a matching question, revert
         revert UnsupportedToken();
-    }
-    
-    /*//////////////////////////////////////////////////////////////
-                        ERC1155 TOKEN RECEIVER
-    //////////////////////////////////////////////////////////////*/
-    
-    function onERC1155Received(
-        address operator,
-        address from,
-        uint256 id,
-        uint256 value,
-        bytes calldata data
-    ) external pure override returns (bytes4) {
-        return this.onERC1155Received.selector;
-    }
-    
-    function onERC1155BatchReceived(
-        address operator,
-        address from,
-        uint256[] calldata ids,
-        uint256[] calldata values,
-        bytes calldata data
-    ) external pure override returns (bytes4) {
-        return this.onERC1155BatchReceived.selector;
     }
 }
