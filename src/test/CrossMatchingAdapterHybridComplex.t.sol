@@ -173,6 +173,24 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
             price = (takerAmount * 1e6) / makerAmount;
             quantity = makerAmount;
         }
+
+        bool isYes = true;
+        if (intent == uint8(ICTFExchange.Intent.LONG)) {
+            if (side == uint8(ICTFExchange.Side.BUY)) {
+                isYes = true;
+            } else {
+                isYes = false;
+            }
+        } else {
+            if (side == uint8(ICTFExchange.Side.SELL)) {
+                isYes = true;
+            } else {
+                isYes = false;
+            }
+        }
+        if (!isYes) {
+            price = 1e6 - price;
+        }
         
         ICTFExchange.Order memory order = ICTFExchange.Order({
             salt: 1,
@@ -329,7 +347,6 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         // Single orders (5) - each with price 0.1, total = 0.5
         // Selling YES tokens, short intent
         for (uint256 i = 0; i < 5; i++) {
-            // _mintTokensToUser(vm.addr(1000 + i), noPositionId0, 1e6);
             MockUSDC(address(usdc)).mint(vm.addr(1000 + i), 1e6);
             vm.prank(vm.addr(1000 + i));
             usdc.approve(address(ctfExchange), 1e6);
@@ -419,13 +436,14 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         // Cross-match order: 3 makers selling NO tokens at 0.25 each
         // Combined with taker (0.25) = 0.25 + 0.25 + 0.25 + 0.25 = 1.0
         makerOrders[0] = new ICTFExchange.OrderIntent[](3);
-        makerOrders[0][0] = _createAndSignOrder(user2, noPositionIds[1], 1, 1e6, 0.25e6, questionIds[1], 0, user2PK);
-        makerOrders[0][1] = _createAndSignOrder(user3, noPositionIds[2], 1, 1e6, 0.25e6, questionIds[2], 0, user3PK);
-        makerOrders[0][2] = _createAndSignOrder(user4, noPositionIds[3], 1, 1e6, 0.25e6, questionIds[3], 0, user4PK);
+        // Sending 0.75e6 here instead of 0.25e6, as the createAndSignOrder function will convert the price to 0.25
+        makerOrders[0][0] = _createAndSignOrder(user2, noPositionIds[1], 1, 1e6, 0.75e6, questionIds[1], 0, user2PK);
+        makerOrders[0][1] = _createAndSignOrder(user3, noPositionIds[2], 1, 1e6, 0.75e6, questionIds[2], 0, user3PK);
+        makerOrders[0][2] = _createAndSignOrder(user4, noPositionIds[3], 1, 1e6, 0.75e6, questionIds[3], 0, user4PK);
         makerFillAmounts[0] = 1e6;
         
         // Taker order: User1 selling NO tokens for question 0 - price 0.25
-        ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, noPositionIds[0], 1, 1e6, 0.25e6, questionIds[0], 0, user1PK);
+        ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, noPositionIds[0], 1, 1e6, 0.75e6, questionIds[0], 0, user1PK);
         
         // Since minting of tokens didn't happen, we need to mint USDC to the NegRiskAdapter
         MockUSDC(address(usdc)).mint(address(negRiskAdapter.wcol()), 3e6);
@@ -650,12 +668,13 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         // Single order - price 0.25
         makerOrders[0] = new ICTFExchange.OrderIntent[](1);
         // need to check this with vaibhav
-        makerOrders[0][0] = _createAndSignOrder(user2, noPositionId3, 0, 0.25e6, 1e6, questionIds[3], 1, user2PK);
+        makerOrders[0][0] = _createAndSignOrder(user2, noPositionId3, 0, 0.75e6, 1e6, questionIds[3], 1, user2PK);
         makerFillAmounts[0] = 0.1e6;
 
         // _mintTokensToUser(user2, yesPositionIds[3], 1e6);
         MockUSDC(address(usdc)).mint(address(user2), 1e6);
         MockUSDC(address(usdc)).mint(address(negRiskAdapter.wcol()), 1e6);
+        MockUSDC(address(usdc)).mint(address(ctfExchange), 1e6);
 
         vm.prank(user2);
         ctf.setApprovalForAll(address(negRiskAdapter), true);
