@@ -32,13 +32,39 @@ This document provides comprehensive coverage of all test scenarios and conditio
 - 3 single orders (SHORT intent) + 1 cross-match order (LONG intent)
 - 1 taker order (LONG intent)
 
-**Order Configuration**:
+**Input Values**:
+
+**Maker Orders**:
 
 - **Single Order 1**: User2 sells YES tokens (question 0) at price 0.25
+  - Token: `yesPositionIds[5]` (2e6 tokens minted)
+  - Side: SELL (1)
+  - Maker Amount: 2e6 tokens
+  - Taker Amount: 0.5e6 USDC
+  - Fill Amount: 0.1e6 tokens
 - **Single Order 2**: User3 sells YES tokens (question 1) at price 0.15
+  - Token: `yesPositionIds[5]` (2e6 tokens minted)
+  - Side: SELL (1)
+  - Maker Amount: 2e6 tokens
+  - Taker Amount: 0.5e6 USDC
+  - Fill Amount: 0.1e6 tokens
 - **Single Order 3**: User4 sells YES tokens (question 2) at price 0.1
-- **Cross-match Order**: User5+User6 buy different tokens (prices 0.4 + 0.3 = 0.7)
-- **Taker Order**: User1 buys YES tokens (question 5) at price 0.3
+  - Token: `yesPositionIds[5]` (2e6 tokens minted)
+  - Side: SELL (1)
+  - Maker Amount: 2e6 tokens
+  - Taker Amount: 0.5e6 USDC
+  - Fill Amount: 0.1e6 tokens
+- **Cross-match Order**: User5+User6 buy different tokens
+  - User5: `yesPositionIds[3]`, price 0.4, fill 0.1e6
+  - User6: `yesPositionIds[4]`, price 0.3, fill 0.1e6
+
+**Taker Order**:
+
+- User1 buys YES tokens (question 5) at price 0.3
+  - Token: `yesPositionIds[5]`
+  - Side: BUY (0)
+  - Maker Amount: 0.3e6 USDC
+  - Taker Amount: 1e6 tokens
 
 **Price Validation**:
 
@@ -47,11 +73,22 @@ This document provides comprehensive coverage of all test scenarios and conditio
 - Taker order: 0.3 (participates in cross-match)
 - **Total**: 0.7 + 0.3 = 1.0 ✓
 
-**Verification**:
+**Expected Outputs**:
 
-- Token balances correctly updated for all participants
-- Cross-match participants receive their respective tokens
-- Single order participants have tokens deducted
+**Token Balances After Execution**:
+
+- **User1**: Receives 0.4e6 YES tokens from `yesPositionIds[5]`
+- **User2**: Loses 0.1e6 YES tokens (2e6 - 0.1e6 = 1.9e6 remaining)
+- **User3**: Loses 0.1e6 YES tokens (2e6 - 0.1e6 = 1.9e6 remaining)
+- **User4**: Loses 0.1e6 YES tokens (2e6 - 0.1e6 = 1.9e6 remaining)
+- **User5**: Receives 0.1e6 YES tokens from `yesPositionIds[3]`
+- **User6**: Receives 0.1e6 YES tokens from `yesPositionIds[4]`
+
+**USDC Flows**:
+
+- User1 pays USDC for tokens received
+- Users 2,3,4 receive USDC for tokens sold
+- Users 5,6 pay USDC for tokens received
 
 ### 2. Large Scale Scenario (`test_HybridMatchOrders_LargeScaleScenario`)
 
@@ -63,17 +100,48 @@ This document provides comprehensive coverage of all test scenarios and conditio
 - 5 single orders + 2 cross-match orders
 - 1 taker order
 
-**Order Configuration**:
+**Input Values**:
 
-- **5 Single Orders**: Each at price 0.1 (total = 0.5)
-- **Cross-match Order 1**: 2 orders at prices 0.2 + 0.35 = 0.55
-- **Cross-match Order 2**: 3 orders at prices 0.1 + 0.25 + 0.2 = 0.55
-- **Taker Order**: Price 0.45
+**Maker Orders**:
+
+- **5 Single Orders**: Each selling NO tokens at price 0.55
+  - Token: `noPositionId0` (NO tokens for question 0)
+  - Side: BUY (0)
+  - Maker Amount: 0.55e6 USDC
+  - Taker Amount: 1e6 tokens
+  - Fill Amount: 0.05e6 tokens each
+- **Cross-match Order 1**: 2 orders buying YES tokens
+  - User2: `yesPositionIds[5]`, price 0.2, fill 0.05e6
+  - User3: `yesPositionIds[6]`, price 0.35, fill 0.05e6
+- **Cross-match Order 2**: 3 orders buying YES tokens
+  - User4: `yesPositionIds[7]`, price 0.1, fill 0.05e6
+  - User5: `yesPositionIds[8]`, price 0.25, fill 0.05e6
+  - User6: `yesPositionIds[9]`, price 0.2, fill 0.05e6
+
+**Taker Order**:
+
+- User1 buys YES tokens (question 0) at price 0.45
+  - Token: `yesPositionIds[0]`
+  - Side: BUY (0)
+  - Maker Amount: 0.45e6 USDC
+  - Taker Amount: 1e6 tokens
 
 **Price Validation**:
 
-- Total prices: 0.5 (single) + 0.55 (cross-match 1) + 0.55 (cross-match 2) + 0.45 (taker) = 2.05
-- **Note**: This test appears to have price validation issues (sum ≠ 1.0)
+- Single orders: 5 × 0.55 = 2.75 (NO token purchases)
+- Cross-match 1: 0.2 + 0.35 = 0.55
+- Cross-match 2: 0.1 + 0.25 + 0.2 = 0.55
+- Taker order: 0.45
+- **Note**: This test has complex price validation with mixed token types
+
+**Expected Outputs**:
+
+**Token Balances After Execution**:
+
+- **User1**: Receives 0.35e6 YES tokens from `yesPositionIds[0]`
+- **Single Order Makers**: Each receives 0.05e6 NO tokens from `noPositionId0`
+- **Cross-match 1 Makers**: User2 gets 0.05e6 YES from `yesPositionIds[5]`, User3 gets 0.05e6 YES from `yesPositionIds[6]`
+- **Cross-match 2 Makers**: User4 gets 0.05e6 YES from `yesPositionIds[7]`, User5 gets 0.05e6 YES from `yesPositionIds[8]`, User6 gets 0.05e6 YES from `yesPositionIds[9]`
 
 ### 3. All Sell Orders Scenario (`test_HybridMatchOrders_AllSellOrdersScenario`)
 
@@ -85,11 +153,40 @@ This document provides comprehensive coverage of all test scenarios and conditio
 - 1 cross-match order with 3 makers + 1 taker
 - All participants selling NO tokens
 
-**Order Configuration**:
+**Input Values**:
 
-- **3 Maker Orders**: Each selling NO tokens at price 0.25
-- **Taker Order**: Selling NO tokens at price 0.25
-- **Combined Price**: 0.25 + 0.25 + 0.25 + 0.25 = 1.0 ✓
+**Maker Orders**:
+
+- **Cross-match Order**: 3 makers selling NO tokens
+  - User2: `noPositionIds[1]`, price 0.25, fill 1e6 tokens
+  - User3: `noPositionIds[2]`, price 0.25, fill 1e6 tokens
+  - User4: `noPositionIds[3]`, price 0.25, fill 1e6 tokens
+
+**Taker Order**:
+
+- User1 sells NO tokens (question 0) at price 0.25
+  - Token: `noPositionIds[0]`
+  - Side: SELL (1)
+  - Maker Amount: 1e6 tokens
+  - Taker Amount: 0.25e6 USDC
+
+**Price Validation**:
+
+- Combined Price: 0.25 + 0.25 + 0.25 + 0.25 = 1.0 ✓
+
+**Expected Outputs**:
+
+**Token Balances After Execution**:
+
+- **User1**: Loses 1e6 NO tokens from `noPositionIds[0]`
+- **User2**: Loses 1e6 NO tokens from `noPositionIds[1]`
+- **User3**: Loses 1e6 NO tokens from `noPositionIds[2]`
+- **User4**: Loses 1e6 NO tokens from `noPositionIds[3]`
+
+**USDC Flows**:
+
+- All users receive USDC for tokens sold
+- System maintains balance conservation
 
 **Key Features**:
 
@@ -109,10 +206,31 @@ This document provides comprehensive coverage of all test scenarios and conditio
 - 2 maker orders + 1 taker order
 - **Invalid Price Sum**: 0.3 + 0.4 + 0.2 = 0.9 ≠ 1.0
 
+**Input Values**:
+
+**Maker Orders**:
+
+- **Cross-match Order**: 2 makers buying YES tokens
+  - User2: `yesPositionIds[0]`, price 0.3, fill 0.1e6
+  - User3: `yesPositionIds[1]`, price 0.4, fill 0.1e6
+
+**Taker Order**:
+
+- User1 buys YES tokens (question 2) at price 0.2
+  - Token: `yesPositionIds[2]`
+  - Side: BUY (0)
+  - Maker Amount: 0.2e6 USDC
+  - Taker Amount: 1e6 tokens
+
+**Price Validation**:
+
+- **Invalid Price Sum**: 0.3 + 0.4 + 0.2 = 0.9 ≠ 1.0
+
 **Expected Behavior**:
 
 - Transaction should revert with `InvalidCombinedPrice` error
 - System maintains price validation integrity
+- No token transfers occur
 
 ### 5. Insufficient USDC Balance (`test_HybridMatchOrders_InsufficientUSDCBalance`)
 
@@ -124,10 +242,30 @@ This document provides comprehensive coverage of all test scenarios and conditio
 - Taker order requires 2 USDC
 - Maker order available for matching
 
+**Input Values**:
+
+**Maker Orders**:
+
+- **Single Order**: User2 sells YES tokens
+  - Token: `yesPositionId`
+  - Side: SELL (1)
+  - Maker Amount: 1e6 tokens
+  - Taker Amount: 0.5e6 USDC
+  - Fill Amount: 0.1e6 tokens
+
+**Taker Order**:
+
+- User1 buys YES tokens (insufficient USDC)
+  - Token: `yesPositionId`
+  - Side: BUY (0)
+  - Maker Amount: 2e6 USDC (but only has 1e6)
+  - Taker Amount: 1e6 tokens
+
 **Expected Behavior**:
 
 - Transaction should revert due to insufficient USDC balance
 - System prevents partial execution
+- No token transfers occur
 
 ### 6. Invalid Single Order Count (`test_HybridMatchOrders_InvalidSingleOrderCount`)
 
@@ -138,10 +276,40 @@ This document provides comprehensive coverage of all test scenarios and conditio
 - 2 single orders created
 - Incorrect single order count passed (1 instead of 2)
 
+**Input Values**:
+
+**Maker Orders**:
+
+- **Single Order 1**: User2 sells YES tokens
+  - Token: `yesPositionId`
+  - Side: SELL (1)
+  - Maker Amount: 1e6 tokens
+  - Taker Amount: 0.5e6 USDC
+  - Fill Amount: 0.1e6 tokens
+- **Single Order 2**: User3 sells YES tokens
+  - Token: `yesPositionId`
+  - Side: SELL (1)
+  - Maker Amount: 1e6 tokens
+  - Taker Amount: 0.5e6 USDC
+  - Fill Amount: 0.1e6 tokens
+
+**Taker Order**:
+
+- User1 buys YES tokens
+  - Token: `yesPositionId`
+  - Side: BUY (0)
+  - Maker Amount: 1e6 USDC
+  - Taker Amount: 1e6 tokens
+
+**Invalid Parameter**:
+
+- Single order count passed as 1 (should be 2)
+
 **Expected Behavior**:
 
 - Transaction should revert due to array bounds issues
 - System prevents processing with incorrect parameters
+- No token transfers occur
 
 ## Stress Tests
 
@@ -155,6 +323,38 @@ This document provides comprehensive coverage of all test scenarios and conditio
 - 4 maker orders at price 0.1 each
 - 1 taker order at price 0.6
 - **Total Price**: 0.1 + 0.1 + 0.1 + 0.1 + 0.6 = 1.0 ✓
+
+**Input Values**:
+
+**Maker Orders**:
+
+- **Cross-match Order**: 4 makers buying YES tokens
+  - User2: `yesPositionIds[0]`, price 0.1, fill 0.1e6
+  - User3: `yesPositionIds[1]`, price 0.1, fill 0.1e6
+  - User4: `yesPositionIds[2]`, price 0.1, fill 0.1e6
+  - User5: `yesPositionIds[3]`, price 0.1, fill 0.1e6
+
+**Taker Order**:
+
+- User1 buys YES tokens (question 4) at price 0.6
+  - Token: `yesPositionIds[4]`
+  - Side: BUY (0)
+  - Maker Amount: 0.6e6 USDC
+  - Taker Amount: 1e6 tokens
+
+**Price Validation**:
+
+- **Total Price**: 0.1 + 0.1 + 0.1 + 0.1 + 0.6 = 1.0 ✓
+
+**Expected Outputs**:
+
+**Token Balances After Execution**:
+
+- **User1**: Receives 0.1e6 YES tokens from `yesPositionIds[4]`
+- **User2**: Receives 0.1e6 YES tokens from `yesPositionIds[0]`
+- **User3**: Receives 0.1e6 YES tokens from `yesPositionIds[1]`
+- **User4**: Receives 0.1e6 YES tokens from `yesPositionIds[2]`
+- **User5**: Receives 0.1e6 YES tokens from `yesPositionIds[3]`
 
 **Key Features**:
 
@@ -173,7 +373,42 @@ This document provides comprehensive coverage of all test scenarios and conditio
 - 1 single order + 1 cross-match order + 1 taker order
 - **Total Price**: 0.25 + 0.5 + 0.25 = 1.0 ✓
 
-**Verification**:
+**Input Values**:
+
+**Maker Orders**:
+
+- **Single Order**: User2 sells YES tokens
+  - Token: `yesPositionIds[3]`
+  - Side: SELL (1)
+  - Maker Amount: 1e6 tokens
+  - Taker Amount: 0.25e6 USDC
+  - Fill Amount: 0.1e6 tokens
+- **Cross-match Order**: 2 makers buying YES tokens
+  - User3: `yesPositionIds[1]`, price 0.35, fill 0.1e6
+  - User4: `yesPositionIds[2]`, price 0.4, fill 0.1e6
+
+**Taker Order**:
+
+- User1 buys YES tokens (question 3) at price 0.25
+  - Token: `yesPositionIds[3]`
+  - Side: BUY (0)
+  - Maker Amount: 0.25e6 USDC
+  - Taker Amount: 1e6 tokens
+
+**Price Validation**:
+
+- **Total Price**: 0.25 + 0.5 + 0.25 = 1.0 ✓
+
+**Expected Outputs**:
+
+**Token Balances After Execution**:
+
+- **User1**: Receives 0.2e6 YES tokens from `yesPositionIds[3]`
+- **User2**: Loses 0.1e6 YES tokens from `yesPositionIds[3]`
+- **User3**: Receives 0.1e6 YES tokens from `yesPositionIds[1]`
+- **User4**: Receives 0.1e6 YES tokens from `yesPositionIds[2]`
+
+**Financial Verification**:
 
 - Adapter USDC balance unchanged
 - Adapter WCOL balance unchanged
@@ -189,6 +424,33 @@ This document provides comprehensive coverage of all test scenarios and conditio
 - Includes USDC minting to users and vault
 - Tests more complex financial flows
 
+**Input Values**:
+
+**Maker Orders**:
+
+- **Single Order**: User2 buys NO tokens
+  - Token: `noPositionId3` (NO tokens for question 3)
+  - Side: BUY (0)
+  - Maker Amount: 0.25e6 USDC
+  - Taker Amount: 1e6 tokens
+  - Fill Amount: 0.1e6 tokens
+- **Cross-match Order**: 2 makers buying YES tokens
+  - User3: `yesPositionIds[1]`, price 0.35, fill 0.1e6
+  - User4: `yesPositionIds[2]`, price 0.4, fill 0.1e6
+
+**Taker Order**:
+
+- User1 buys YES tokens (question 3) at price 0.25
+  - Token: `yesPositionIds[3]`
+  - Side: BUY (0)
+  - Maker Amount: 0.25e6 USDC
+  - Taker Amount: 1e6 tokens
+
+**Special Operations**:
+
+- USDC minted to users and vault
+- Tests mint/sell operations
+
 **Verification**:
 
 - Adapter maintains zero net balance changes
@@ -203,6 +465,34 @@ This document provides comprehensive coverage of all test scenarios and conditio
 - 3 questions created
 - 1 cross-match order + 1 taker order
 - **Total Price**: 0.3 + 0.4 + 0.3 = 1.0 ✓
+
+**Input Values**:
+
+**Maker Orders**:
+
+- **Cross-match Order**: 2 makers buying YES tokens
+  - User2: `yesPositionIds[0]`, price 0.3, fill 0.1e6
+  - User3: `yesPositionIds[1]`, price 0.4, fill 0.1e6
+
+**Taker Order**:
+
+- User1 buys YES tokens (question 2) at price 0.3
+  - Token: `yesPositionIds[2]`
+  - Side: BUY (0)
+  - Maker Amount: 0.3e6 USDC
+  - Taker Amount: 1e6 tokens
+
+**Price Validation**:
+
+- **Total Price**: 0.3 + 0.4 + 0.3 = 1.0 ✓
+
+**Expected Outputs**:
+
+**Token Balances After Execution**:
+
+- **User1**: Receives 0.1e6 YES tokens from `yesPositionIds[2]`
+- **User2**: Receives 0.1e6 YES tokens from `yesPositionIds[0]`
+- **User3**: Receives 0.1e6 YES tokens from `yesPositionIds[1]`
 
 **Verification**:
 
