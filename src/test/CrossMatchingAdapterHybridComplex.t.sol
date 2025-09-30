@@ -264,28 +264,28 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         ICTFExchange.OrderIntent[][] memory makerOrders = new ICTFExchange.OrderIntent[][](4);
         uint256[] memory makerFillAmounts = new uint256[](4);
         
-        // Single order 1: User2 sells YES tokens for question 0 (price 0.25) - SHORT intent
+        // Single order 1: User2 sells YES tokens for question 5 (price 0.25) - SHORT intent
         _mintTokensToUser(user2, yesPositionIds[5], 2e6);
         makerOrders[0] = new ICTFExchange.OrderIntent[](1);
-        makerOrders[0][0] = _createAndSignOrder(user2, yesPositionIds[5], 1, 2e6, 0.5e6, questionIds[0], 1, _user2PK);
+        makerOrders[0][0] = _createAndSignOrder(user2, yesPositionIds[5], 1, 2e6, 0.5e6, questionIds[5], 1, _user2PK);
         makerFillAmounts[0] = 0.1e6;
 
         vm.prank(user2);
         ctf.setApprovalForAll(address(negRiskAdapter), true);
         
-        // Single order 2: User3 sells YES tokens for question 1 (price 0.15) - SHORT intent
+        // Single order 2: User3 sells YES tokens for question 5 (price 0.25) - SHORT intent
         _mintTokensToUser(user3, yesPositionIds[5], 2e6);
         makerOrders[1] = new ICTFExchange.OrderIntent[](1);
-        makerOrders[1][0] = _createAndSignOrder(user3, yesPositionIds[5], 1, 2e6, 0.5e6, questionIds[1], 1, _user3PK);
+        makerOrders[1][0] = _createAndSignOrder(user3, yesPositionIds[5], 1, 2e6, 0.5e6, questionIds[5], 1, _user3PK);
         makerFillAmounts[1] = 0.1e6;
 
         vm.prank(user3);
         ctf.setApprovalForAll(address(negRiskAdapter), true);
         
-        // Single order 3: User4 sells YES tokens for question 2 (price 0.1) - SHORT intent
+        // Single order 3: User4 sells YES tokens for question 5 (price 0.25) - SHORT intent
         _mintTokensToUser(user4, yesPositionIds[5], 2e6);
         makerOrders[2] = new ICTFExchange.OrderIntent[](1);
-        makerOrders[2][0] = _createAndSignOrder(user4, yesPositionIds[5], 1, 2e6, 0.5e6, questionIds[2], 1, _user4PK);
+        makerOrders[2][0] = _createAndSignOrder(user4, yesPositionIds[5], 1, 2e6, 0.5e6, questionIds[5], 1, _user4PK);
         makerFillAmounts[2] = 0.1e6;
 
         vm.prank(user4);

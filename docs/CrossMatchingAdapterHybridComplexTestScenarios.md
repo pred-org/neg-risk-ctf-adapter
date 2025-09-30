@@ -36,19 +36,19 @@ This document provides comprehensive coverage of all test scenarios and conditio
 
 **Maker Orders**:
 
-- **Single Order 1**: User2 sells YES tokens (question 0) at price 0.25
+- **Single Order 1**: User2 sells YES tokens (question 5) at price 0.25
   - Token: `yesPositionIds[5]` (2e6 tokens minted)
   - Side: SELL (1)
   - Maker Amount: 2e6 tokens
   - Taker Amount: 0.5e6 USDC
   - Fill Amount: 0.1e6 tokens
-- **Single Order 2**: User3 sells YES tokens (question 1) at price 0.15
+- **Single Order 2**: User3 sells YES tokens (question 5) at price 0.25
   - Token: `yesPositionIds[5]` (2e6 tokens minted)
   - Side: SELL (1)
   - Maker Amount: 2e6 tokens
   - Taker Amount: 0.5e6 USDC
   - Fill Amount: 0.1e6 tokens
-- **Single Order 3**: User4 sells YES tokens (question 2) at price 0.1
+- **Single Order 3**: User4 sells YES tokens (question 5) at price 0.25
   - Token: `yesPositionIds[5]` (2e6 tokens minted)
   - Side: SELL (1)
   - Maker Amount: 2e6 tokens
@@ -68,7 +68,7 @@ This document provides comprehensive coverage of all test scenarios and conditio
 
 **Price Validation**:
 
-- Single orders: 0.25 + 0.15 + 0.1 = 0.5 (complementary matching)
+- Single orders: not required (complementary matching)
 - Cross-match orders: 0.4 + 0.3 = 0.7 (cross-matching)
 - Taker order: 0.3 (participates in cross-match)
 - **Total**: 0.7 + 0.3 = 1.0 ✓
@@ -104,7 +104,7 @@ This document provides comprehensive coverage of all test scenarios and conditio
 
 **Maker Orders**:
 
-- **5 Single Orders**: Each selling NO tokens at price 0.55
+- **5 Single Orders**: Each buying NO tokens at price 0.55
   - Token: `noPositionId0` (NO tokens for question 0)
   - Side: BUY (0)
   - Maker Amount: 0.55e6 USDC
@@ -128,18 +128,19 @@ This document provides comprehensive coverage of all test scenarios and conditio
 
 **Price Validation**:
 
-- Single orders: 5 × 0.55 = 2.75 (NO token purchases)
+- Single orders: 0.55 (NO token purchases)
 - Cross-match 1: 0.2 + 0.35 = 0.55
 - Cross-match 2: 0.1 + 0.25 + 0.2 = 0.55
 - Taker order: 0.45
+- Maker Order + Taker order = 1
 - **Note**: This test has complex price validation with mixed token types
 
 **Expected Outputs**:
 
 **Token Balances After Execution**:
 
-- **User1**: Receives 0.35e6 YES tokens from `yesPositionIds[0]`
-- **Single Order Makers**: Each receives 0.05e6 NO tokens from `noPositionId0`
+- **User1**: Receives 554545 YES tokens from `yesPositionIds[0]`
+- **Single Order Makers**: Each receives 90909 NO tokens from `noPositionId0`
 - **Cross-match 1 Makers**: User2 gets 0.05e6 YES from `yesPositionIds[5]`, User3 gets 0.05e6 YES from `yesPositionIds[6]`
 - **Cross-match 2 Makers**: User4 gets 0.05e6 YES from `yesPositionIds[7]`, User5 gets 0.05e6 YES from `yesPositionIds[8]`, User6 gets 0.05e6 YES from `yesPositionIds[9]`
 
