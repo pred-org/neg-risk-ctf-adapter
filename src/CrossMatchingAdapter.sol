@@ -88,15 +88,23 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
 
     /// @notice Modifier to check that all unresolved questions are present in the orders
     /// @param marketId The market ID to check
-    /// @param takerOrder The taker order
     /// @param makerOrders Array of maker orders
     modifier allUnresolvedQuestionsPresent(
         bytes32 marketId,
-        ICTFExchange.OrderIntent calldata takerOrder,
         ICTFExchange.OrderIntent[] calldata makerOrders
     ) {
-        _validateAllUnresolvedQuestionsPresent(marketId, takerOrder, makerOrders);
+        validateAllUnresolvedQuestionsPresentLength(marketId, makerOrders);
         _;
+    }
+
+    function validateAllUnresolvedQuestionsPresentLength(
+        bytes32 marketId,
+        ICTFExchange.OrderIntent[] calldata makerOrders
+    ) internal view {
+        uint256 questionCount = neg.getQuestionCount(marketId);
+        if (makerOrders.length + 1 != questionCount) {
+            revert MissingUnresolvedQuestion();
+        }
     }
 
     /// @notice Internal function to validate that all unresolved questions are present in orders
@@ -262,7 +270,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         ICTFExchange.OrderIntent calldata takerOrder,
         ICTFExchange.OrderIntent[] calldata multiOrderMaker,
         uint256 fillAmount
-    ) public allUnresolvedQuestionsPresent(marketId, takerOrder, multiOrderMaker) {
+    ) public allUnresolvedQuestionsPresent(marketId, multiOrderMaker) {
         if (fillAmount == 0) {
             revert InvalidFillAmount();
         }
@@ -377,7 +385,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         ICTFExchange.OrderIntent calldata takerOrder,
         ICTFExchange.OrderIntent[] calldata multiOrderMaker,
         uint256 fillAmount
-    ) public allUnresolvedQuestionsPresent(marketId, takerOrder, multiOrderMaker) {
+    ) public allUnresolvedQuestionsPresent(marketId, multiOrderMaker) {
         if (fillAmount == 0) {
             revert InvalidFillAmount();
         }
