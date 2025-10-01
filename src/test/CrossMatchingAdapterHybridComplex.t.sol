@@ -2,7 +2,7 @@
 pragma solidity ^0.8.19;
 
 import {Test, console} from "forge-std/Test.sol";
-import {CrossMatchingAdapter} from "src/CrossMatchingAdapter.sol";
+import {CrossMatchingAdapter, ICrossMatchingAdapterEE} from "src/CrossMatchingAdapter.sol";
 import {NegRiskAdapter} from "src/NegRiskAdapter.sol";
 import {RevNegRiskAdapter} from "src/RevNegRiskAdapter.sol";
 import {IRevNegRiskAdapter} from "src/interfaces/IRevNegRiskAdapter.sol";
@@ -549,7 +549,7 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionIds[2], 0, 0.2e6, 1e6, questionIds[2], 0, _user1PK); // 0.2
         
         // Total price = 0.3 + 0.4 + 0.2 = 0.9 ≠ 1.0, should revert
-        vm.expectRevert(CrossMatchingAdapter.InvalidCombinedPrice.selector);
+        vm.expectRevert(ICrossMatchingAdapterEE.InvalidCombinedPrice.selector);
         adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, makerFillAmounts, 0);
         
         console.log("Invalid combined price edge case test passed!");

@@ -14,6 +14,21 @@ import {NegRiskIdLib} from "./libraries/NegRiskIdLib.sol";
 import {ICTFExchange} from "src/interfaces/ICTFExchange.sol";
 import {OrderStatus} from "lib/ctf-exchange/src/exchange/libraries/OrderStructs.sol";
 
+/// @title ICrossMatchingAdapterEE
+/// @notice CrossMatchingAdapter Errors and Events
+interface ICrossMatchingAdapterEE {
+    error UnsupportedToken();      // order.tokenId not recognized as YES (buy) or NO (sell)
+    error SideNotSupported();      // only BUY-YES and SELL-NO supported in this adapter
+    error PriceOutOfRange();       // price must be ≤ 1
+    error BootstrapShortfall();    // not enough buyer USDC to bootstrap pivot split
+    error SupplyInvariant();       // insufficient YES supply computed
+    error NotSelfFinancing();      // net WCOL minted (!= 0) after operations
+    error InvalidFillAmount();     // fill amount is invalid (zero or exceeds order quantity)
+    error InvalidCombinedPrice();  // combined price of all orders must equal total shares
+    error InsufficientUSDCBalance(); // insufficient USDC balance for WCOL minting
+    error MissingUnresolvedQuestion(); // some unresolved questions are missing from orders
+}
+
 /*
  * Cross-matching adapter for NegRisk events.
  * - Input: ctf-exchange Order[] (with .side BUY/SELL and .tokenId)
@@ -27,10 +42,8 @@ import {OrderStatus} from "lib/ctf-exchange/src/exchange/libraries/OrderStructs.
  * Uses pivot index 0 (no external field) via neg.getQuestionId(marketId, 0).
  */
 
-contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
+contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMatchingAdapterEE {
     // constants
-    uint8    constant SIDE_BUY  = 0;
-    uint8    constant SIDE_SELL = 1;
     bytes32  constant PARENT = bytes32(0);
     uint256  constant ONE = 1e6; // fixed-point for price (6 decimals to match USDC)
     address public constant YES_TOKEN_BURN_ADDRESS = address(bytes20(bytes32(keccak256("YES_TOKEN_BURN_ADDRESS"))));    
@@ -60,17 +73,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         ctf.setApprovalForAll(address(neg), true);
         // Note: The vault must approve this contract to transfer USDC for seller returns
     }
-
-    error UnsupportedToken();      // order.tokenId not recognized as YES (buy) or NO (sell)
-    error SideNotSupported();      // only BUY-YES and SELL-NO supported in this adapter
-    error PriceOutOfRange();       // price must be ≤ 1
-    error BootstrapShortfall();    // not enough buyer USDC to bootstrap pivot split
-    error SupplyInvariant();       // insufficient YES supply computed
-    error NotSelfFinancing();      // net WCOL minted (!= 0) after operations
-    error InvalidFillAmount();     // fill amount is invalid (zero or exceeds order quantity)
-    error InvalidCombinedPrice();  // combined price of all orders must equal total shares
-    error InsufficientUSDCBalance(); // insufficient USDC balance for WCOL minting
-
+    
     struct Parsed {
         address maker;
         uint8   side;
@@ -79,6 +82,121 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         uint256 payAmount;    // = shares * price (for buy orders)
         uint256 counterPayAmount; // = shares * (1 - price) (for sell orders)
         bytes32 questionId;     // which question id
+    }
+
+    /// @notice Get all unresolved questions for a given market
+    /// @param marketId The market ID to check
+    /// @return Array of unresolved question IDs
+    function getUnresolvedQuestions(bytes32 marketId) external view returns (bytes32[] memory) {
+        uint256 questionCount = neg.getQuestionCount(marketId);
+        bytes32[] memory unresolvedQuestions = new bytes32[](questionCount);
+        uint256 unresolvedCount = 0;
+        
+        for (uint256 i = 0; i < questionCount; i++) {
+            bytes32 questionId = NegRiskIdLib.getQuestionId(marketId, uint8(i));
+            bytes32 conditionId = neg.getConditionId(questionId);
+            
+            // Check if question is resolved by checking payoutDenominator
+            // If payoutDenominator == 0, the question is unresolved
+            // If payoutDenominator > 0, the question is resolved
+            if (ctf.payoutDenominator(conditionId) == 0) {
+                unresolvedQuestions[unresolvedCount] = questionId;
+                unresolvedCount++;
+            }
+        }
+        
+        // Resize array to actual count
+        bytes32[] memory result = new bytes32[](unresolvedCount);
+        for (uint256 i = 0; i < unresolvedCount; i++) {
+            result[i] = unresolvedQuestions[i];
+        }
+        
+        return result;
+    }
+
+    /// @notice Modifier to check that all unresolved questions are present in the orders
+    /// @param marketId The market ID to check
+    /// @param takerOrder The taker order
+    /// @param makerOrders Array of maker orders
+    modifier allUnresolvedQuestionsPresent(
+        bytes32 marketId,
+        ICTFExchange.OrderIntent calldata takerOrder,
+        ICTFExchange.OrderIntent[] calldata makerOrders
+    ) {
+        _validateAllUnresolvedQuestionsPresent(marketId, takerOrder, makerOrders);
+        _;
+    }
+
+    /// @notice Internal function to validate that all unresolved questions are present in orders
+    /// @param marketId The market ID to check
+    /// @param takerOrder The taker order
+    /// @param makerOrders Array of maker orders
+    function _validateAllUnresolvedQuestionsPresent(
+        bytes32 marketId,
+        ICTFExchange.OrderIntent calldata takerOrder,
+        ICTFExchange.OrderIntent[] calldata makerOrders
+    ) internal view {
+        // Get all unresolved questions for this market
+        bytes32[] memory unresolvedQuestions = this.getUnresolvedQuestions(marketId);
+        
+        // If no unresolved questions, validation passes
+        if (unresolvedQuestions.length == 0) {
+            return;
+        }
+        
+        // Highly optimized approach: Use a single pass through all orders
+        // and check each against unresolved questions with early termination
+        uint256 unresolvedCount = unresolvedQuestions.length;
+        bool[] memory questionCovered = new bool[](unresolvedCount);
+        uint256 coveredCount = 0;
+        
+        // Check taker order
+        if (_markQuestionIfUnresolved(takerOrder.order.questionId, unresolvedQuestions, questionCovered)) {
+            coveredCount++;
+        }
+        
+        // Check all maker orders (2D array)
+        for (uint256 i = 0; i < makerOrders.length && coveredCount < unresolvedCount; i++) {
+            if (_markQuestionIfUnresolved(makerOrders[i].order.questionId, unresolvedQuestions, questionCovered)) {
+                coveredCount++;
+            }
+        }
+        
+        // If we've covered all questions, we're done
+        if (coveredCount == unresolvedCount) {
+            return;
+        }
+        
+        // Otherwise, verify all unresolved questions are covered (this should not happen)
+        for (uint256 i = 0; i < unresolvedCount; i++) {
+            if (!questionCovered[i]) {
+                revert MissingUnresolvedQuestion();
+            }
+        }
+    }
+
+    /// @notice Internal function to mark a question as covered if it's in the unresolved list
+    /// @param questionId The question ID to check
+    /// @param unresolvedQuestions Array of unresolved question IDs
+    /// @param questionCovered Array to mark which questions are covered
+    /// @return true if a new question was marked as covered, false otherwise
+    function _markQuestionIfUnresolved(
+        bytes32 questionId,
+        bytes32[] memory unresolvedQuestions,
+        bool[] memory questionCovered
+    ) internal pure returns (bool) {
+        // Linear search through unresolved questions with early termination
+        for (uint256 i = 0; i < unresolvedQuestions.length; i++) {
+            if (questionId == unresolvedQuestions[i]) {
+                // Only mark as covered if it wasn't already covered
+                if (!questionCovered[i]) {
+                    questionCovered[i] = true;
+                    return true; // New question covered
+                }
+                return false; // Already covered
+            }
+        }
+        return false; // Not an unresolved question
     }
 
     function hybridMatchOrders(
@@ -141,7 +259,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         ICTFExchange.OrderIntent calldata takerOrder,
         ICTFExchange.OrderIntent[] calldata multiOrderMaker,
         uint256 fillAmount
-    ) public {
+    ) public allUnresolvedQuestionsPresent(marketId, takerOrder, multiOrderMaker) {
         if (fillAmount == 0) {
             revert InvalidFillAmount();
         }
@@ -163,7 +281,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         
         // Parse taker order
         parsedOrders[0] = _parseOrder(takerOrder, fillAmount);
-        if (parsedOrders[0].side == SIDE_BUY) {
+        if (parsedOrders[0].side == uint8(ICTFExchange.Side.BUY)) {
             totalBuyUSDC += parsedOrders[0].counterPayAmount;
         } else {
             totalSellUSDC += parsedOrders[0].counterPayAmount;
@@ -175,7 +293,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         for (uint256 i = 0; i < multiOrderMaker.length; i++) {
             parsedOrders[i + 1] = _parseOrder(multiOrderMaker[i], fillAmount);
             totalCombinedPrice += parsedOrders[i + 1].priceQ6;
-            if (parsedOrders[i + 1].side == SIDE_BUY) {
+            if (parsedOrders[i + 1].side == uint8(ICTFExchange.Side.BUY)) {
                 totalBuyUSDC += parsedOrders[i + 1].counterPayAmount;
             } else {
                 // For sell orders, amount that we need for minting 
@@ -212,7 +330,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
 
         // Based on order is a BUY no or SELL yes, we will either directly distribute the NO tokens to the buyers or merge the NO tokens with the YES tokens to get USDC for the sellers
         for (uint256 i = 0; i < parsedOrders.length; i++) {
-            if (parsedOrders[i].side == SIDE_BUY) {
+            if (parsedOrders[i].side == uint8(ICTFExchange.Side.BUY)) {
                 // Distribute NO tokens to the buyers
                 _distributeNoTokens(parsedOrders[i], fillAmount);
             } else {
@@ -256,7 +374,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         ICTFExchange.OrderIntent calldata takerOrder,
         ICTFExchange.OrderIntent[] calldata multiOrderMaker,
         uint256 fillAmount
-    ) public {
+    ) public allUnresolvedQuestionsPresent(marketId, takerOrder, multiOrderMaker) {
         if (fillAmount == 0) {
             revert InvalidFillAmount();
         }
@@ -301,7 +419,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         
         // Parse taker order
         parsedOrders[0] = _parseOrder(takerOrder, fillAmount);
-        if (parsedOrders[0].side == SIDE_SELL) {
+        if (parsedOrders[0].side == uint8(ICTFExchange.Side.SELL)) {
             totalSellUSDC += parsedOrders[0].payAmount;
         }
         totalCombinedPrice += parsedOrders[0].priceQ6;
@@ -309,7 +427,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         // Parse maker orders
         for (uint256 i = 0; i < multiOrderMaker.length; i++) {
             parsedOrders[i + 1] = _parseOrder(multiOrderMaker[i], fillAmount);
-            if (parsedOrders[i + 1].side == SIDE_SELL) {
+            if (parsedOrders[i + 1].side == uint8(ICTFExchange.Side.SELL)) {
                 totalSellUSDC += parsedOrders[i + 1].payAmount;
             }
             totalCombinedPrice += parsedOrders[i + 1].priceQ6;
@@ -403,7 +521,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
     ) internal returns (uint256) {
         uint256 totalVaultUSDC = 0;
         for (uint256 i = 0; i < parsedOrders.length; i++) {
-            if (parsedOrders[i].side == SIDE_SELL) {
+            if (parsedOrders[i].side == uint8(ICTFExchange.Side.SELL)) {
                 totalVaultUSDC += _processSellOrder(parsedOrders[i], fillAmount);
             }
         }
@@ -418,7 +536,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         // For sell orders, we need to merge the user's NO tokens with the generated YES tokens
         // to get USDC, which will be used to pay back the vault and the user
         
-        require(order.side == SIDE_SELL, "Order must be a sell order");
+        require(order.side == uint8(ICTFExchange.Side.SELL), "Order must be a sell order");
         uint256 noPositionId = order.tokenId;
 
         uint256 mergeAmount = fillAmount;
@@ -456,7 +574,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
         uint256 fillAmount
     ) internal {
         for (uint256 i = 0; i < parsedOrders.length; i++) {
-            if (parsedOrders[i].side == SIDE_BUY) {
+            if (parsedOrders[i].side == uint8(ICTFExchange.Side.BUY)) {
                 
                 // Get the YES token position ID for this specific question
                 uint256 yesPositionId = parsedOrders[i].tokenId;
@@ -477,7 +595,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver {
     
     function _collectBuyerUSDC(Parsed[] memory parsedOrders, bool isShort) internal {
         for (uint256 i = 0; i < parsedOrders.length; i++) {
-            if (parsedOrders[i].side == SIDE_BUY) {
+            if (parsedOrders[i].side == uint8(ICTFExchange.Side.BUY)) {
                 // For buy orders, we need to collect USDC from the buyer
                 uint256 usdcAmount = isShort ? parsedOrders[i].counterPayAmount : parsedOrders[i].payAmount;
                 
