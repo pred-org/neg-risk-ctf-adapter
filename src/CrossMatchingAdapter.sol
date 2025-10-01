@@ -108,8 +108,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         ICTFExchange.OrderIntent calldata takerOrder,
         ICTFExchange.OrderIntent[] calldata makerOrders
     ) internal view {
-        // More efficient approach: directly check each question in the market
-        // against the orders without pre-computing all unresolved questions
         uint256 questionCount = neg.getQuestionCount(marketId);
         
         // Early termination: if no questions, validation passes
@@ -117,14 +115,29 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
             return;
         }
         
-        // Single pass: check each question and fail fast if any unresolved question is missing
+        // Ultra-optimized approach: use bitmap to track covered questions
+        // This is O(n+m) where n = questions, m = orders
+        uint256[] memory questionBitmap = new uint256[]((questionCount + 255) / 256);
+        
+        // Mark taker order question as covered
+        _markQuestionInBitmap(takerOrder.order.questionId, questionBitmap);
+        
+        // Mark all maker order questions as covered
+        for (uint256 i = 0; i < makerOrders.length;) {
+            _markQuestionInBitmap(makerOrders[i].order.questionId, questionBitmap);
+            unchecked {
+                ++i;
+            }
+        }
+        
+        // Check all unresolved questions are covered
         for (uint256 i = 0; i < questionCount; i++) {
             bytes32 questionId = NegRiskIdLib.getQuestionId(marketId, uint8(i));
             
-            // Check if this question is unresolved
+            // Only check if this question is unresolved
             if (_isQuestionUnresolved(questionId)) {
-                // Check if this unresolved question is covered by any order
-                if (!_isQuestionCoveredByOrders(questionId, takerOrder, makerOrders)) {
+                // Check if this unresolved question is covered using bitmap
+                if (!_isQuestionMarkedInBitmap(questionId, questionBitmap)) {
                     revert MissingUnresolvedQuestion();
                 }
             }
@@ -152,32 +165,41 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         return ctf.payoutDenominator(conditionId) == 0;
     }
 
-    /// @notice Internal function to check if a question is covered by any of the orders
-    /// @param questionId The question ID to check
-    /// @param takerOrder The taker order
-    /// @param makerOrders Array of maker orders
-    /// @return true if the question is covered by any order, false otherwise
-    function _isQuestionCoveredByOrders(
+    /// @notice Internal function to mark a question as covered in the bitmap
+    /// @param questionId The question ID to mark
+    /// @param questionBitmap The bitmap array
+    function _markQuestionInBitmap(
         bytes32 questionId,
-        ICTFExchange.OrderIntent calldata takerOrder,
-        ICTFExchange.OrderIntent[] calldata makerOrders
+        uint256[] memory questionBitmap
+    ) internal pure {
+        // Get the question index within the market
+        uint8 questionIndex = NegRiskIdLib.getQuestionIndex(questionId);
+        
+        // Calculate bitmap position
+        uint256 bitmapIndex = questionIndex / 256;
+        uint256 bitPosition = questionIndex % 256;
+        
+        // Set the bit
+        questionBitmap[bitmapIndex] |= (1 << bitPosition);
+    }
+
+    /// @notice Internal function to check if a question is marked in the bitmap
+    /// @param questionId The question ID to check
+    /// @param questionBitmap The bitmap array
+    /// @return true if the question is marked, false otherwise
+    function _isQuestionMarkedInBitmap(
+        bytes32 questionId,
+        uint256[] memory questionBitmap
     ) internal pure returns (bool) {
-        // Check taker order
-        if (takerOrder.order.questionId == questionId) {
-            return true;
-        }
+        // Get the question index within the market
+        uint8 questionIndex = NegRiskIdLib.getQuestionIndex(questionId);
         
-        // Check all maker orders
-        for (uint256 i = 0; i < makerOrders.length;) {
-            if (makerOrders[i].order.questionId == questionId) {
-                return true;
-            }
-            unchecked {
-                ++i;
-            }
-        }
+        // Calculate bitmap position
+        uint256 bitmapIndex = questionIndex / 256;
+        uint256 bitPosition = questionIndex % 256;
         
-        return false;
+        // Check if the bit is set
+        return (questionBitmap[bitmapIndex] & (1 << bitPosition)) != 0;
     }
 
     function hybridMatchOrders(
