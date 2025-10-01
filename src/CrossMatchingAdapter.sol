@@ -102,7 +102,15 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         ICTFExchange.OrderIntent[] calldata makerOrders
     ) internal view {
         uint256 questionCount = neg.getQuestionCount(marketId);
-        if (makerOrders.length + 1 != questionCount) {
+        uint256 unresolvedQuestionCount = 0;
+        for (uint256 i = 0; i < questionCount; i++) {
+            bytes32 questionId = NegRiskIdLib.getQuestionId(marketId, uint8(i));
+            if (_isQuestionUnresolved(questionId)) {
+                unresolvedQuestionCount++;
+            }
+        }
+        // For unresolved questions, we need exactly one order per question
+        if (makerOrders.length + 1 != unresolvedQuestionCount) {
             revert MissingUnresolvedQuestion();
         }
     }
