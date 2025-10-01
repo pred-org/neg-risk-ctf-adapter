@@ -4,6 +4,7 @@ pragma solidity ^0.8.15;
 import {Test, console} from "forge-std/Test.sol";
 import {CrossMatchingAdapter} from "src/CrossMatchingAdapter.sol";
 import {NegRiskAdapter} from "src/NegRiskAdapter.sol";
+import {NegRiskOperator} from "src/NegRiskOperator.sol";
 import {RevNegRiskAdapter} from "src/RevNegRiskAdapter.sol";
 import {IRevNegRiskAdapter} from "src/interfaces/IRevNegRiskAdapter.sol";
 import {IConditionalTokens} from "src/interfaces/IConditionalTokens.sol";
@@ -42,6 +43,7 @@ contract MockCTFExchange {
 contract CrossMatchingAdapterTest is Test, TestHelper {
     CrossMatchingAdapter public adapter;
     NegRiskAdapter public negRiskAdapter;
+    NegRiskOperator public negRiskOperator;
     RevNegRiskAdapter public revNegRiskAdapter;
     ICTFExchange public ctfExchange;
     IConditionalTokens public ctf;
@@ -92,10 +94,11 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         
         // Deploy NegRiskAdapter
         negRiskAdapter = new NegRiskAdapter(address(ctf), address(usdc), vault);
-        vm.label(address(negRiskAdapter), "NegRiskAdapter");
+        negRiskOperator = new NegRiskOperator(address(negRiskAdapter));
+        vm.label(address(negRiskOperator), "NegRiskOperator");        vm.label(address(negRiskAdapter), "NegRiskAdapter");
         
         // Deploy CrossMatchingAdapter - we need to provide a mock CTF exchange
-        adapter = new CrossMatchingAdapter(INegRiskAdapter(address(negRiskAdapter)), IERC20(address(usdc)), ICTFExchange(address(ctfExchange)), IRevNegRiskAdapter(address(revNegRiskAdapter)));
+        adapter = new CrossMatchingAdapter(negRiskOperator, IERC20(address(usdc)), ICTFExchange(address(ctfExchange)), IRevNegRiskAdapter(address(revNegRiskAdapter)));
         vm.label(address(adapter), "CrossMatchingAdapter");
         
         MockUSDC(address(usdc)).mint(address(vault), 10000000e6); // 10M USDC for vault

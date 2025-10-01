@@ -7,6 +7,7 @@ import {IERC1155} from "openzeppelin-contracts/token/ERC1155/IERC1155.sol";
 import {ERC1155TokenReceiver} from "lib/solmate/src/tokens/ERC1155.sol";
 import {IConditionalTokens} from "./interfaces/IConditionalTokens.sol";
 import {INegRiskAdapter} from "./interfaces/INegRiskAdapter.sol";
+import {NegRiskOperator} from "./NegRiskOperator.sol";
 import {IRevNegRiskAdapter} from "./interfaces/IRevNegRiskAdapter.sol";
 import {WrappedCollateral} from "src/WrappedCollateral.sol";
 import {NegRiskIdLib} from "./libraries/NegRiskIdLib.sol";
@@ -49,7 +50,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
     address public constant YES_TOKEN_BURN_ADDRESS = address(bytes20(bytes32(keccak256("YES_TOKEN_BURN_ADDRESS"))));    
     address public constant NO_TOKEN_BURN_ADDRESS = address(bytes20(bytes32(keccak256("NO_TOKEN_BURN_ADDRESS"))));
 
-
+    NegRiskOperator public immutable negOperator;
     INegRiskAdapter public immutable neg;
     IRevNegRiskAdapter public immutable revNeg;
     IConditionalTokens public immutable ctf;
@@ -57,12 +58,13 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
     WrappedCollateral public immutable wcol; // wrapped USDC
     IERC20 public immutable usdc;
 
-    constructor(INegRiskAdapter neg_, IERC20 usdc_, ICTFExchange ctfExchange_, IRevNegRiskAdapter revNeg_) {
+    constructor(NegRiskOperator negOperator_, IERC20 usdc_, ICTFExchange ctfExchange_, IRevNegRiskAdapter revNeg_) {
+        negOperator = negOperator_;
         revNeg = revNeg_;
-        neg  = neg_;
+        neg  = INegRiskAdapter(address(negOperator_.nrAdapter()));
         ctfExchange = ctfExchange_;
-        ctf  = IConditionalTokens(neg_.ctf());
-        wcol = WrappedCollateral(neg_.wcol());
+        ctf  = IConditionalTokens(neg.ctf());
+        wcol = WrappedCollateral(neg.wcol());
         usdc = usdc_;
         
         // Approve CTF contract to transfer WCOL on our behalf
@@ -94,14 +96,31 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         
         for (uint256 i = 0; i < questionCount; i++) {
             bytes32 questionId = NegRiskIdLib.getQuestionId(marketId, uint8(i));
-            bytes32 conditionId = neg.getConditionId(questionId);
             
-            // Check if question is resolved by checking payoutDenominator
-            // If payoutDenominator == 0, the question is unresolved
-            // If payoutDenominator > 0, the question is resolved
-            if (ctf.payoutDenominator(conditionId) == 0) {
+            // Check if question is resolved using NegRiskOperator mappings
+            // A question is unresolved if:
+            // 1. It has not been reported (reportedAt == 0), OR
+            // 2. It has been reported but not yet resolved (reportedAt > 0 but not yet resolved)
+            uint256 reportedAt_ = negOperator.reportedAt(questionId);
+            
+            // If not reported at all, it's unresolved
+            if (reportedAt_ == 0) {
                 unresolvedQuestions[unresolvedCount] = questionId;
                 unresolvedCount++;
+            }
+            // If reported but delay period hasn't passed, it's still unresolved
+            else if (block.timestamp < reportedAt_ + negOperator.DELAY_PERIOD()) {
+                unresolvedQuestions[unresolvedCount] = questionId;
+                unresolvedCount++;
+            }
+            // If reported and delay period has passed, check if it's been resolved
+            else {
+                // Check if the question has been resolved by checking if it's been reported to the adapter
+                bytes32 conditionId = neg.getConditionId(questionId);
+                if (ctf.payoutDenominator(conditionId) == 0) {
+                    unresolvedQuestions[unresolvedCount] = questionId;
+                    unresolvedCount++;
+                }
             }
         }
         
@@ -112,6 +131,27 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         }
         
         return result;
+    }
+
+    /// @notice Check if a specific question is unresolved using NegRiskOperator
+    /// @param questionId The question ID to check
+    /// @return true if the question is unresolved, false if resolved
+    function isQuestionUnresolved(bytes32 questionId) external view returns (bool) {
+        uint256 reportedAt_ = negOperator.reportedAt(questionId);
+        
+        // If not reported at all, it's unresolved
+        if (reportedAt_ == 0) {
+            return true;
+        }
+        
+        // If reported but delay period hasn't passed, it's still unresolved
+        if (block.timestamp < reportedAt_ + negOperator.DELAY_PERIOD()) {
+            return true;
+        }
+        
+        // If reported and delay period has passed, check if it's been resolved
+        bytes32 conditionId = neg.getConditionId(questionId);
+        return ctf.payoutDenominator(conditionId) == 0;
     }
 
     /// @notice Modifier to check that all unresolved questions are present in the orders
@@ -136,68 +176,71 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         ICTFExchange.OrderIntent calldata takerOrder,
         ICTFExchange.OrderIntent[] calldata makerOrders
     ) internal view {
-        // Get all unresolved questions for this market
-        bytes32[] memory unresolvedQuestions = this.getUnresolvedQuestions(marketId);
+        // More efficient approach: directly check each question in the market
+        // against the orders without pre-computing all unresolved questions
+        uint256 questionCount = neg.getQuestionCount(marketId);
         
-        // If no unresolved questions, validation passes
-        if (unresolvedQuestions.length == 0) {
-            return;
-        }
-        
-        // Highly optimized approach: Use a single pass through all orders
-        // and check each against unresolved questions with early termination
-        uint256 unresolvedCount = unresolvedQuestions.length;
-        bool[] memory questionCovered = new bool[](unresolvedCount);
-        uint256 coveredCount = 0;
-        
-        // Check taker order
-        if (_markQuestionIfUnresolved(takerOrder.order.questionId, unresolvedQuestions, questionCovered)) {
-            coveredCount++;
-        }
-        
-        // Check all maker orders (2D array)
-        for (uint256 i = 0; i < makerOrders.length && coveredCount < unresolvedCount; i++) {
-            if (_markQuestionIfUnresolved(makerOrders[i].order.questionId, unresolvedQuestions, questionCovered)) {
-                coveredCount++;
-            }
-        }
-        
-        // If we've covered all questions, we're done
-        if (coveredCount == unresolvedCount) {
-            return;
-        }
-        
-        // Otherwise, verify all unresolved questions are covered (this should not happen)
-        for (uint256 i = 0; i < unresolvedCount; i++) {
-            if (!questionCovered[i]) {
-                revert MissingUnresolvedQuestion();
+        // For each question in the market, check if it's unresolved and if it's covered by orders
+        for (uint256 i = 0; i < questionCount; i++) {
+            bytes32 questionId = NegRiskIdLib.getQuestionId(marketId, uint8(i));
+            
+            // Check if this question is unresolved
+            if (_isQuestionUnresolved(questionId)) {
+                // Check if this unresolved question is covered by any order
+                if (!_isQuestionCoveredByOrders(questionId, takerOrder, makerOrders)) {
+                    revert MissingUnresolvedQuestion();
+                }
             }
         }
     }
 
-    /// @notice Internal function to mark a question as covered if it's in the unresolved list
+    /// @notice Internal function to check if a question is unresolved using NegRiskOperator
     /// @param questionId The question ID to check
-    /// @param unresolvedQuestions Array of unresolved question IDs
-    /// @param questionCovered Array to mark which questions are covered
-    /// @return true if a new question was marked as covered, false otherwise
-    function _markQuestionIfUnresolved(
+    /// @return true if the question is unresolved, false if resolved
+    function _isQuestionUnresolved(bytes32 questionId) internal view returns (bool) {
+        uint256 reportedAt_ = negOperator.reportedAt(questionId);
+        
+        // If not reported at all, it's unresolved
+        if (reportedAt_ == 0) {
+            return true;
+        }
+        
+        // If reported but delay period hasn't passed, it's still unresolved
+        if (block.timestamp < reportedAt_ + negOperator.DELAY_PERIOD()) {
+            return true;
+        }
+        
+        // If reported and delay period has passed, check if it's been resolved
+        bytes32 conditionId = neg.getConditionId(questionId);
+        return ctf.payoutDenominator(conditionId) == 0;
+    }
+
+    /// @notice Internal function to check if a question is covered by any of the orders
+    /// @param questionId The question ID to check
+    /// @param takerOrder The taker order
+    /// @param makerOrders Array of maker orders
+    /// @return true if the question is covered by any order, false otherwise
+    function _isQuestionCoveredByOrders(
         bytes32 questionId,
-        bytes32[] memory unresolvedQuestions,
-        bool[] memory questionCovered
+        ICTFExchange.OrderIntent calldata takerOrder,
+        ICTFExchange.OrderIntent[] calldata makerOrders
     ) internal pure returns (bool) {
-        // Linear search through unresolved questions with early termination
-        for (uint256 i = 0; i < unresolvedQuestions.length; i++) {
-            if (questionId == unresolvedQuestions[i]) {
-                // Only mark as covered if it wasn't already covered
-                if (!questionCovered[i]) {
-                    questionCovered[i] = true;
-                    return true; // New question covered
-                }
-                return false; // Already covered
+        // Check taker order
+        if (takerOrder.order.questionId == questionId) {
+            return true;
+        }
+        
+        // Check all maker orders
+        for (uint256 i = 0; i < makerOrders.length; i++) {
+            if (makerOrders[i].order.questionId == questionId) {
+                return true;
             }
         }
-        return false; // Not an unresolved question
+        
+        return false;
     }
+
+
 
     function hybridMatchOrders(
         bytes32 marketId,

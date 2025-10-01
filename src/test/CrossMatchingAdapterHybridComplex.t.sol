@@ -4,6 +4,7 @@ pragma solidity ^0.8.19;
 import {Test, console} from "forge-std/Test.sol";
 import {CrossMatchingAdapter, ICrossMatchingAdapterEE} from "src/CrossMatchingAdapter.sol";
 import {NegRiskAdapter} from "src/NegRiskAdapter.sol";
+import {NegRiskOperator} from "src/NegRiskOperator.sol";
 import {RevNegRiskAdapter} from "src/RevNegRiskAdapter.sol";
 import {IRevNegRiskAdapter} from "src/interfaces/IRevNegRiskAdapter.sol";
 import {IConditionalTokens} from "src/interfaces/IConditionalTokens.sol";
@@ -19,6 +20,7 @@ import {TestHelper} from "lib/ctf-exchange/src/dev/TestHelper.sol";
 contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
     CrossMatchingAdapter public adapter;
     NegRiskAdapter public negRiskAdapter;
+    NegRiskOperator public negRiskOperator;
     RevNegRiskAdapter public revNegRiskAdapter;
     CTFExchange public ctfExchange;
     IConditionalTokens public ctf;
@@ -64,7 +66,8 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
 
         // Deploy NegRiskAdapter
         negRiskAdapter = new NegRiskAdapter(address(ctf), address(usdc), vault);
-        vm.label(address(negRiskAdapter), "NegRiskAdapter");
+        negRiskOperator = new NegRiskOperator(address(negRiskAdapter));
+        vm.label(address(negRiskOperator), "NegRiskOperator");        vm.label(address(negRiskAdapter), "NegRiskAdapter");
 
         // Deploy real CTFExchange contract
         ctfExchange = new CTFExchange(address(usdc), address(negRiskAdapter), address(0), address(0));
@@ -88,7 +91,7 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         vm.stopPrank();
 
         // Deploy CrossMatchingAdapter
-        adapter = new CrossMatchingAdapter(INegRiskAdapter(address(negRiskAdapter)), IERC20(address(usdc)), ICTFExchange(address(ctfExchange)), IRevNegRiskAdapter(address(revNegRiskAdapter)));
+        adapter = new CrossMatchingAdapter(negRiskOperator, IERC20(address(usdc)), ICTFExchange(address(ctfExchange)), IRevNegRiskAdapter(address(revNegRiskAdapter)));
         vm.label(address(adapter), "CrossMatchingAdapter");
 
         // Setup vault with USDC and approve adapter
