@@ -86,74 +86,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         bytes32 questionId;     // which question id
     }
 
-    /// @notice Get all unresolved questions for a given market
-    /// @param marketId The market ID to check
-    /// @return Array of unresolved question IDs
-    function getUnresolvedQuestions(bytes32 marketId) external view returns (bytes32[] memory) {
-        uint256 questionCount = neg.getQuestionCount(marketId);
-        bytes32[] memory unresolvedQuestions = new bytes32[](questionCount);
-        uint256 unresolvedCount = 0;
-        
-        for (uint256 i = 0; i < questionCount; i++) {
-            bytes32 questionId = NegRiskIdLib.getQuestionId(marketId, uint8(i));
-            
-            // Check if question is resolved using NegRiskOperator mappings
-            // A question is unresolved if:
-            // 1. It has not been reported (reportedAt == 0), OR
-            // 2. It has been reported but not yet resolved (reportedAt > 0 but not yet resolved)
-            uint256 reportedAt_ = negOperator.reportedAt(questionId);
-            
-            // If not reported at all, it's unresolved
-            if (reportedAt_ == 0) {
-                unresolvedQuestions[unresolvedCount] = questionId;
-                unresolvedCount++;
-            }
-            // If reported but delay period hasn't passed, it's still unresolved
-            else if (block.timestamp < reportedAt_ + negOperator.DELAY_PERIOD()) {
-                unresolvedQuestions[unresolvedCount] = questionId;
-                unresolvedCount++;
-            }
-            // If reported and delay period has passed, check if it's been resolved
-            else {
-                // Check if the question has been resolved by checking if it's been reported to the adapter
-                bytes32 conditionId = neg.getConditionId(questionId);
-                if (ctf.payoutDenominator(conditionId) == 0) {
-                    unresolvedQuestions[unresolvedCount] = questionId;
-                    unresolvedCount++;
-                }
-            }
-        }
-        
-        // Resize array to actual count
-        bytes32[] memory result = new bytes32[](unresolvedCount);
-        for (uint256 i = 0; i < unresolvedCount; i++) {
-            result[i] = unresolvedQuestions[i];
-        }
-        
-        return result;
-    }
-
-    /// @notice Check if a specific question is unresolved using NegRiskOperator
-    /// @param questionId The question ID to check
-    /// @return true if the question is unresolved, false if resolved
-    function isQuestionUnresolved(bytes32 questionId) external view returns (bool) {
-        uint256 reportedAt_ = negOperator.reportedAt(questionId);
-        
-        // If not reported at all, it's unresolved
-        if (reportedAt_ == 0) {
-            return true;
-        }
-        
-        // If reported but delay period hasn't passed, it's still unresolved
-        if (block.timestamp < reportedAt_ + negOperator.DELAY_PERIOD()) {
-            return true;
-        }
-        
-        // If reported and delay period has passed, check if it's been resolved
-        bytes32 conditionId = neg.getConditionId(questionId);
-        return ctf.payoutDenominator(conditionId) == 0;
-    }
-
     /// @notice Modifier to check that all unresolved questions are present in the orders
     /// @param marketId The market ID to check
     /// @param takerOrder The taker order
@@ -180,7 +112,12 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         // against the orders without pre-computing all unresolved questions
         uint256 questionCount = neg.getQuestionCount(marketId);
         
-        // For each question in the market, check if it's unresolved and if it's covered by orders
+        // Early termination: if no questions, validation passes
+        if (questionCount == 0) {
+            return;
+        }
+        
+        // Single pass: check each question and fail fast if any unresolved question is missing
         for (uint256 i = 0; i < questionCount; i++) {
             bytes32 questionId = NegRiskIdLib.getQuestionId(marketId, uint8(i));
             
@@ -231,16 +168,17 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         }
         
         // Check all maker orders
-        for (uint256 i = 0; i < makerOrders.length; i++) {
+        for (uint256 i = 0; i < makerOrders.length;) {
             if (makerOrders[i].order.questionId == questionId) {
                 return true;
+            }
+            unchecked {
+                ++i;
             }
         }
         
         return false;
     }
-
-
 
     function hybridMatchOrders(
         bytes32 marketId,
