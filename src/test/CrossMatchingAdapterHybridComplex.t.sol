@@ -26,6 +26,8 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
     IConditionalTokens public ctf;
     IERC20 public usdc;
     address public vault;
+
+    address public oracle;
     
     // Test users
     address public user1;
@@ -51,7 +53,11 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
     uint256 public yesPositionId;
     uint256 public noPositionId;
 
+    uint256[] public dummyPayout;
+
     function setUp() public {
+        dummyPayout = [0, 1];
+        oracle = vm.createWallet("oracle").addr;
         // Deploy mock USDC first
         usdc = IERC20(address(new MockUSDC()));
         vm.label(address(usdc), "USDC");
@@ -67,6 +73,7 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         // Deploy NegRiskAdapter
         negRiskAdapter = new NegRiskAdapter(address(ctf), address(usdc), vault);
         negRiskOperator = new NegRiskOperator(address(negRiskAdapter));
+        negRiskOperator.setOracle(address(oracle));
         vm.label(address(negRiskOperator), "NegRiskOperator");        vm.label(address(negRiskAdapter), "NegRiskAdapter");
 
         // Deploy real CTFExchange contract
@@ -115,8 +122,8 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         vm.label(user6, "User6");
         
         // Set up market and question
-        marketId = negRiskAdapter.prepareMarket(0, "Test Market");
-        questionId = negRiskAdapter.prepareQuestion(marketId, "Test Question");
+        marketId = negRiskOperator.prepareMarket(0, "Test Market");
+        questionId = negRiskOperator.prepareQuestion(marketId, "Test Question", 0);
         yesPositionId = negRiskAdapter.getPositionId(questionId, true);
         noPositionId = negRiskAdapter.getPositionId(questionId, false);
         
@@ -257,12 +264,26 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         uint256[] memory noPositionIds = new uint256[](6);
         
         for (uint256 i = 0; i < 6; i++) {
-            questionIds[i] = negRiskAdapter.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)));
+            questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
             yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
             noPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], false);
             _registerTokensWithCTFExchange(yesPositionIds[i], noPositionIds[i], negRiskAdapter.getConditionId(questionIds[i]));
         }
-        
+
+        vm.startPrank(oracle);
+        negRiskOperator.reportPayouts(bytes32(0), dummyPayout);
+        negRiskOperator.reportPayouts(bytes32(uint256(1)), dummyPayout);
+        negRiskOperator.reportPayouts(bytes32(uint256(2)), dummyPayout);
+        negRiskOperator.reportPayouts(bytes32(uint256(3)), dummyPayout);
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 2 * negRiskOperator.DELAY_PERIOD());
+
+        negRiskOperator.resolveQuestion(questionId);
+        negRiskOperator.resolveQuestion(questionIds[0]);
+        negRiskOperator.resolveQuestion(questionIds[1]);
+        negRiskOperator.resolveQuestion(questionIds[2]);
+
         // Setup: 3 single orders + 1 cross-match order (3 makers)
         ICTFExchange.OrderIntent[][] memory makerOrders = new ICTFExchange.OrderIntent[][](4);
         uint256[] memory makerFillAmounts = new uint256[](4);
@@ -354,7 +375,7 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         uint256[] memory yesPositionIds = new uint256[](10);
         
         for (uint256 i = 0; i < 10; i++) {
-            questionIds[i] = negRiskAdapter.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)));
+            questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
             yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
             uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
             _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
@@ -385,23 +406,56 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
             );
             makerFillAmounts[i] = 0.05e6;
         }
+
+        vm.startPrank(oracle);
+        negRiskOperator.reportPayouts(bytes32(0), dummyPayout);
+        negRiskOperator.reportPayouts(bytes32(uint256(2)), dummyPayout);
+        negRiskOperator.reportPayouts(bytes32(uint256(3)), dummyPayout);
+        negRiskOperator.reportPayouts(bytes32(uint256(4)), dummyPayout);
+        negRiskOperator.reportPayouts(bytes32(uint256(5)), dummyPayout);
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 2 * negRiskOperator.DELAY_PERIOD());
+
+        negRiskOperator.resolveQuestion(questionId);
+        negRiskOperator.resolveQuestion(questionIds[1]);
+        negRiskOperator.resolveQuestion(questionIds[2]);
+        negRiskOperator.resolveQuestion(questionIds[3]);
+        negRiskOperator.resolveQuestion(questionIds[4]);
         
-        // Cross-match orders (2) - prices 0.1 + 0.1 = 0.2
-        makerOrders[5] = new ICTFExchange.OrderIntent[](2);
+        // Cross-match orders (2) - prices 0.2 + 0.15 + 0.05 + 0.1 + 0.05 = 0.55
+        makerOrders[5] = new ICTFExchange.OrderIntent[](5);
         makerOrders[5][0] = _createAndSignOrder(user2, yesPositionIds[5], 0, 0.2e6, 1e6, questionIds[5], 0, _user2PK);
-        makerOrders[5][1] = _createAndSignOrder(user3, yesPositionIds[6], 0, 0.35e6, 1e6, questionIds[6], 0, _user3PK);
+        makerOrders[5][1] = _createAndSignOrder(user3, yesPositionIds[6], 0, 0.15e6, 1e6, questionIds[6], 0, _user3PK);
+        makerOrders[5][2] = _createAndSignOrder(user4, yesPositionIds[7], 0, 0.05e6, 1e6, questionIds[7], 0, _user4PK);
+        makerOrders[5][3] = _createAndSignOrder(user5, yesPositionIds[8], 0, 0.1e6, 1e6, questionIds[8], 0, _user5PK);
+        makerOrders[5][4] = _createAndSignOrder(user6, yesPositionIds[9], 0, 0.05e6, 1e6, questionIds[9], 0, _user6PK);
         makerFillAmounts[5] = 0.05e6;
         
-        // Cross-match order (3) - prices 0.1 + 0.1 + 0.1 = 0.3
-        makerOrders[6] = new ICTFExchange.OrderIntent[](3);
-        makerOrders[6][0] = _createAndSignOrder(user4, yesPositionIds[7], 0, 0.1e6, 1e6, questionIds[7], 0, _user4PK);
-        makerOrders[6][1] = _createAndSignOrder(user5, yesPositionIds[8], 0, 0.25e6, 1e6, questionIds[8], 0, _user5PK);
-        makerOrders[6][2] = _createAndSignOrder(user6, yesPositionIds[9], 0, 0.2e6, 1e6, questionIds[9], 0, _user6PK);
+        // Cross-match order (3) - prices 0.1 + 0.25 + 0.05 + 0.07 + 0.08 = 0.55
+        // Use different users to avoid duplicate orders
+        makerOrders[6] = new ICTFExchange.OrderIntent[](5);
+        
+        // Mint USDC to the new users for cross-match order 2
+        for (uint256 i = 2000; i <= 2004; i++) {
+            MockUSDC(address(usdc)).mint(vm.addr(i), 1e6);
+            vm.prank(vm.addr(i));
+            usdc.approve(address(ctfExchange), 1e6);
+            vm.prank(vm.addr(i));
+            usdc.approve(address(adapter), 1e6);
+        }
+        
+        makerOrders[6][0] = _createAndSignOrder(vm.addr(2000), yesPositionIds[7], 0, 0.1e6, 1e6, questionIds[7], 0, 2000);
+        makerOrders[6][1] = _createAndSignOrder(vm.addr(2001), yesPositionIds[8], 0, 0.25e6, 1e6, questionIds[8], 0, 2001);
+        makerOrders[6][2] = _createAndSignOrder(vm.addr(2002), yesPositionIds[9], 0, 0.05e6, 1e6, questionIds[9], 0, 2002);
+        makerOrders[6][3] = _createAndSignOrder(vm.addr(2003), yesPositionIds[5], 0, 0.07e6, 1e6, questionIds[5], 0, 2003);
+        makerOrders[6][4] = _createAndSignOrder(vm.addr(2004), yesPositionIds[6], 0, 0.08e6, 1e6, questionIds[6], 0, 2004);
         makerFillAmounts[6] = 0.05e6;
         
-        // Taker order - price 0.0 (not buying, just participating in cross-match)
+        // Taker order - price 0.45 (participating in cross-match)
         // Total prices: 0.55 (single) + 0.45 (taker) = 1.0
-        // Total prices: 0.2 (cross-match 1) + 0.35 (cross-match 2) + 0.45 (taker) = 1.0
+        // Total prices: 0.55 (cross-match 1) + 0.45 (taker) = 1.0
+        // Total prices: 0.55 (cross-match 2) + 0.45 (taker) = 1.0
         ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionIds[0], 0, 0.45e6, 1e6, questionIds[0], 0, _user1PK);
 
         // Since minting of tokens didn't happen, we need to mint USDC to the NegRiskAdapter
@@ -421,9 +475,16 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         // Verify cross-match participants received their tokens
         assertEq(ctf.balanceOf(user2, yesPositionIds[5]), makerFillAmounts[5], "User2 should receive YES tokens from cross-match 1");
         assertEq(ctf.balanceOf(user3, yesPositionIds[6]), makerFillAmounts[5], "User3 should receive YES tokens from cross-match 1");
-        assertEq(ctf.balanceOf(user4, yesPositionIds[7]), makerFillAmounts[6], "User4 should receive YES tokens from cross-match 2");
-        assertEq(ctf.balanceOf(user5, yesPositionIds[8]), makerFillAmounts[6], "User5 should receive YES tokens from cross-match 2");
-        assertEq(ctf.balanceOf(user6, yesPositionIds[9]), makerFillAmounts[6], "User6 should receive YES tokens from cross-match 2");
+        assertEq(ctf.balanceOf(user4, yesPositionIds[7]), makerFillAmounts[5], "User4 should receive YES tokens from cross-match 1");
+        assertEq(ctf.balanceOf(user5, yesPositionIds[8]), makerFillAmounts[5], "User5 should receive YES tokens from cross-match 1");
+        assertEq(ctf.balanceOf(user6, yesPositionIds[9]), makerFillAmounts[5], "User6 should receive YES tokens from cross-match 1");
+        
+        // Verify cross-match 2 participants received their tokens
+        assertEq(ctf.balanceOf(vm.addr(2000), yesPositionIds[7]), makerFillAmounts[6], "User 2000 should receive YES tokens from cross-match 2");
+        assertEq(ctf.balanceOf(vm.addr(2001), yesPositionIds[8]), makerFillAmounts[6], "User 2001 should receive YES tokens from cross-match 2");
+        assertEq(ctf.balanceOf(vm.addr(2002), yesPositionIds[9]), makerFillAmounts[6], "User 2002 should receive YES tokens from cross-match 2");
+        assertEq(ctf.balanceOf(vm.addr(2003), yesPositionIds[5]), makerFillAmounts[6], "User 2003 should receive YES tokens from cross-match 2");
+        assertEq(ctf.balanceOf(vm.addr(2004), yesPositionIds[6]), makerFillAmounts[6], "User 2004 should receive YES tokens from cross-match 2");
         
         // Verify taker received tokens, 2 * 0.05e6 for the cross match orders and 5 * makerFillAmounts[0]*makerOrders[0][0].takerAmount/makerOrders[0][0].makerAmount for the single orders
         assertEq(ctf.balanceOf(user1, yesPositionIds[0]), 2*0.05e6 + 5 * makerFillAmounts[0]*makerOrders[0][0].takerAmount/makerOrders[0][0].makerAmount, "User1 should receive YES tokens from taker order");
@@ -448,7 +509,7 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         noPositionIds[0] = noPositionId;
         
         for (uint256 i = 1; i < 4; i++) {
-            questionIds[i] = negRiskAdapter.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)));
+            questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
             yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
             noPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], false);
             _registerTokensWithCTFExchange(yesPositionIds[i], noPositionIds[i], negRiskAdapter.getConditionId(questionIds[i]));
@@ -534,11 +595,18 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         uint256[] memory yesPositionIds = new uint256[](3);
         
         for (uint256 i = 0; i < 3; i++) {
-            questionIds[i] = negRiskAdapter.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)));
+            questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
             yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
             uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
             _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
         }
+
+        vm.prank(oracle);
+        negRiskOperator.reportPayouts(bytes32(0), dummyPayout);
+
+        vm.warp(block.timestamp + 2 * negRiskOperator.DELAY_PERIOD());
+
+        negRiskOperator.resolveQuestion(questionId);
         
         ICTFExchange.OrderIntent[][] memory makerOrders = new ICTFExchange.OrderIntent[][](1);
         uint256[] memory makerFillAmounts = new uint256[](1);
@@ -632,7 +700,7 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         uint256[] memory yesPositionIds = new uint256[](5);
         
         for (uint256 i = 0; i < 5; i++) {
-            questionIds[i] = negRiskAdapter.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)));
+            questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
             yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
             uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
             _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
@@ -640,6 +708,13 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         
         ICTFExchange.OrderIntent[][] memory makerOrders = new ICTFExchange.OrderIntent[][](1);
         uint256[] memory makerFillAmounts = new uint256[](1);
+
+        vm.prank(oracle);
+        negRiskOperator.reportPayouts(bytes32(0), dummyPayout);
+
+        vm.warp(block.timestamp + 2 * negRiskOperator.DELAY_PERIOD());
+
+        negRiskOperator.resolveQuestion(questionId);
         
         // Extreme price distribution: 0.1, 0.1, 0.1, 0.1, 0.6
         makerOrders[0] = new ICTFExchange.OrderIntent[](4);
@@ -698,12 +773,19 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         uint256[] memory yesPositionIds = new uint256[](4);
         
         for (uint256 i = 0; i < 4; i++) {
-            questionIds[i] = negRiskAdapter.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)));
+            questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
             yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
             uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
             _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
         }
         
+        vm.prank(oracle);
+        negRiskOperator.reportPayouts(bytes32(0), dummyPayout);
+
+        vm.warp(block.timestamp + 2 * negRiskOperator.DELAY_PERIOD());
+
+        negRiskOperator.resolveQuestion(questionId);
+
         // Record initial adapter balances
         uint256 initialUSDCBalance = usdc.balanceOf(address(adapter));
         uint256 initialWCOLBalance = negRiskAdapter.wcol().balanceOf(address(adapter));
@@ -722,9 +804,10 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         ctf.setApprovalForAll(address(negRiskAdapter), true);
         
         // Cross-match order - prices 0.25 + 0.25 = 0.5
-        makerOrders[1] = new ICTFExchange.OrderIntent[](2);
+        makerOrders[1] = new ICTFExchange.OrderIntent[](3);
         makerOrders[1][0] = _createAndSignOrder(user3, yesPositionIds[1], 0, 0.35e6, 1e6, questionIds[1], 0, _user3PK);
-        makerOrders[1][1] = _createAndSignOrder(user4, yesPositionIds[2], 0, 0.4e6, 1e6, questionIds[2], 0, _user4PK);
+        makerOrders[1][1] = _createAndSignOrder(user4, yesPositionIds[2], 0, 0.25e6, 1e6, questionIds[2], 0, _user4PK);
+        makerOrders[1][2] = _createAndSignOrder(user5, yesPositionIds[0], 0, 0.15e6, 1e6, questionIds[0], 0, _user5PK);
         makerFillAmounts[1] = 0.1e6;
         
         // Taker order - price 0.25
@@ -754,11 +837,18 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         uint256[] memory yesPositionIds = new uint256[](4);
         
         for (uint256 i = 0; i < 4; i++) {
-            questionIds[i] = negRiskAdapter.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)));
+            questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
             yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
             uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
             _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
         }
+
+        vm.prank(oracle);
+        negRiskOperator.reportPayouts(bytes32(0), dummyPayout);
+
+        vm.warp(block.timestamp + 2 * negRiskOperator.DELAY_PERIOD());
+
+        negRiskOperator.resolveQuestion(questionId);
         
         // Record initial adapter balances
         uint256 initialUSDCBalance = usdc.balanceOf(address(adapter));
@@ -784,9 +874,10 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         ctf.setApprovalForAll(address(negRiskAdapter), true);
         
         // Cross-match order - prices 0.25 + 0.25 = 0.5
-        makerOrders[1] = new ICTFExchange.OrderIntent[](2);
+        makerOrders[1] = new ICTFExchange.OrderIntent[](3);
         makerOrders[1][0] = _createAndSignOrder(user3, yesPositionIds[1], 0, 0.35e6, 1e6, questionIds[1], 0, _user3PK);
-        makerOrders[1][1] = _createAndSignOrder(user4, yesPositionIds[2], 0, 0.4e6, 1e6, questionIds[2], 0, _user4PK);
+        makerOrders[1][1] = _createAndSignOrder(user4, yesPositionIds[2], 0, 0.25e6, 1e6, questionIds[2], 0, _user4PK);
+        makerOrders[1][2] = _createAndSignOrder(user5, yesPositionIds[0], 0, 0.15e6, 1e6, questionIds[0], 0, _user5PK);
         makerFillAmounts[1] = 0.1e6;
         
         // Taker order - price 0.25
@@ -814,11 +905,18 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         uint256[] memory yesPositionIds = new uint256[](3);
         
         for (uint256 i = 0; i < 3; i++) {
-            questionIds[i] = negRiskAdapter.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)));
+            questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
             yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
             uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
             _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
         }
+
+        vm.prank(oracle);
+        negRiskOperator.reportPayouts(bytes32(0), dummyPayout);
+
+        vm.warp(block.timestamp + 2 * negRiskOperator.DELAY_PERIOD());
+
+        negRiskOperator.resolveQuestion(questionId);
         
         // Record initial total balances
         uint256 initialTotalUSDC = usdc.totalSupply();
