@@ -803,7 +803,7 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         vm.prank(user2);
         ctf.setApprovalForAll(address(negRiskAdapter), true);
         
-        // Cross-match order - prices 0.25 + 0.25 = 0.5
+        // Cross-match order - prices 0.35 + 0.25 + 0.15 = 0.75
         makerOrders[1] = new ICTFExchange.OrderIntent[](3);
         makerOrders[1][0] = _createAndSignOrder(user3, yesPositionIds[1], 0, 0.35e6, 1e6, questionIds[1], 0, _user3PK);
         makerOrders[1][1] = _createAndSignOrder(user4, yesPositionIds[2], 0, 0.25e6, 1e6, questionIds[2], 0, _user4PK);
@@ -811,7 +811,7 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         makerFillAmounts[1] = 0.1e6;
         
         // Taker order - price 0.25
-        // Total prices: 0.25 + 0.5 + 0.25 = 1.0
+        // Total prices: 0.25 + 0.75 = 1.0
         ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionIds[3], 0, 0.25e6, 1e6, questionIds[3], 0, _user1PK);
         
         // Execute hybrid match orders
@@ -873,7 +873,7 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         vm.prank(user2);
         ctf.setApprovalForAll(address(negRiskAdapter), true);
         
-        // Cross-match order - prices 0.25 + 0.25 = 0.5
+        // Cross-match order - prices 0.35 + 0.25 + 0.15 = 0.75
         makerOrders[1] = new ICTFExchange.OrderIntent[](3);
         makerOrders[1][0] = _createAndSignOrder(user3, yesPositionIds[1], 0, 0.35e6, 1e6, questionIds[1], 0, _user3PK);
         makerOrders[1][1] = _createAndSignOrder(user4, yesPositionIds[2], 0, 0.25e6, 1e6, questionIds[2], 0, _user4PK);
@@ -881,7 +881,7 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         makerFillAmounts[1] = 0.1e6;
         
         // Taker order - price 0.25
-        // Total prices: 0.25 + 0.5 + 0.25 = 1.0
+        // Total prices: 0.25 + 0.75 = 1.0
         ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionIds[3], 0, 0.25e6, 1e6, questionIds[3], 0, _user1PK);
         
         // Execute hybrid match orders
@@ -928,6 +928,7 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         ICTFExchange.OrderIntent[][] memory makerOrders = new ICTFExchange.OrderIntent[][](1);
         uint256[] memory makerFillAmounts = new uint256[](1);
         
+        // Cross-match order - prices 0.3 + 0.4 = 0.7
         makerOrders[0] = new ICTFExchange.OrderIntent[](2);
         makerOrders[0][0] = _createAndSignOrder(user2, yesPositionIds[0], 0, 0.3e6, 1e6, questionIds[0], 0, _user2PK);
         makerOrders[0][1] = _createAndSignOrder(user3, yesPositionIds[1], 0, 0.4e6, 1e6, questionIds[1], 0, _user3PK);

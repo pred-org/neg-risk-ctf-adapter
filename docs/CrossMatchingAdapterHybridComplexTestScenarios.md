@@ -77,18 +77,57 @@ This document provides comprehensive coverage of all test scenarios and conditio
 
 **Token Balances After Execution**:
 
-- **User1**: Receives 0.4e6 YES tokens from `yesPositionIds[5]`
+- **User1**: Receives 0.4e6 YES tokens from `yesPositionIds[5]` (from cross-match)
 - **User2**: Loses 0.1e6 YES tokens (2e6 - 0.1e6 = 1.9e6 remaining)
 - **User3**: Loses 0.1e6 YES tokens (2e6 - 0.1e6 = 1.9e6 remaining)
 - **User4**: Loses 0.1e6 YES tokens (2e6 - 0.1e6 = 1.9e6 remaining)
-- **User5**: Receives 0.1e6 YES tokens from `yesPositionIds[3]`
-- **User6**: Receives 0.1e6 YES tokens from `yesPositionIds[4]`
+- **User5**: Receives 0.1e6 YES tokens from `yesPositionIds[3]` (from cross-match)
+- **User6**: Receives 0.1e6 YES tokens from `yesPositionIds[4]` (from cross-match)
 
-**USDC Flows**:
+**USDC Balance Changes**:
 
-- User1 pays USDC for tokens received
-- Users 2,3,4 receive USDC for tokens sold
-- Users 5,6 pay USDC for tokens received
+- **User1**: Loses USDC calculated as:
+  - Single orders: `(0.1e6 * makerOrders[0][0].order.price) / 1e6 + (0.1e6 * makerOrders[1][0].order.price) / 1e6 + (0.1e6 * makerOrders[2][0].order.price) / 1e6`
+  - Cross-match: `(0.1e6 * takerOrder.order.price) / 1e6`
+- **Users 2,3,4**: Receive USDC for tokens sold via single orders
+- **Users 5,6**: Pay USDC for tokens received via cross-match
+
+**System Verification**:
+
+- Adapter holds 0 YES tokens for all position IDs
+- All token transfers completed successfully
+
+**Order Structs**:
+
+Single Order
+
+```
+makerOrders[0] = new ICTFExchange.OrderIntent[](1);
+makerOrders[0][0] = _createAndSignOrder(user2, yesPositionIds[5], 1, 2e6, 0.5e6, questionIds[5], 1, _user2PK);
+makerFillAmounts[0] = 0.1e6;
+
+makerOrders[1] = new ICTFExchange.OrderIntent[](1);
+makerOrders[1][0] = _createAndSignOrder(user3, yesPositionIds[5], 1, 2e6, 0.5e6, questionIds[5], 1, _user3PK);
+makerFillAmounts[1] = 0.1e6;
+
+makerOrders[2] = new ICTFExchange.OrderIntent[](1);
+makerOrders[2][0] = _createAndSignOrder(user4, yesPositionIds[5], 1, 2e6, 0.5e6, questionIds[5], 1, _user4PK);
+makerFillAmounts[2] = 0.1e6;
+```
+
+Cross Match Maker Order
+
+```
+makerOrders[3] = new ICTFExchange.OrderIntent[](2);
+makerOrders[3][0] = _createAndSignOrder(user5, yesPositionIds[3], 0, 0.4e6, 1e6, questionIds[3], 0, _user5PK);
+makerOrders[3][1] = _createAndSignOrder(user6, yesPositionIds[4], 0, 0.3e6, 1e6, questionIds[4], 0, _user6PK);
+```
+
+Taker Order
+
+```
+takerOrder = _createAndSignOrder(user1, yesPositionIds[5], 0, 0.3e6, 1e6, questionIds[5], 0, _user1PK)
+```
 
 ### 2. Large Scale Scenario (`test_HybridMatchOrders_LargeScaleScenario`)
 
@@ -139,10 +178,25 @@ This document provides comprehensive coverage of all test scenarios and conditio
 
 **Token Balances After Execution**:
 
-- **User1**: Receives 554545 YES tokens from `yesPositionIds[0]`
-- **Single Order Makers**: Each receives 90909 NO tokens from `noPositionId0`
-- **Cross-match 1 Makers**: User2 gets 0.05e6 YES from `yesPositionIds[5]`, User3 gets 0.05e6 YES from `yesPositionIds[6]`
-- **Cross-match 2 Makers**: User4 gets 0.05e6 YES from `yesPositionIds[7]`, User5 gets 0.05e6 YES from `yesPositionIds[8]`, User6 gets 0.05e6 YES from `yesPositionIds[9]`
+- **User1**: Receives `2*0.05e6 + 5 * (0.05e6 * 1e6 / 0.55e6) = 0.1e6 + 454545 = 554545` YES tokens from `yesPositionIds[0]`
+- **Single Order Makers (vm.addr(1000+i))**: Each receives `0.05e6 * 1e6 / 0.55e6 = 90909` NO tokens from `noPositionId0`
+- **Cross-match 1 Makers**:
+  - User2 gets 0.05e6 YES from `yesPositionIds[5]`
+  - User3 gets 0.05e6 YES from `yesPositionIds[6]`
+  - User4 gets 0.05e6 YES from `yesPositionIds[7]`
+  - User5 gets 0.05e6 YES from `yesPositionIds[8]`
+  - User6 gets 0.05e6 YES from `yesPositionIds[9]`
+- **Cross-match 2 Makers (vm.addr(2000+i))**:
+  - User 2000 gets 0.05e6 YES from `yesPositionIds[7]`
+  - User 2001 gets 0.05e6 YES from `yesPositionIds[8]`
+  - User 2002 gets 0.05e6 YES from `yesPositionIds[9]`
+  - User 2003 gets 0.05e6 YES from `yesPositionIds[5]`
+  - User 2004 gets 0.05e6 YES from `yesPositionIds[6]`
+
+**System Verification**:
+
+- Adapter holds 0 YES tokens and 0 NO tokens
+- All cross-match participants receive their expected tokens
 
 ### 3. All Sell Orders Scenario (`test_HybridMatchOrders_AllSellOrdersScenario`)
 
@@ -179,14 +233,22 @@ This document provides comprehensive coverage of all test scenarios and conditio
 
 **Token Balances After Execution**:
 
-- **User1**: Loses 1e6 NO tokens from `noPositionIds[0]`
-- **User2**: Loses 1e6 NO tokens from `noPositionIds[1]`
-- **User3**: Loses 1e6 NO tokens from `noPositionIds[2]`
-- **User4**: Loses 1e6 NO tokens from `noPositionIds[3]`
+- **User1**: Loses 1e6 NO tokens from `noPositionIds[0]` (sold all tokens)
+- **User2**: Loses 1e6 NO tokens from `noPositionIds[1]` (sold all tokens)
+- **User3**: Loses 1e6 NO tokens from `noPositionIds[2]` (sold all tokens)
+- **User4**: Loses 1e6 NO tokens from `noPositionIds[3]` (sold all tokens)
 
-**USDC Flows**:
+**USDC Balance Changes**:
 
-- All users receive USDC for tokens sold
+- **User1**: Gains 0.75e6 USDC for tokens sold
+- **User2**: Gains 0.75e6 USDC for tokens sold
+- **User3**: Gains 0.75e6 USDC for tokens sold
+- **User4**: Gains 0.75e6 USDC for tokens sold
+
+**System Verification**:
+
+- Adapter holds 0 NO tokens for all position IDs
+- All users successfully sold their tokens and received USDC
 - System maintains balance conservation
 
 **Key Features**:
@@ -351,11 +413,24 @@ This document provides comprehensive coverage of all test scenarios and conditio
 
 **Token Balances After Execution**:
 
-- **User1**: Receives 0.1e6 YES tokens from `yesPositionIds[4]`
-- **User2**: Receives 0.1e6 YES tokens from `yesPositionIds[0]`
-- **User3**: Receives 0.1e6 YES tokens from `yesPositionIds[1]`
-- **User4**: Receives 0.1e6 YES tokens from `yesPositionIds[2]`
-- **User5**: Receives 0.1e6 YES tokens from `yesPositionIds[3]`
+- **User1**: Receives 0.1e6 YES tokens from `yesPositionIds[4]` (from taker order)
+- **User2**: Receives 0.1e6 YES tokens from `yesPositionIds[0]` (from cross-match)
+- **User3**: Receives 0.1e6 YES tokens from `yesPositionIds[1]` (from cross-match)
+- **User4**: Receives 0.1e6 YES tokens from `yesPositionIds[2]` (from cross-match)
+- **User5**: Receives 0.1e6 YES tokens from `yesPositionIds[3]` (from cross-match)
+
+**USDC Balance Changes**:
+
+- **User1**: Loses `(0.1e6 * takerOrder.order.price) / 1e6` USDC for tokens received
+- **User2**: Loses `(0.1e6 * makerOrders[0][0].order.price) / 1e6` USDC for tokens received
+- **User3**: Loses `(0.1e6 * makerOrders[0][0].order.price) / 1e6` USDC for tokens received
+- **User4**: Loses `(0.1e6 * makerOrders[0][0].order.price) / 1e6` USDC for tokens received
+- **User5**: Loses `(0.1e6 * makerOrders[0][0].order.price) / 1e6` USDC for tokens received
+
+**System Verification**:
+
+- Adapter holds 0 YES tokens for all position IDs
+- All participants received their expected tokens
 
 **Key Features**:
 
@@ -491,12 +566,19 @@ This document provides comprehensive coverage of all test scenarios and conditio
 
 **Token Balances After Execution**:
 
-- **User1**: Receives 0.1e6 YES tokens from `yesPositionIds[2]`
-- **User2**: Receives 0.1e6 YES tokens from `yesPositionIds[0]`
-- **User3**: Receives 0.1e6 YES tokens from `yesPositionIds[1]`
+- **User1**: Receives 0.1e6 YES tokens from `yesPositionIds[2]` (from taker order)
+- **User2**: Receives 0.1e6 YES tokens from `yesPositionIds[0]` (from cross-match)
+- **User3**: Receives 0.1e6 YES tokens from `yesPositionIds[1]` (from cross-match)
 
-**Verification**:
+**USDC Balance Changes**:
 
+- **User1**: Loses `(0.1e6 * takerOrder.order.price) / 1e6` USDC for tokens received
+- **User2**: Loses `(0.1e6 * makerOrders[0][0].order.price) / 1e6` USDC for tokens received
+- **User3**: Loses `(0.1e6 * makerOrders[0][1].order.price) / 1e6` USDC for tokens received
+
+**System Verification**:
+
+- Adapter holds 0 YES tokens for all position IDs
 - Total USDC supply unchanged
 - Vault USDC balance unchanged
 - System maintains global balance conservation
