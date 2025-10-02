@@ -2,8 +2,9 @@
 pragma solidity ^0.8.19;
 
 import {Test, console} from "forge-std/Test.sol";
-import {CrossMatchingAdapter} from "src/CrossMatchingAdapter.sol";
+import {CrossMatchingAdapter, ICrossMatchingAdapterEE} from "src/CrossMatchingAdapter.sol";
 import {NegRiskAdapter} from "src/NegRiskAdapter.sol";
+import {NegRiskOperator} from "src/NegRiskOperator.sol";
 import {RevNegRiskAdapter} from "src/RevNegRiskAdapter.sol";
 import {IRevNegRiskAdapter} from "src/interfaces/IRevNegRiskAdapter.sol";
 import {IConditionalTokens} from "src/interfaces/IConditionalTokens.sol";
@@ -19,6 +20,7 @@ import {TestHelper} from "lib/ctf-exchange/src/dev/TestHelper.sol";
 contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
     CrossMatchingAdapter public adapter;
     NegRiskAdapter public negRiskAdapter;
+    NegRiskOperator public negRiskOperator;
     RevNegRiskAdapter public revNegRiskAdapter;
     CTFExchange public ctfExchange;
     IConditionalTokens public ctf;
@@ -64,7 +66,8 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
 
         // Deploy NegRiskAdapter
         negRiskAdapter = new NegRiskAdapter(address(ctf), address(usdc), vault);
-        vm.label(address(negRiskAdapter), "NegRiskAdapter");
+        negRiskOperator = new NegRiskOperator(address(negRiskAdapter));
+        vm.label(address(negRiskOperator), "NegRiskOperator");        vm.label(address(negRiskAdapter), "NegRiskAdapter");
 
         // Deploy real CTFExchange contract
         ctfExchange = new CTFExchange(address(usdc), address(negRiskAdapter), address(0), address(0));
@@ -88,7 +91,7 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         vm.stopPrank();
 
         // Deploy CrossMatchingAdapter
-        adapter = new CrossMatchingAdapter(INegRiskAdapter(address(negRiskAdapter)), IERC20(address(usdc)), ICTFExchange(address(ctfExchange)), IRevNegRiskAdapter(address(revNegRiskAdapter)));
+        adapter = new CrossMatchingAdapter(negRiskOperator, IERC20(address(usdc)), ICTFExchange(address(ctfExchange)), IRevNegRiskAdapter(address(revNegRiskAdapter)));
         vm.label(address(adapter), "CrossMatchingAdapter");
 
         // Setup vault with USDC and approve adapter
@@ -549,7 +552,7 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionIds[2], 0, 0.2e6, 1e6, questionIds[2], 0, _user1PK); // 0.2
         
         // Total price = 0.3 + 0.4 + 0.2 = 0.9 ≠ 1.0, should revert
-        vm.expectRevert(CrossMatchingAdapter.InvalidCombinedPrice.selector);
+        vm.expectRevert(ICrossMatchingAdapterEE.InvalidCombinedPrice.selector);
         adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, makerFillAmounts, 0);
         
         console.log("Invalid combined price edge case test passed!");

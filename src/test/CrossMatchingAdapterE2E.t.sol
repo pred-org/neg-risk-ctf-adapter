@@ -4,6 +4,7 @@ pragma solidity ^0.8.15;
 import {Test, console} from "forge-std/Test.sol";
 import {CrossMatchingAdapter} from "src/CrossMatchingAdapter.sol";
 import {NegRiskAdapter} from "src/NegRiskAdapter.sol";
+import {NegRiskOperator} from "src/NegRiskOperator.sol";
 import {RevNegRiskAdapter} from "src/RevNegRiskAdapter.sol";
 import {IRevNegRiskAdapter} from "src/interfaces/IRevNegRiskAdapter.sol";
 import {IConditionalTokens} from "src/interfaces/IConditionalTokens.sol";
@@ -20,6 +21,7 @@ import {Side, SignatureType, Order, Intent, OrderIntent} from "lib/ctf-exchange/
 contract CrossMatchingAdapterTest is Test, TestHelper {
     CrossMatchingAdapter public adapter;
     NegRiskAdapter public negRiskAdapter;
+    NegRiskOperator public negRiskOperator;
     RevNegRiskAdapter public revNegRiskAdapter;
     CTFExchange public ctfExchange;
     IConditionalTokens public ctf;
@@ -71,14 +73,15 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         
         // Deploy NegRiskAdapter
         negRiskAdapter = new NegRiskAdapter(address(ctf), address(usdc), vault);
-        vm.label(address(negRiskAdapter), "NegRiskAdapter");
+        negRiskOperator = new NegRiskOperator(address(negRiskAdapter));
+        vm.label(address(negRiskOperator), "NegRiskOperator");        vm.label(address(negRiskAdapter), "NegRiskAdapter");
         
         // Deploy RevNegRiskAdapter
         revNegRiskAdapter = new RevNegRiskAdapter(address(ctf), address(usdc), vault, INegRiskAdapter(address(negRiskAdapter)));
         vm.label(address(revNegRiskAdapter), "RevNegRiskAdapter");
         
         // Deploy CrossMatchingAdapter - we need to provide a real CTF exchange
-        adapter = new CrossMatchingAdapter(INegRiskAdapter(address(negRiskAdapter)), IERC20(address(usdc)), ICTFExchange(address(ctfExchange)), IRevNegRiskAdapter(address(revNegRiskAdapter)));
+        adapter = new CrossMatchingAdapter(negRiskOperator, IERC20(address(usdc)), ICTFExchange(address(ctfExchange)), IRevNegRiskAdapter(address(revNegRiskAdapter)));
         vm.label(address(adapter), "CrossMatchingAdapter");
         
         MockUSDC(address(usdc)).mint(address(vault), 10000000e6); // 10M USDC for vault

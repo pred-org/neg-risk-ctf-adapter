@@ -4,6 +4,7 @@ pragma solidity ^0.8.15;
 import {Test, console} from "forge-std/Test.sol";
 import {CrossMatchingAdapter} from "src/CrossMatchingAdapter.sol";
 import {NegRiskAdapter} from "src/NegRiskAdapter.sol";
+import {NegRiskOperator} from "src/NegRiskOperator.sol";
 import {RevNegRiskAdapter} from "src/RevNegRiskAdapter.sol";
 import {IRevNegRiskAdapter} from "src/interfaces/IRevNegRiskAdapter.sol";
 import {IConditionalTokens} from "src/interfaces/IConditionalTokens.sol";
@@ -42,6 +43,7 @@ contract MockCTFExchange {
 contract CrossMatchingAdapterTest is Test, TestHelper {
     CrossMatchingAdapter public adapter;
     NegRiskAdapter public negRiskAdapter;
+    NegRiskOperator public negRiskOperator;
     RevNegRiskAdapter public revNegRiskAdapter;
     ICTFExchange public ctfExchange;
     IConditionalTokens public ctf;
@@ -92,10 +94,11 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         
         // Deploy NegRiskAdapter
         negRiskAdapter = new NegRiskAdapter(address(ctf), address(usdc), vault);
-        vm.label(address(negRiskAdapter), "NegRiskAdapter");
+        negRiskOperator = new NegRiskOperator(address(negRiskAdapter));
+        vm.label(address(negRiskOperator), "NegRiskOperator");        vm.label(address(negRiskAdapter), "NegRiskAdapter");
         
         // Deploy CrossMatchingAdapter - we need to provide a mock CTF exchange
-        adapter = new CrossMatchingAdapter(INegRiskAdapter(address(negRiskAdapter)), IERC20(address(usdc)), ICTFExchange(address(ctfExchange)), IRevNegRiskAdapter(address(revNegRiskAdapter)));
+        adapter = new CrossMatchingAdapter(negRiskOperator, IERC20(address(usdc)), ICTFExchange(address(ctfExchange)), IRevNegRiskAdapter(address(revNegRiskAdapter)));
         vm.label(address(adapter), "CrossMatchingAdapter");
         
         MockUSDC(address(usdc)).mint(address(vault), 10000000e6); // 10M USDC for vault
@@ -736,6 +739,156 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         console.log("User1 (Barcelona YES at 0.35): Paid ~%s USDC, received %s tokens", user1ExpectedUSDCSpent, fillAmount);
         console.log("User2 (Chelsea YES at 0.45): Paid ~%s USDC, received %s tokens", user2ExpectedUSDCSpent, fillAmount);
         console.log("User3 (Spurs YES at 0.20): Paid ~%s USDC, received %s tokens", user3ExpectedUSDCSpent, fillAmount);
+    }
+
+    /// @notice Test the length-based validation modifier with 5 questions (all unresolved)
+    /// @dev This test should pass as we provide 5 orders (including taker) for 5 unresolved questions
+    function test_LengthValidationModifier_CorrectCount() public {
+        console.log("=== Testing Length Validation Modifier: Correct Count (5 questions, 5 unresolved, 5 orders) ===");
+        
+        // Create a market with 5 questions
+        bytes32 testMarketId = negRiskAdapter.prepareMarket(100, "Test Market with 5 Questions");
+        
+        // Prepare 5 questions
+        bytes32 question1Id = negRiskAdapter.prepareQuestion(testMarketId, "Question 1");
+        bytes32 question2Id = negRiskAdapter.prepareQuestion(testMarketId, "Question 2");
+        bytes32 question3Id = negRiskAdapter.prepareQuestion(testMarketId, "Question 3");
+        bytes32 question4Id = negRiskAdapter.prepareQuestion(testMarketId, "Question 4");
+        bytes32 question5Id = negRiskAdapter.prepareQuestion(testMarketId, "Question 5");
+        
+        // Verify all questions are unresolved
+        assertTrue(adapter._isQuestionUnresolved(question1Id), "Question 1 should be unresolved");
+        assertTrue(adapter._isQuestionUnresolved(question2Id), "Question 2 should be unresolved");
+        assertTrue(adapter._isQuestionUnresolved(question3Id), "Question 3 should be unresolved");
+        assertTrue(adapter._isQuestionUnresolved(question4Id), "Question 4 should be unresolved");
+        assertTrue(adapter._isQuestionUnresolved(question5Id), "Question 5 should be unresolved");
+        
+        // Create 5 orders (taker + 4 makers) for the 5 unresolved questions
+        uint256 takerTokenId = negRiskAdapter.getPositionId(question1Id, true);
+        ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(
+            user1, takerTokenId, 0, 1000e6, 500000, question1Id, user1PK
+        );
+        
+        ICTFExchange.OrderIntent[] memory makerOrders = new ICTFExchange.OrderIntent[](4);
+        makerOrders[0] = _createAndSignOrder(user2, negRiskAdapter.getPositionId(question2Id, false), 1, 1000e6, 500000, question2Id, user2PK);
+        makerOrders[1] = _createAndSignOrder(user3, negRiskAdapter.getPositionId(question3Id, true), 0, 1000e6, 500000, question3Id, user3PK);
+        makerOrders[2] = _createAndSignOrder(user4, negRiskAdapter.getPositionId(question4Id, false), 1, 1000e6, 500000, question4Id, user4PK);
+        makerOrders[3] = _createAndSignOrder(user1, negRiskAdapter.getPositionId(question5Id, true), 0, 1000e6, 500000, question5Id, user1PK);
+        
+        // This should pass - 5 orders for 5 unresolved questions
+        // Test the validation modifier directly without executing the matching logic
+        adapter.validateAllUnresolvedQuestionsPresentLength(testMarketId, makerOrders);
+        
+        console.log("SUCCESS: Length validation passed: 5 orders for 5 unresolved questions");
+    }
+
+    /// @notice Test the length-based validation modifier with insufficient orders
+    /// @dev This test should revert as we provide only 2 orders for 5 unresolved questions
+    function test_LengthValidationModifier_InsufficientOrders() public {
+        console.log("=== Testing Length Validation Modifier: Insufficient Orders (5 questions, 5 unresolved, 2 orders) ===");
+        
+        // Create a market with 5 questions
+        bytes32 testMarketId = negRiskAdapter.prepareMarket(100, "Test Market with 5 Questions");
+        
+        // Prepare 5 questions
+        bytes32 question1Id = negRiskAdapter.prepareQuestion(testMarketId, "Question 1");
+        bytes32 question2Id = negRiskAdapter.prepareQuestion(testMarketId, "Question 2");
+        bytes32 question3Id = negRiskAdapter.prepareQuestion(testMarketId, "Question 3");
+        bytes32 question4Id = negRiskAdapter.prepareQuestion(testMarketId, "Question 4");
+        bytes32 question5Id = negRiskAdapter.prepareQuestion(testMarketId, "Question 5");
+        
+        // Verify all questions are unresolved
+        assertTrue(adapter._isQuestionUnresolved(question1Id), "Question 1 should be unresolved");
+        assertTrue(adapter._isQuestionUnresolved(question2Id), "Question 2 should be unresolved");
+        assertTrue(adapter._isQuestionUnresolved(question3Id), "Question 3 should be unresolved");
+        assertTrue(adapter._isQuestionUnresolved(question4Id), "Question 4 should be unresolved");
+        assertTrue(adapter._isQuestionUnresolved(question5Id), "Question 5 should be unresolved");
+        
+        // Create only 2 orders (taker + 1 maker) for 5 unresolved questions
+        uint256 takerTokenId = negRiskAdapter.getPositionId(question1Id, true);
+        ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(
+            user1, takerTokenId, 0, 1000e6, 500000, question1Id, user1PK
+        );
+        
+        ICTFExchange.OrderIntent[] memory makerOrders = new ICTFExchange.OrderIntent[](1);
+        makerOrders[0] = _createAndSignOrder(user2, negRiskAdapter.getPositionId(question2Id, false), 1, 1000e6, 500000, question2Id, user2PK);
+        
+        // This should revert with MissingUnresolvedQuestion - only 2 orders for 5 unresolved questions
+        vm.expectRevert("MissingUnresolvedQuestion()");
+        adapter.crossMatchLongOrders(testMarketId, takerOrder, makerOrders, 1000e6);
+        
+        console.log("SUCCESS: Length validation correctly reverted: 2 orders for 5 unresolved questions");
+    }
+
+    /// @notice Test the length-based validation modifier with too many orders
+    /// @dev This test should revert as we provide 6 orders for 5 unresolved questions
+    function test_LengthValidationModifier_TooManyOrders() public {
+        console.log("=== Testing Length Validation Modifier: Too Many Orders (5 questions, 5 unresolved, 6 orders) ===");
+        
+        // Create a market with 5 questions
+        bytes32 testMarketId = negRiskAdapter.prepareMarket(100, "Test Market with 5 Questions");
+        
+        // Prepare 5 questions
+        bytes32 question1Id = negRiskAdapter.prepareQuestion(testMarketId, "Question 1");
+        bytes32 question2Id = negRiskAdapter.prepareQuestion(testMarketId, "Question 2");
+        bytes32 question3Id = negRiskAdapter.prepareQuestion(testMarketId, "Question 3");
+        bytes32 question4Id = negRiskAdapter.prepareQuestion(testMarketId, "Question 4");
+        bytes32 question5Id = negRiskAdapter.prepareQuestion(testMarketId, "Question 5");
+        
+        // Verify all questions are unresolved
+        assertTrue(adapter._isQuestionUnresolved(question1Id), "Question 1 should be unresolved");
+        assertTrue(adapter._isQuestionUnresolved(question2Id), "Question 2 should be unresolved");
+        assertTrue(adapter._isQuestionUnresolved(question3Id), "Question 3 should be unresolved");
+        assertTrue(adapter._isQuestionUnresolved(question4Id), "Question 4 should be unresolved");
+        assertTrue(adapter._isQuestionUnresolved(question5Id), "Question 5 should be unresolved");
+        
+        // Create 6 orders (taker + 5 makers) for 5 unresolved questions
+        uint256 takerTokenId = negRiskAdapter.getPositionId(question1Id, true);
+        ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(
+            user1, takerTokenId, 0, 1000e6, 500000, question1Id, user1PK
+        );
+        
+        ICTFExchange.OrderIntent[] memory makerOrders = new ICTFExchange.OrderIntent[](5);
+        makerOrders[0] = _createAndSignOrder(user2, negRiskAdapter.getPositionId(question2Id, false), 1, 1000e6, 500000, question2Id, user2PK);
+        makerOrders[1] = _createAndSignOrder(user3, negRiskAdapter.getPositionId(question3Id, true), 0, 1000e6, 500000, question3Id, user3PK);
+        makerOrders[2] = _createAndSignOrder(user4, negRiskAdapter.getPositionId(question4Id, false), 1, 1000e6, 500000, question4Id, user4PK);
+        makerOrders[3] = _createAndSignOrder(user1, negRiskAdapter.getPositionId(question5Id, true), 0, 1000e6, 500000, question5Id, user1PK);
+        makerOrders[4] = _createAndSignOrder(user2, negRiskAdapter.getPositionId(question1Id, false), 1, 1000e6, 500000, question1Id, user2PK); // Duplicate question
+        
+        // This should revert with MissingUnresolvedQuestion - 6 orders for 5 unresolved questions
+        vm.expectRevert("MissingUnresolvedQuestion()");
+        adapter.crossMatchLongOrders(testMarketId, takerOrder, makerOrders, 1000e6);
+        
+        console.log("SUCCESS: Length validation correctly reverted: 6 orders for 5 unresolved questions");
+    }
+
+    /// @notice Test the length-based validation modifier with no questions
+    /// @dev This test should pass as there are no unresolved questions
+    function test_LengthValidationModifier_NoQuestions() public {
+        console.log("=== Testing Length Validation Modifier: No Questions (0 questions, 0 unresolved, 0 orders) ===");
+        
+        // Create a market with no questions
+        bytes32 testMarketId = negRiskAdapter.prepareMarket(100, "Test Market with No Questions");
+        
+        // Verify no questions exist
+        uint256 questionCount = negRiskAdapter.getQuestionCount(testMarketId);
+        assertEq(questionCount, 0, "Should have 0 questions");
+        
+        // Create 1 order (taker only) - no unresolved questions, so 0 orders should be valid
+        // We need to create a dummy question for the order, but it won't be in the market
+        bytes32 dummyQuestionId = keccak256("dummy");
+        uint256 takerTokenId = negRiskAdapter.getPositionId(dummyQuestionId, true);
+        ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(
+            user1, takerTokenId, 0, 1000e6, 500000, dummyQuestionId, user1PK
+        );
+        
+        ICTFExchange.OrderIntent[] memory makerOrders = new ICTFExchange.OrderIntent[](0);
+        
+        // This should pass - 0 orders for 0 unresolved questions
+        // Test the validation modifier directly without executing the matching logic
+        adapter.validateAllUnresolvedQuestionsPresentLength(testMarketId, makerOrders);
+        
+        console.log("SUCCESS: Length validation passed: 0 orders for 0 unresolved questions");
     }
 }
 
