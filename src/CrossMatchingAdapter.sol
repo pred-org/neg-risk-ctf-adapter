@@ -86,6 +86,16 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         bytes32 questionId;     // which question id
     }
 
+    struct MakerOrder {
+        ICTFExchange.OrderIntent[] orders;
+        OrderType orderType;
+    }
+
+    enum OrderType {
+        SINGLE,
+        CROSS_MATCH
+    }
+
     /// @notice Modifier to check that all unresolved questions are present in the orders
     /// @param marketId The market ID to check
     /// @param makerOrders Array of maker orders
@@ -221,7 +231,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
     function hybridMatchOrders(
         bytes32 marketId,
         ICTFExchange.OrderIntent calldata takerOrder, 
-        ICTFExchange.OrderIntent[][] calldata makerOrders, 
+        MakerOrder[] calldata makerOrders, 
         uint256[] calldata makerFillAmounts,
         uint8 singleOrderCount
     ) external nonReentrant {
@@ -234,10 +244,10 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         bool isTakerBuying = takerOrder.side == ICTFExchange.Side.BUY;
         
         for (uint256 i = 0; i < makerOrders.length;) {
-            ICTFExchange.OrderIntent[] calldata makerOrder = makerOrders[i];
-            if (makerOrder.length == 1) {
+            MakerOrder calldata makerOrder = makerOrders[i];
+            if (makerOrder.orderType == OrderType.SINGLE) {
                 // Collect single maker orders for batch processing
-                singleMakerOrders[singleOrderIndex] = makerOrder[0];
+                singleMakerOrders[singleOrderIndex] = makerOrder.orders[0];
                 singleMakerFillAmounts[singleOrderIndex] = makerFillAmounts[i];
                 
                 // For COMPLEMENTARY matches, calculate the correct taker fill amount
@@ -255,10 +265,10 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
                 // cross match
                 if (takerOrder.order.intent == ICTFExchange.Intent.LONG) {
                     // LONG
-                    crossMatchLongOrders(marketId, takerOrder, makerOrder, makerFillAmounts[i]);
+                    crossMatchLongOrders(marketId, takerOrder, makerOrder.orders, makerFillAmounts[i]);
                 } else {
                     // SHORT
-                    crossMatchShortOrders(marketId, takerOrder, makerOrder, makerFillAmounts[i]);
+                    crossMatchShortOrders(marketId, takerOrder, makerOrder.orders, makerFillAmounts[i]);
                 }
             }
             unchecked {

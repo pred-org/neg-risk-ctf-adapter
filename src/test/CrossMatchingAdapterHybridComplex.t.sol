@@ -285,13 +285,14 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         negRiskOperator.resolveQuestion(questionIds[2]);
 
         // Setup: 3 single orders + 1 cross-match order (3 makers)
-        ICTFExchange.OrderIntent[][] memory makerOrders = new ICTFExchange.OrderIntent[][](4);
+        CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](4);
         uint256[] memory makerFillAmounts = new uint256[](4);
         
         // Single order 1: User2 sells YES tokens for question 5 (price 0.25) - SHORT intent
         _mintTokensToUser(user2, yesPositionIds[5], 2e6);
-        makerOrders[0] = new ICTFExchange.OrderIntent[](1);
-        makerOrders[0][0] = _createAndSignOrder(user2, yesPositionIds[5], 1, 2e6, 0.5e6, questionIds[5], 1, _user2PK);
+        makerOrders[0].orders = new ICTFExchange.OrderIntent[](1);
+        makerOrders[0].orders[0] = _createAndSignOrder(user2, yesPositionIds[5], 1, 2e6, 0.5e6, questionIds[5], 1, _user2PK);
+        makerOrders[0].orderType = CrossMatchingAdapter.OrderType.SINGLE;
         makerFillAmounts[0] = 0.1e6;
 
         vm.prank(user2);
@@ -299,8 +300,9 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         
         // Single order 2: User3 sells YES tokens for question 5 (price 0.25) - SHORT intent
         _mintTokensToUser(user3, yesPositionIds[5], 2e6);
-        makerOrders[1] = new ICTFExchange.OrderIntent[](1);
-        makerOrders[1][0] = _createAndSignOrder(user3, yesPositionIds[5], 1, 2e6, 0.5e6, questionIds[5], 1, _user3PK);
+        makerOrders[1].orders = new ICTFExchange.OrderIntent[](1);
+        makerOrders[1].orders[0] = _createAndSignOrder(user3, yesPositionIds[5], 1, 2e6, 0.5e6, questionIds[5], 1, _user3PK);
+        makerOrders[1].orderType = CrossMatchingAdapter.OrderType.SINGLE;
         makerFillAmounts[1] = 0.1e6;
 
         vm.prank(user3);
@@ -308,17 +310,19 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         
         // Single order 3: User4 sells YES tokens for question 5 (price 0.25) - SHORT intent
         _mintTokensToUser(user4, yesPositionIds[5], 2e6);
-        makerOrders[2] = new ICTFExchange.OrderIntent[](1);
-        makerOrders[2][0] = _createAndSignOrder(user4, yesPositionIds[5], 1, 2e6, 0.5e6, questionIds[5], 1, _user4PK);
+        makerOrders[2].orders = new ICTFExchange.OrderIntent[](1);
+        makerOrders[2].orders[0] = _createAndSignOrder(user4, yesPositionIds[5], 1, 2e6, 0.5e6, questionIds[5], 1, _user4PK);
+        makerOrders[2].orderType = CrossMatchingAdapter.OrderType.SINGLE;
         makerFillAmounts[2] = 0.1e6;
 
         vm.prank(user4);
         ctf.setApprovalForAll(address(negRiskAdapter), true);
         
         // Cross-match order: User5 and User6 buy different tokens (prices 0.4 + 0.3 = 0.7) - LONG intent
-        makerOrders[3] = new ICTFExchange.OrderIntent[](2);
-        makerOrders[3][0] = _createAndSignOrder(user5, yesPositionIds[3], 0, 0.4e6, 1e6, questionIds[3], 0, _user5PK);
-        makerOrders[3][1] = _createAndSignOrder(user6, yesPositionIds[4], 0, 0.3e6, 1e6, questionIds[4], 0, _user6PK);
+        makerOrders[3].orders = new ICTFExchange.OrderIntent[](2);
+        makerOrders[3].orders[0] = _createAndSignOrder(user5, yesPositionIds[3], 0, 0.4e6, 1e6, questionIds[3], 0, _user5PK);
+        makerOrders[3].orders[1] = _createAndSignOrder(user6, yesPositionIds[4], 0, 0.3e6, 1e6, questionIds[4], 0, _user6PK);
+        makerOrders[3].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
         makerFillAmounts[3] = 0.1e6;
 
         vm.prank(user5);
@@ -349,9 +353,9 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         assertEq(ctf.balanceOf(user6, yesPositionIds[4]), makerFillAmounts[3], "User6 should receive YES tokens from cross-match");
         
         // Verify USDC balance changes
-        uint256 expectedUser1USDCChange = (makerFillAmounts[0] * (makerOrders[0][0].order.price)) / 1e6 + 
-                                        (makerFillAmounts[1] * (makerOrders[1][0].order.price)) / 1e6 + 
-                                        (makerFillAmounts[2] * (makerOrders[2][0].order.price)) / 1e6 +
+        uint256 expectedUser1USDCChange = (makerFillAmounts[0] * (makerOrders[0].orders[0].order.price)) / 1e6 + 
+                                        (makerFillAmounts[1] * (makerOrders[1].orders[0].order.price)) / 1e6 + 
+                                        (makerFillAmounts[2] * (makerOrders[2].orders[0].order.price)) / 1e6 +
                                         (makerFillAmounts[3] * takerOrder.order.price) / 1e6;
         assertEq(usdc.balanceOf(user1), initialUser1USDC - expectedUser1USDCChange, "User1 USDC balance should decrease for single orders");
         
@@ -382,7 +386,7 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         }
         
         // Create 5 single orders + 2 cross-match orders
-        ICTFExchange.OrderIntent[][] memory makerOrders = new ICTFExchange.OrderIntent[][](7);
+        CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](7);
         uint256[] memory makerFillAmounts = new uint256[](7);
         
         uint256 noPositionId0 = negRiskAdapter.getPositionId(questionIds[0], false);
@@ -393,8 +397,8 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
             MockUSDC(address(usdc)).mint(vm.addr(1000 + i), 1e6);
             vm.prank(vm.addr(1000 + i));
             usdc.approve(address(ctfExchange), 1e6);
-            makerOrders[i] = new ICTFExchange.OrderIntent[](1);
-            makerOrders[i][0] = _createAndSignOrder(
+            makerOrders[i].orders = new ICTFExchange.OrderIntent[](1);
+            makerOrders[i].orders[0] = _createAndSignOrder(
                 vm.addr(1000 + i), 
                 noPositionId0, 
                 0, 
@@ -404,6 +408,7 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
                 1, 
                 1000 + i
             );
+            makerOrders[i].orderType = CrossMatchingAdapter.OrderType.SINGLE;
             makerFillAmounts[i] = 0.05e6;
         }
 
@@ -424,17 +429,18 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         negRiskOperator.resolveQuestion(questionIds[4]);
         
         // Cross-match orders (2) - prices 0.2 + 0.15 + 0.05 + 0.1 + 0.05 = 0.55
-        makerOrders[5] = new ICTFExchange.OrderIntent[](5);
-        makerOrders[5][0] = _createAndSignOrder(user2, yesPositionIds[5], 0, 0.2e6, 1e6, questionIds[5], 0, _user2PK);
-        makerOrders[5][1] = _createAndSignOrder(user3, yesPositionIds[6], 0, 0.15e6, 1e6, questionIds[6], 0, _user3PK);
-        makerOrders[5][2] = _createAndSignOrder(user4, yesPositionIds[7], 0, 0.05e6, 1e6, questionIds[7], 0, _user4PK);
-        makerOrders[5][3] = _createAndSignOrder(user5, yesPositionIds[8], 0, 0.1e6, 1e6, questionIds[8], 0, _user5PK);
-        makerOrders[5][4] = _createAndSignOrder(user6, yesPositionIds[9], 0, 0.05e6, 1e6, questionIds[9], 0, _user6PK);
+        makerOrders[5].orders = new ICTFExchange.OrderIntent[](5);
+        makerOrders[5].orders[0] = _createAndSignOrder(user2, yesPositionIds[5], 0, 0.2e6, 1e6, questionIds[5], 0, _user2PK);
+        makerOrders[5].orders[1] = _createAndSignOrder(user3, yesPositionIds[6], 0, 0.15e6, 1e6, questionIds[6], 0, _user3PK);
+        makerOrders[5].orders[2] = _createAndSignOrder(user4, yesPositionIds[7], 0, 0.05e6, 1e6, questionIds[7], 0, _user4PK);
+        makerOrders[5].orders[3] = _createAndSignOrder(user5, yesPositionIds[8], 0, 0.1e6, 1e6, questionIds[8], 0, _user5PK);
+        makerOrders[5].orders[4] = _createAndSignOrder(user6, yesPositionIds[9], 0, 0.05e6, 1e6, questionIds[9], 0, _user6PK);
+        makerOrders[5].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
         makerFillAmounts[5] = 0.05e6;
         
         // Cross-match order (3) - prices 0.1 + 0.25 + 0.05 + 0.07 + 0.08 = 0.55
         // Use different users to avoid duplicate orders
-        makerOrders[6] = new ICTFExchange.OrderIntent[](5);
+        makerOrders[6].orders = new ICTFExchange.OrderIntent[](5);
         
         // Mint USDC to the new users for cross-match order 2
         for (uint256 i = 2000; i <= 2004; i++) {
@@ -445,11 +451,12 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
             usdc.approve(address(adapter), 1e6);
         }
         
-        makerOrders[6][0] = _createAndSignOrder(vm.addr(2000), yesPositionIds[7], 0, 0.1e6, 1e6, questionIds[7], 0, 2000);
-        makerOrders[6][1] = _createAndSignOrder(vm.addr(2001), yesPositionIds[8], 0, 0.25e6, 1e6, questionIds[8], 0, 2001);
-        makerOrders[6][2] = _createAndSignOrder(vm.addr(2002), yesPositionIds[9], 0, 0.05e6, 1e6, questionIds[9], 0, 2002);
-        makerOrders[6][3] = _createAndSignOrder(vm.addr(2003), yesPositionIds[5], 0, 0.07e6, 1e6, questionIds[5], 0, 2003);
-        makerOrders[6][4] = _createAndSignOrder(vm.addr(2004), yesPositionIds[6], 0, 0.08e6, 1e6, questionIds[6], 0, 2004);
+        makerOrders[6].orders[0] = _createAndSignOrder(vm.addr(2000), yesPositionIds[7], 0, 0.1e6, 1e6, questionIds[7], 0, 2000);
+        makerOrders[6].orders[1] = _createAndSignOrder(vm.addr(2001), yesPositionIds[8], 0, 0.25e6, 1e6, questionIds[8], 0, 2001);
+        makerOrders[6].orders[2] = _createAndSignOrder(vm.addr(2002), yesPositionIds[9], 0, 0.05e6, 1e6, questionIds[9], 0, 2002);
+        makerOrders[6].orders[3] = _createAndSignOrder(vm.addr(2003), yesPositionIds[5], 0, 0.07e6, 1e6, questionIds[5], 0, 2003);
+        makerOrders[6].orders[4] = _createAndSignOrder(vm.addr(2004), yesPositionIds[6], 0, 0.08e6, 1e6, questionIds[6], 0, 2004);
+        makerOrders[6].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
         makerFillAmounts[6] = 0.05e6;
         
         // Taker order - price 0.45 (participating in cross-match)
@@ -468,7 +475,7 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         // Verify token balances for single order makers (NO tokens)
         for (uint256 i = 0; i < 5; i++) {
             address singleOrderMaker = vm.addr(1000 + i);
-            assertEq(ctf.balanceOf(singleOrderMaker, noPositionId0), makerFillAmounts[i]*makerOrders[i][0].takerAmount/makerOrders[i][0].makerAmount, 
+            assertEq(ctf.balanceOf(singleOrderMaker, noPositionId0), makerFillAmounts[i]*makerOrders[i].orders[0].takerAmount/makerOrders[i].orders[0].makerAmount, 
                 string(abi.encodePacked("Single order maker ", vm.toString(i), " should receive NO tokens")));
         }
         
@@ -486,8 +493,8 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         assertEq(ctf.balanceOf(vm.addr(2003), yesPositionIds[5]), makerFillAmounts[6], "User 2003 should receive YES tokens from cross-match 2");
         assertEq(ctf.balanceOf(vm.addr(2004), yesPositionIds[6]), makerFillAmounts[6], "User 2004 should receive YES tokens from cross-match 2");
         
-        // Verify taker received tokens, 2 * 0.05e6 for the cross match orders and 5 * makerFillAmounts[0]*makerOrders[0][0].takerAmount/makerOrders[0][0].makerAmount for the single orders
-        assertEq(ctf.balanceOf(user1, yesPositionIds[0]), 2*0.05e6 + 5 * makerFillAmounts[0]*makerOrders[0][0].takerAmount/makerOrders[0][0].makerAmount, "User1 should receive YES tokens from taker order");
+        // Verify taker received tokens, 2 * 0.05e6 for the cross match orders and 5 * makerFillAmounts[0]*makerOrders[0].orders[0].takerAmount/makerOrders[0].orders[0].makerAmount for the single orders
+        assertEq(ctf.balanceOf(user1, yesPositionIds[0]), 2*0.05e6 + 5 * makerFillAmounts[0]*makerOrders[0].orders[0].takerAmount/makerOrders[0].orders[0].makerAmount, "User1 should receive YES tokens from taker order");
         
         // Verify no tokens were left in adapter
         assertEq(ctf.balanceOf(address(adapter), yesPositionIds[0]), 0, "Adapter should not hold any YES tokens");
@@ -522,7 +529,7 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         
         // Setup: Cross-match scenario with 4 users selling NO tokens
         // Combined price must equal 1.0: 0.25 + 0.25 + 0.25 + 0.25 = 1.0
-        ICTFExchange.OrderIntent[][] memory makerOrders = new ICTFExchange.OrderIntent[][](1);
+        CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
         uint256[] memory makerFillAmounts = new uint256[](1);
         
         // Mint NO tokens to users for cross-match and set up approvals
@@ -540,11 +547,12 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         
         // Cross-match order: 3 makers selling NO tokens at 0.25 each
         // Combined with taker (0.25) = 0.25 + 0.25 + 0.25 + 0.25 = 1.0
-        makerOrders[0] = new ICTFExchange.OrderIntent[](3);
+        makerOrders[0].orders = new ICTFExchange.OrderIntent[](3);
         // Sending 0.75e6 here instead of 0.25e6, as the createAndSignOrder function will convert the price to 0.25
-        makerOrders[0][0] = _createAndSignOrder(user2, noPositionIds[1], 1, 1e6, 0.75e6, questionIds[1], 0, _user2PK);
-        makerOrders[0][1] = _createAndSignOrder(user3, noPositionIds[2], 1, 1e6, 0.75e6, questionIds[2], 0, _user3PK);
-        makerOrders[0][2] = _createAndSignOrder(user4, noPositionIds[3], 1, 1e6, 0.75e6, questionIds[3], 0, _user4PK);
+        makerOrders[0].orders[0] = _createAndSignOrder(user2, noPositionIds[1], 1, 1e6, 0.75e6, questionIds[1], 0, _user2PK);
+        makerOrders[0].orders[1] = _createAndSignOrder(user3, noPositionIds[2], 1, 1e6, 0.75e6, questionIds[2], 0, _user3PK);
+        makerOrders[0].orders[2] = _createAndSignOrder(user4, noPositionIds[3], 1, 1e6, 0.75e6, questionIds[3], 0, _user4PK);
+        makerOrders[0].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
         makerFillAmounts[0] = 1e6;
         
         // Taker order: User1 selling NO tokens for question 0 - price 0.25
@@ -608,13 +616,14 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
 
         negRiskOperator.resolveQuestion(questionId);
         
-        ICTFExchange.OrderIntent[][] memory makerOrders = new ICTFExchange.OrderIntent[][](1);
+        CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
         uint256[] memory makerFillAmounts = new uint256[](1);
         
         // Create orders with prices that don't sum to 1.0
-        makerOrders[0] = new ICTFExchange.OrderIntent[](2);
-        makerOrders[0][0] = _createAndSignOrder(user2, yesPositionIds[0], 0, 0.3e6, 1e6, questionIds[0], 0, _user2PK); // 0.3
-        makerOrders[0][1] = _createAndSignOrder(user3, yesPositionIds[1], 0, 0.4e6, 1e6, questionIds[1], 0, _user3PK); // 0.4
+        makerOrders[0].orders = new ICTFExchange.OrderIntent[](2);
+        makerOrders[0].orders[0] = _createAndSignOrder(user2, yesPositionIds[0], 0, 0.3e6, 1e6, questionIds[0], 0, _user2PK); // 0.3
+        makerOrders[0].orders[1] = _createAndSignOrder(user3, yesPositionIds[1], 0, 0.4e6, 1e6, questionIds[1], 0, _user3PK); // 0.4
+        makerOrders[0].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
         makerFillAmounts[0] = 0.1e6;
         
         ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionIds[2], 0, 0.2e6, 1e6, questionIds[2], 0, _user1PK); // 0.2
@@ -638,13 +647,14 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         ctf.setApprovalForAll(address(ctfExchange), true);
         vm.stopPrank();
         
-        ICTFExchange.OrderIntent[][] memory makerOrders = new ICTFExchange.OrderIntent[][](1);
+        CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
         uint256[] memory makerFillAmounts = new uint256[](1);
 
         _mintTokensToUser(user2, yesPositionId, 1e6);
         
-        makerOrders[0] = new ICTFExchange.OrderIntent[](1);
-        makerOrders[0][0] = _createAndSignOrder(user2, yesPositionId, 1, 1e6, 0.5e6, questionId, 1, _user2PK);
+        makerOrders[0].orders = new ICTFExchange.OrderIntent[](1);
+        makerOrders[0].orders[0] = _createAndSignOrder(user2, yesPositionId, 1, 1e6, 0.5e6, questionId, 1, _user2PK);
+        makerOrders[0].orderType = CrossMatchingAdapter.OrderType.SINGLE;
         makerFillAmounts[0] = 0.1e6;
 
         vm.startPrank(user2);
@@ -666,16 +676,18 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
     function testHybridMatchOrdersInvalidSingleOrderCount() public {
         console.log("=== Testing Invalid Single Order Count Edge Case ===");
         
-        ICTFExchange.OrderIntent[][] memory makerOrders = new ICTFExchange.OrderIntent[][](2);
+        CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](2);
         uint256[] memory makerFillAmounts = new uint256[](2);
         
         // Create 2 single orders
-        makerOrders[0] = new ICTFExchange.OrderIntent[](1);
-        makerOrders[0][0] = _createAndSignOrder(user2, yesPositionId, 1, 1e6, 0.5e6, questionId, 1, _user2PK);
+        makerOrders[0].orders = new ICTFExchange.OrderIntent[](1);
+        makerOrders[0].orders[0] = _createAndSignOrder(user2, yesPositionId, 1, 1e6, 0.5e6, questionId, 1, _user2PK);
+        makerOrders[0].orderType = CrossMatchingAdapter.OrderType.SINGLE;
         makerFillAmounts[0] = 0.1e6;
         
-        makerOrders[1] = new ICTFExchange.OrderIntent[](1);
-        makerOrders[1][0] = _createAndSignOrder(user3, yesPositionId, 1, 1e6, 0.5e6, questionId, 1, _user3PK);
+        makerOrders[1].orders = new ICTFExchange.OrderIntent[](1);
+        makerOrders[1].orders[0] = _createAndSignOrder(user3, yesPositionId, 1, 1e6, 0.5e6, questionId, 1, _user3PK);
+        makerOrders[1].orderType = CrossMatchingAdapter.OrderType.SINGLE;
         makerFillAmounts[1] = 0.1e6;
         
         ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionId, 0, 1e6, 1e6, questionId, 0, _user1PK);
@@ -706,7 +718,7 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
             _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
         }
         
-        ICTFExchange.OrderIntent[][] memory makerOrders = new ICTFExchange.OrderIntent[][](1);
+        CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
         uint256[] memory makerFillAmounts = new uint256[](1);
 
         vm.prank(oracle);
@@ -717,11 +729,12 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         negRiskOperator.resolveQuestion(questionId);
         
         // Extreme price distribution: 0.1, 0.1, 0.1, 0.1, 0.6
-        makerOrders[0] = new ICTFExchange.OrderIntent[](4);
-        makerOrders[0][0] = _createAndSignOrder(user2, yesPositionIds[0], 0, 0.1e6, 1e6, questionIds[0], 0, _user2PK);
-        makerOrders[0][1] = _createAndSignOrder(user3, yesPositionIds[1], 0, 0.1e6, 1e6, questionIds[1], 0, _user3PK);
-        makerOrders[0][2] = _createAndSignOrder(user4, yesPositionIds[2], 0, 0.1e6, 1e6, questionIds[2], 0, _user4PK);
-        makerOrders[0][3] = _createAndSignOrder(user5, yesPositionIds[3], 0, 0.1e6, 1e6, questionIds[3], 0, _user5PK);
+        makerOrders[0].orders = new ICTFExchange.OrderIntent[](4);
+        makerOrders[0].orders[0] = _createAndSignOrder(user2, yesPositionIds[0], 0, 0.1e6, 1e6, questionIds[0], 0, _user2PK);
+        makerOrders[0].orders[1] = _createAndSignOrder(user3, yesPositionIds[1], 0, 0.1e6, 1e6, questionIds[1], 0, _user3PK);
+        makerOrders[0].orders[2] = _createAndSignOrder(user4, yesPositionIds[2], 0, 0.1e6, 1e6, questionIds[2], 0, _user4PK);
+        makerOrders[0].orders[3] = _createAndSignOrder(user5, yesPositionIds[3], 0, 0.1e6, 1e6, questionIds[3], 0, _user5PK);
+        makerOrders[0].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
         makerFillAmounts[0] = 0.1e6;
         
         // Taker order - price 0.6
@@ -747,10 +760,10 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         
         // Verify USDC balance changes (users should pay for tokens received)
         assertEq(usdc.balanceOf(user1), (initialUser1USDC - (makerFillAmounts[0] * takerOrder.order.price)/1e6), "User1 should pay USDC for tokens received");
-        assertEq(usdc.balanceOf(user2), (initialUser2USDC - (makerFillAmounts[0] * makerOrders[0][0].order.price)/1e6), "User2 should pay USDC for tokens received");
-        assertEq(usdc.balanceOf(user3), (initialUser3USDC - (makerFillAmounts[0] * makerOrders[0][0].order.price)/1e6), "User3 should pay USDC for tokens received");
-        assertEq(usdc.balanceOf(user4), (initialUser4USDC - (makerFillAmounts[0] * makerOrders[0][0].order.price)/1e6), "User4 should pay USDC for tokens received");
-        assertEq(usdc.balanceOf(user5), (initialUser5USDC - (makerFillAmounts[0] * makerOrders[0][0].order.price)/1e6), "User5 should pay USDC for tokens received");
+        assertEq(usdc.balanceOf(user2), (initialUser2USDC - (makerFillAmounts[0] * makerOrders[0].orders[0].order.price)/1e6), "User2 should pay USDC for tokens received");
+        assertEq(usdc.balanceOf(user3), (initialUser3USDC - (makerFillAmounts[0] * makerOrders[0].orders[0].order.price)/1e6), "User3 should pay USDC for tokens received");
+        assertEq(usdc.balanceOf(user4), (initialUser4USDC - (makerFillAmounts[0] * makerOrders[0].orders[0].order.price)/1e6), "User4 should pay USDC for tokens received");
+        assertEq(usdc.balanceOf(user5), (initialUser5USDC - (makerFillAmounts[0] * makerOrders[0].orders[0].order.price)/1e6), "User5 should pay USDC for tokens received");
         
         // Verify no tokens were left in adapter
         for (uint256 i = 0; i < 5; i++) {
@@ -790,12 +803,13 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         uint256 initialUSDCBalance = usdc.balanceOf(address(adapter));
         uint256 initialWCOLBalance = negRiskAdapter.wcol().balanceOf(address(adapter));
         
-        ICTFExchange.OrderIntent[][] memory makerOrders = new ICTFExchange.OrderIntent[][](2);
+        CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](2);
         uint256[] memory makerFillAmounts = new uint256[](2);
         
         // Single order - price 0.25
-        makerOrders[0] = new ICTFExchange.OrderIntent[](1);
-        makerOrders[0][0] = _createAndSignOrder(user2, yesPositionIds[3], 1, 1e6, 0.25e6, questionIds[3], 1, _user2PK);
+        makerOrders[0].orders = new ICTFExchange.OrderIntent[](1);
+        makerOrders[0].orders[0] = _createAndSignOrder(user2, yesPositionIds[3], 1, 1e6, 0.25e6, questionIds[3], 1, _user2PK);
+        makerOrders[0].orderType = CrossMatchingAdapter.OrderType.SINGLE;
         makerFillAmounts[0] = 0.1e6;
 
         _mintTokensToUser(user2, yesPositionIds[3], 1e6);
@@ -804,10 +818,11 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         ctf.setApprovalForAll(address(negRiskAdapter), true);
         
         // Cross-match order - prices 0.35 + 0.25 + 0.15 = 0.75
-        makerOrders[1] = new ICTFExchange.OrderIntent[](3);
-        makerOrders[1][0] = _createAndSignOrder(user3, yesPositionIds[1], 0, 0.35e6, 1e6, questionIds[1], 0, _user3PK);
-        makerOrders[1][1] = _createAndSignOrder(user4, yesPositionIds[2], 0, 0.25e6, 1e6, questionIds[2], 0, _user4PK);
-        makerOrders[1][2] = _createAndSignOrder(user5, yesPositionIds[0], 0, 0.15e6, 1e6, questionIds[0], 0, _user5PK);
+        makerOrders[1].orders = new ICTFExchange.OrderIntent[](3);
+        makerOrders[1].orders[0] = _createAndSignOrder(user3, yesPositionIds[1], 0, 0.35e6, 1e6, questionIds[1], 0, _user3PK);
+        makerOrders[1].orders[1] = _createAndSignOrder(user4, yesPositionIds[2], 0, 0.25e6, 1e6, questionIds[2], 0, _user4PK);
+        makerOrders[1].orders[2] = _createAndSignOrder(user5, yesPositionIds[0], 0, 0.15e6, 1e6, questionIds[0], 0, _user5PK);
+        makerOrders[1].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
         makerFillAmounts[1] = 0.1e6;
         
         // Taker order - price 0.25
@@ -854,15 +869,16 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         uint256 initialUSDCBalance = usdc.balanceOf(address(adapter));
         uint256 initialWCOLBalance = negRiskAdapter.wcol().balanceOf(address(adapter));
         
-        ICTFExchange.OrderIntent[][] memory makerOrders = new ICTFExchange.OrderIntent[][](2);
+        CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](2);
         uint256[] memory makerFillAmounts = new uint256[](2);
 
         uint256 noPositionId3 = negRiskAdapter.getPositionId(questionIds[3], false);
         
         // Single order - price 0.25
-        makerOrders[0] = new ICTFExchange.OrderIntent[](1);
+        makerOrders[0].orders = new ICTFExchange.OrderIntent[](1);
         // need to check this with vaibhav
-        makerOrders[0][0] = _createAndSignOrder(user2, noPositionId3, 0, 0.75e6, 1e6, questionIds[3], 1, _user2PK);
+        makerOrders[0].orders[0] = _createAndSignOrder(user2, noPositionId3, 0, 0.75e6, 1e6, questionIds[3], 1, _user2PK);
+        makerOrders[0].orderType = CrossMatchingAdapter.OrderType.SINGLE;
         makerFillAmounts[0] = 0.1e6;
 
         // _mintTokensToUser(user2, yesPositionIds[3], 1e6);
@@ -874,10 +890,11 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         ctf.setApprovalForAll(address(negRiskAdapter), true);
         
         // Cross-match order - prices 0.35 + 0.25 + 0.15 = 0.75
-        makerOrders[1] = new ICTFExchange.OrderIntent[](3);
-        makerOrders[1][0] = _createAndSignOrder(user3, yesPositionIds[1], 0, 0.35e6, 1e6, questionIds[1], 0, _user3PK);
-        makerOrders[1][1] = _createAndSignOrder(user4, yesPositionIds[2], 0, 0.25e6, 1e6, questionIds[2], 0, _user4PK);
-        makerOrders[1][2] = _createAndSignOrder(user5, yesPositionIds[0], 0, 0.15e6, 1e6, questionIds[0], 0, _user5PK);
+        makerOrders[1].orders = new ICTFExchange.OrderIntent[](3);
+        makerOrders[1].orders[0] = _createAndSignOrder(user3, yesPositionIds[1], 0, 0.35e6, 1e6, questionIds[1], 0, _user3PK);
+        makerOrders[1].orders[1] = _createAndSignOrder(user4, yesPositionIds[2], 0, 0.25e6, 1e6, questionIds[2], 0, _user4PK);
+        makerOrders[1].orders[2] = _createAndSignOrder(user5, yesPositionIds[0], 0, 0.15e6, 1e6, questionIds[0], 0, _user5PK);
+        makerOrders[1].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
         makerFillAmounts[1] = 0.1e6;
         
         // Taker order - price 0.25
@@ -925,13 +942,14 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         uint256 initialUser2USDC = usdc.balanceOf(user2);
         uint256 initialUser3USDC = usdc.balanceOf(user3);
         
-        ICTFExchange.OrderIntent[][] memory makerOrders = new ICTFExchange.OrderIntent[][](1);
+        CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
         uint256[] memory makerFillAmounts = new uint256[](1);
         
         // Cross-match order - prices 0.3 + 0.4 = 0.7
-        makerOrders[0] = new ICTFExchange.OrderIntent[](2);
-        makerOrders[0][0] = _createAndSignOrder(user2, yesPositionIds[0], 0, 0.3e6, 1e6, questionIds[0], 0, _user2PK);
-        makerOrders[0][1] = _createAndSignOrder(user3, yesPositionIds[1], 0, 0.4e6, 1e6, questionIds[1], 0, _user3PK);
+        makerOrders[0].orders = new ICTFExchange.OrderIntent[](2);
+        makerOrders[0].orders[0] = _createAndSignOrder(user2, yesPositionIds[0], 0, 0.3e6, 1e6, questionIds[0], 0, _user2PK);
+        makerOrders[0].orders[1] = _createAndSignOrder(user3, yesPositionIds[1], 0, 0.4e6, 1e6, questionIds[1], 0, _user3PK);
+        makerOrders[0].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
         makerFillAmounts[0] = 0.1e6;
         
         ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionIds[2], 0, 0.3e6, 1e6, questionIds[2], 0, _user1PK);
@@ -946,8 +964,8 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         
         // Verify USDC balance changes
         assertEq(usdc.balanceOf(user1), initialUser1USDC - (makerFillAmounts[0] * takerOrder.order.price)/1e6, "User1 should pay USDC for tokens received");
-        assertEq(usdc.balanceOf(user2), initialUser2USDC - (makerFillAmounts[0] * makerOrders[0][0].order.price)/1e6, "User2 should pay USDC for tokens received");
-        assertEq(usdc.balanceOf(user3), initialUser3USDC - (makerFillAmounts[0] * makerOrders[0][1].order.price)/1e6, "User3 should pay USDC for tokens received");
+        assertEq(usdc.balanceOf(user2), initialUser2USDC - (makerFillAmounts[0] * makerOrders[0].orders[0].order.price)/1e6, "User2 should pay USDC for tokens received");
+        assertEq(usdc.balanceOf(user3), initialUser3USDC - (makerFillAmounts[0] * makerOrders[0].orders[1].order.price)/1e6, "User3 should pay USDC for tokens received");
         
         // Verify no tokens were left in adapter
         assertEq(ctf.balanceOf(address(adapter), yesPositionIds[0]), 0, "Adapter should not hold any YES tokens");
