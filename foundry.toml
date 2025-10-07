@@ -19,9 +19,9 @@ metadata = true
 metadata_hash = "none"  # disable ipfs
 use_literal_content = true # use source code
 
-# Monad Testnet Configuration
-eth-rpc-url = "https://monad-testnet.g.alchemy.com/v2/pw_4UOF9xIy14mkrmw-1zxFeZQZm6MYx"
-chain_id = 10143
+# Base Sepolia Configuration
+eth-rpc-url = "https://base-sepolia.g.alchemy.com/v2/pw_4UOF9xIy14mkrmw-1zxFeZQZm6MYx"
+chain_id = 84532
 
 [fmt]
 line_length = 120
