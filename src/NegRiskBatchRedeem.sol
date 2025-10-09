@@ -192,40 +192,6 @@ contract NegRiskBatchRedeem is ERC1155TokenReceiver, INegRiskBatchRedeemEE {
         }
     }
 
-    /// @notice Batch redeem positions for multiple users for a given question
-    /// @notice Can only be called by whitelisted operators
-    /// @notice Assumes all users have given token allowance to this contract
-    /// @param _questionId - the questionId to redeem positions for
-    /// @param _users - array of user addresses to redeem for
-    /// @param _amounts - array of amounts to redeem for each user (must match _users length)
-    function batchRedeemQuestion(
-        bytes32 _questionId,
-        address[] calldata _users,
-        uint256[] calldata _amounts
-    ) external onlyOperator {
-        if (_users.length != _amounts.length) revert InvalidArrayLength();
-        if (_users.length == 0) revert NoTokensToRedeem();
-
-        bytes32 conditionId = negRiskAdapter.getConditionId(_questionId);
-        uint256 yesPositionId = negRiskAdapter.getPositionId(_questionId, true);
-        uint256 noPositionId = negRiskAdapter.getPositionId(_questionId, false);
-        uint256 totalPayout = 0;
-
-        // Process each user
-        for (uint256 i = 0; i < _users.length; i++) {
-            address user = _users[i];
-            uint256 amount = _amounts[i];
-
-            if (amount == 0) continue;
-
-            // Redeem positions for this user (both yes and no tokens)
-            uint256 userPayout = _redeemUserPositions(conditionId, user, yesPositionId, noPositionId, amount, amount);
-            totalPayout += userPayout;
-        }
-
-        emit BatchRedemption(_questionId, _users, _amounts, totalPayout);
-    }
-
     /// @notice Batch redeem positions for multiple users with custom amounts for yes/no tokens
     /// @notice Can only be called by whitelisted operators
     /// @notice Assumes all users have given token allowance to this contract

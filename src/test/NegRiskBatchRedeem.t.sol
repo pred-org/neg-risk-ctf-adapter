@@ -86,38 +86,6 @@ contract NegRiskBatchRedeemTest is TestHelper {
         assertFalse(batchRedeem.isOperator(newOperator));
     }
 
-    function test_onlyOperatorCanCallBatchRedeem() public {
-        bytes32 questionId = keccak256("test question");
-        address[] memory users = new address[](1);
-        users[0] = user1;
-        uint256[] memory amounts = new uint256[](1);
-        amounts[0] = 100e6;
-
-        // Non-operator should not be able to call
-        vm.prank(user1);
-        vm.expectRevert(abi.encodeWithSelector(0x7c214f04)); // NotOperator selector
-        batchRedeem.batchRedeemQuestion(questionId, users, amounts);
-
-        // Operator should be able to call
-        vm.prank(operator);
-        // This will fail due to other reasons (no market prepared, etc.) but not due to access control
-        vm.expectRevert(); // Expect some revert, but not NotOperator
-        batchRedeem.batchRedeemQuestion(questionId, users, amounts);
-    }
-
-    function test_invalidArrayLength() public {
-        bytes32 questionId = keccak256("test question");
-        address[] memory users = new address[](2);
-        users[0] = user1;
-        users[1] = user2;
-        uint256[] memory amounts = new uint256[](1); // Wrong length
-        amounts[0] = 100e6;
-
-        vm.prank(operator);
-        vm.expectRevert(abi.encodeWithSelector(0x9d89020a)); // InvalidArrayLength selector
-        batchRedeem.batchRedeemQuestion(questionId, users, amounts);
-    }
-
     function test_noTokensToRedeem() public {
         bytes32 questionId = keccak256("test question");
         address[] memory users = new address[](0);
@@ -125,7 +93,7 @@ contract NegRiskBatchRedeemTest is TestHelper {
 
         vm.prank(operator);
         vm.expectRevert(abi.encodeWithSelector(0x2e938bed)); // NoTokensToRedeem selector
-        batchRedeem.batchRedeemQuestion(questionId, users, amounts);
+        batchRedeem.batchRedeemQuestionCustom(questionId, users, amounts, amounts);
     }
 
     function test_customBatchRedeemInvalidLengths() public {
@@ -192,7 +160,7 @@ contract NegRiskBatchRedeemTest is TestHelper {
         
         // Execute batch redemption
         vm.prank(operator);
-        batchRedeem.batchRedeemQuestion(testQuestionId, users, amounts);
+        batchRedeem.batchRedeemQuestionCustom(testQuestionId, users, amounts, amounts);
         
         // Verify results
         _verifyBatchRedemptionResults(
@@ -254,7 +222,7 @@ contract NegRiskBatchRedeemTest is TestHelper {
         // Execute batch redemption - should fail for unresolved question
         vm.prank(operator);
         vm.expectRevert("result for condition not received yet");
-        batchRedeem.batchRedeemQuestion(testQuestionId, users, amounts);
+        batchRedeem.batchRedeemQuestionCustom(testQuestionId, users, amounts, amounts);
         
         console.log("Batch redemption with unresolved question correctly failed as expected!");
     }
@@ -334,7 +302,7 @@ contract NegRiskBatchRedeemTest is TestHelper {
         amounts1[1] = 30e6;
         
         vm.prank(operator);
-        batchRedeem.batchRedeemQuestion(question1Id, users1, amounts1);
+        batchRedeem.batchRedeemQuestionCustom(question1Id, users1, amounts1, amounts1);
         
         // Test redemption for Question 2 (NO wins)
         address[] memory users2 = new address[](2);
@@ -345,7 +313,7 @@ contract NegRiskBatchRedeemTest is TestHelper {
         amounts2[1] = 25e6;
         
         vm.prank(operator);
-        batchRedeem.batchRedeemQuestion(question2Id, users2, amounts2);
+        batchRedeem.batchRedeemQuestionCustom(question2Id, users2, amounts2, amounts2);
         
         // Verify final balances
         uint256 user1FinalUSDC = usdc.balanceOf(user1);
