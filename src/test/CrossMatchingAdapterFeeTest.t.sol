@@ -255,7 +255,10 @@ contract CrossMatchingAdapterFeeTest is Test, TestHelper {
         );
 
         // Record initial balances
-        uint256 initialOperatorUSDC = usdc.balanceOf(address(negRiskOperator));
+        uint256 initialNegAdapterNO1 = ctf.balanceOf(address(negRiskAdapter), noPositionId1);
+        uint256 initialNegAdapterNO2 = ctf.balanceOf(address(negRiskAdapter), noPositionId2);
+        uint256 initialNegAdapterNO3 = ctf.balanceOf(address(negRiskAdapter), noPositionId3);
+        uint256 initialNegAdapterNO4 = ctf.balanceOf(address(negRiskAdapter), noPositionId4);
 
         // Execute cross-matching
         vm.prank(user1);
@@ -266,17 +269,23 @@ contract CrossMatchingAdapterFeeTest is Test, TestHelper {
         uint256 expectedMaker1Fee = _calculateExpectedFee(makerOrders[0], fillAmount);
         uint256 expectedMaker2Fee = _calculateExpectedFee(makerOrders[1], fillAmount);
         uint256 expectedMaker3Fee = _calculateExpectedFee(makerOrders[2], fillAmount);
-        uint256 totalExpectedFees = expectedTakerFee + expectedMaker1Fee + expectedMaker2Fee + expectedMaker3Fee;
 
-        // Verify operator received all fees
-        uint256 finalOperatorUSDC = usdc.balanceOf(address(negRiskOperator));
-        assertEq(finalOperatorUSDC - initialOperatorUSDC, totalExpectedFees, "Operator should receive all fees");
+        // Verify NegRiskAdapter received all fees in NO tokens
+        uint256 finalNegAdapterNO1 = ctf.balanceOf(address(negRiskAdapter), noPositionId1);
+        uint256 finalNegAdapterNO2 = ctf.balanceOf(address(negRiskAdapter), noPositionId2);
+        uint256 finalNegAdapterNO3 = ctf.balanceOf(address(negRiskAdapter), noPositionId3);
+        uint256 finalNegAdapterNO4 = ctf.balanceOf(address(negRiskAdapter), noPositionId4);
+        
+        assertEq(finalNegAdapterNO1 - initialNegAdapterNO1, expectedTakerFee, "NegRiskAdapter should receive taker fee in NO tokens");
+        assertEq(finalNegAdapterNO2 - initialNegAdapterNO2, expectedMaker1Fee, "NegRiskAdapter should receive maker1 fee in NO tokens");
+        assertEq(finalNegAdapterNO3 - initialNegAdapterNO3, expectedMaker2Fee, "NegRiskAdapter should receive maker2 fee in NO tokens");
+        assertEq(finalNegAdapterNO4 - initialNegAdapterNO4, expectedMaker3Fee, "NegRiskAdapter should receive maker3 fee in NO tokens");
 
-        // Verify users received their tokens
-        assertEq(ctf.balanceOf(user1, noPositionId1), fillAmount, "User1 should receive Arsenal NO tokens");
-        assertEq(ctf.balanceOf(user2, noPositionId2), fillAmount, "User2 should receive Barcelona NO tokens");
-        assertEq(ctf.balanceOf(user3, noPositionId3), fillAmount, "User3 should receive Chelsea NO tokens");
-        assertEq(ctf.balanceOf(user4, noPositionId4), fillAmount, "User4 should receive Spurs NO tokens");
+        // Verify users received their tokens (after fees)
+        assertEq(ctf.balanceOf(user1, noPositionId1), 990000, "User1 should receive Arsenal NO tokens after fees");
+        assertEq(ctf.balanceOf(user2, noPositionId2), 995000, "User2 should receive Barcelona NO tokens after fees");
+        assertEq(ctf.balanceOf(user3, noPositionId3), 995000, "User3 should receive Chelsea NO tokens after fees");
+        assertEq(ctf.balanceOf(user4, noPositionId4), 995000, "User4 should receive Spurs NO tokens after fees");
     }
 
     function test_crossMatchShortOrders_differentFeeRates() public {
@@ -346,7 +355,11 @@ contract CrossMatchingAdapterFeeTest is Test, TestHelper {
                 user4PK
             );
 
-            uint256 initialOperatorUSDC = usdc.balanceOf(address(negRiskOperator));
+            // Record initial balances for NO tokens
+            uint256 initialNegAdapterNO1 = ctf.balanceOf(address(negRiskAdapter), noPositionId1);
+            uint256 initialNegAdapterNO2 = ctf.balanceOf(address(negRiskAdapter), noPositionId2);
+            uint256 initialNegAdapterNO3 = ctf.balanceOf(address(negRiskAdapter), noPositionId3);
+            uint256 initialNegAdapterNO4 = ctf.balanceOf(address(negRiskAdapter), noPositionId4);
 
             // Execute cross-matching
             vm.prank(user1);
@@ -357,12 +370,12 @@ contract CrossMatchingAdapterFeeTest is Test, TestHelper {
             uint256 expectedMaker1Fee = _calculateExpectedFee(makerOrders[0], fillAmount);
             uint256 expectedMaker2Fee = _calculateExpectedFee(makerOrders[1], fillAmount);
             uint256 expectedMaker3Fee = _calculateExpectedFee(makerOrders[2], fillAmount);
-            uint256 totalExpectedFees = expectedTakerFee + expectedMaker1Fee + expectedMaker2Fee + expectedMaker3Fee;
 
-            // Verify operator received correct fees
-            uint256 finalOperatorUSDC = usdc.balanceOf(address(negRiskOperator));
-            assertEq(finalOperatorUSDC - initialOperatorUSDC, totalExpectedFees, 
-                string.concat("Operator should receive correct fees for fee rate: ", vm.toString(feeBps)));
+            // Verify NegRiskAdapter received correct fees in NO tokens
+            assertEq(ctf.balanceOf(address(negRiskAdapter), noPositionId1) - initialNegAdapterNO1, expectedTakerFee, "NegRiskAdapter should receive taker fee");
+            assertEq(ctf.balanceOf(address(negRiskAdapter), noPositionId2) - initialNegAdapterNO2, expectedMaker1Fee, "NegRiskAdapter should receive maker1 fee");
+            assertEq(ctf.balanceOf(address(negRiskAdapter), noPositionId3) - initialNegAdapterNO3, expectedMaker2Fee, "NegRiskAdapter should receive maker2 fee");
+            assertEq(ctf.balanceOf(address(negRiskAdapter), noPositionId4) - initialNegAdapterNO4, expectedMaker3Fee, "NegRiskAdapter should receive maker3 fee");
         }
     }
 
@@ -436,7 +449,9 @@ contract CrossMatchingAdapterFeeTest is Test, TestHelper {
             user4PK
         );
 
-        uint256 initialOperatorUSDC = usdc.balanceOf(address(negRiskOperator));
+        // Record initial balances
+        uint256 initialNegAdapterNO1 = ctf.balanceOf(address(negRiskAdapter), noPositionId1);
+        uint256 initialVaultUSDC = usdc.balanceOf(vault);
 
         // Execute cross-matching
         vm.prank(user1);
@@ -447,11 +462,15 @@ contract CrossMatchingAdapterFeeTest is Test, TestHelper {
         uint256 expectedMaker1Fee = _calculateExpectedFee(makerOrders[0], fillAmount);
         uint256 expectedMaker2Fee = _calculateExpectedFee(makerOrders[1], fillAmount);
         uint256 expectedMaker3Fee = _calculateExpectedFee(makerOrders[2], fillAmount);
-        uint256 totalExpectedFees = expectedTakerFee + expectedMaker1Fee + expectedMaker2Fee + expectedMaker3Fee;
 
-        // Verify operator received all fees
-        uint256 finalOperatorUSDC = usdc.balanceOf(address(negRiskOperator));
-        assertEq(finalOperatorUSDC - initialOperatorUSDC, totalExpectedFees, "Operator should receive all fees from mixed orders");
+        // Verify NegRiskAdapter received taker fee in NO tokens (BUY order)
+        uint256 finalNegAdapterNO1 = ctf.balanceOf(address(negRiskAdapter), noPositionId1);
+        assertEq(finalNegAdapterNO1 - initialNegAdapterNO1, expectedTakerFee, "NegRiskAdapter should receive taker fee in NO tokens");
+
+        // Verify vault received maker fees in USDC (SELL orders)
+        uint256 finalVaultUSDC = usdc.balanceOf(vault);
+        uint256 totalMakerFees = expectedMaker1Fee + expectedMaker2Fee + expectedMaker3Fee;
+        assertEq(finalVaultUSDC - initialVaultUSDC, totalMakerFees, "Vault should receive maker fees in USDC");
     }
 
     function test_crossMatchShortOrders_feeCalculationAccuracy() public {
@@ -493,6 +512,10 @@ contract CrossMatchingAdapterFeeTest is Test, TestHelper {
         negRiskOperator.resolveQuestion(questionId3);
         negRiskOperator.resolveQuestion(questionId4);
 
+        // Record initial balances
+        uint256 initialNegAdapterNO1 = ctf.balanceOf(address(negRiskAdapter), noPositionId1);
+        uint256 initialNegAdapterNO2 = ctf.balanceOf(address(negRiskAdapter), noPositionId2);
+
         // Calculate expected fees manually
         uint256 expectedTakerFee = _calculateExpectedFee(takerOrder, fillAmount);
         uint256 expectedMakerFee = _calculateExpectedFee(makerOrders[0], fillAmount);
@@ -501,18 +524,18 @@ contract CrossMatchingAdapterFeeTest is Test, TestHelper {
         vm.prank(user1);
         adapter.crossMatchShortOrders(marketId, takerOrder, makerOrders, fillAmount);
 
-        // Verify fees match expected calculation
-        uint256 finalOperatorUSDC = usdc.balanceOf(address(negRiskOperator));
-        assertEq(finalOperatorUSDC, expectedTakerFee + expectedMakerFee, "Fees should match expected calculation");
-
-        // Verify fee calculation formula
-        // For BUY orders: fee = (feeRateBps * min(price, 1-price) * outcomeTokens) / (price * 10000)
-        uint256 price = 500000; // 0.50 in 6 decimals
-        uint256 outcomeTokens = (fillAmount * price) / 1e6; // fillAmount * price
-        uint256 minPrice = price < (1e6 - price) ? price : (1e6 - price);
-        uint256 expectedFee = (feeBps * minPrice * outcomeTokens) / (price * 10000);
+        // Verify NegRiskAdapter received fees in NO tokens
+        uint256 finalNegAdapterNO1 = ctf.balanceOf(address(negRiskAdapter), noPositionId1);
+        uint256 finalNegAdapterNO2 = ctf.balanceOf(address(negRiskAdapter), noPositionId2);
         
-        assertEq(expectedTakerFee, expectedFee, "Fee calculation should match formula");
+        assertEq(finalNegAdapterNO1 - initialNegAdapterNO1, expectedTakerFee, "NegRiskAdapter should receive taker fee");
+        assertEq(finalNegAdapterNO2 - initialNegAdapterNO2, expectedMakerFee, "NegRiskAdapter should receive maker fee");
+
+        // Verify fee calculation formula using NegRiskAdapter logic
+        // fee = (fillAmount * feeBps) / 10000
+        uint256 expectedFee = (fillAmount * feeBps) / 10000;
+        
+        assertEq(expectedTakerFee, expectedFee, "Fee calculation should match NegRiskAdapter formula");
     }
 
     function _createOrderIntent(
@@ -582,32 +605,10 @@ contract CrossMatchingAdapterFeeTest is Test, TestHelper {
         ICTFExchange.OrderIntent memory orderIntent,
         uint256 fillAmount
     ) internal pure returns (uint256) {
-        if (orderIntent.order.feeRateBps == 0) {
-            return 0;
-        }
-
-        uint256 outcomeTokens = orderIntent.side == ICTFExchange.Side.BUY ? 
-            (fillAmount * orderIntent.order.price) / 1e6 : fillAmount;
-        
-        // Use the order's actual price in 6 decimals
-        uint256 price = orderIntent.order.price;
-        if (price > 0 && price <= 1e6) {
-            if (orderIntent.side == ICTFExchange.Side.BUY) {
-                // Fee charged on Token Proceeds:
-                // baseRate * min(price, 1-price) * (outcomeTokens/price)
-                return (orderIntent.order.feeRateBps * _min(price, 1e6 - price) * outcomeTokens) / (price * 10000);
-            } else {
-                // Fee charged on Collateral proceeds:
-                // baseRate * min(price, 1-price) * outcomeTokens
-                return orderIntent.order.feeRateBps * _min(price, 1e6 - price) * outcomeTokens / (10000 * 1e6);
-            }
-        }
-        return 0;
+        // Use NegRiskAdapter fee logic: feeAmount = (amount * feeBips) / FEE_DENOMINATOR
+        return (fillAmount * orderIntent.order.feeRateBps) / 10000;
     }
 
-    function _min(uint256 a, uint256 b) internal pure returns (uint256) {
-        return a < b ? a : b;
-    }
 }
 
 // Mock contracts for testing
