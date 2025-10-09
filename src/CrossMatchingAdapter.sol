@@ -335,15 +335,108 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
             revert InvalidCombinedPrice();
         }
 
+        // Calculate and collect fees
+        uint256 totalTakerFee = _calculateAndCollectTakerFee(takerOrder, fillAmount);
+        uint256 totalMakerFees = _calculateAndCollectMakerFees(multiOrderMaker, fillAmount);
+
         // Execute cross-matching logic
-        _executeShortCrossMatch(parsedOrders, marketId, totalSellUSDC, fillAmount);
+        _executeShortCrossMatch(parsedOrders, marketId, totalSellUSDC, fillAmount, totalTakerFee, totalMakerFees);
+    }
+
+    /// @notice Calculate and collect fee for taker order
+    /// @param takerOrder The taker order
+    /// @param fillAmount The fill amount
+    /// @return takerFee The calculated fee amount
+    function _calculateAndCollectTakerFee(
+        ICTFExchange.OrderIntent calldata takerOrder,
+        uint256 fillAmount
+    ) internal returns (uint256 takerFee) {
+        // Calculate fee using the same logic as Trading.sol
+        uint256 outcomeTokens = takerOrder.side == ICTFExchange.Side.BUY ? 
+            (fillAmount * takerOrder.order.price) / 1e6 : fillAmount;
+        
+        takerFee = _calculateFee(
+            takerOrder.order.feeRateBps,
+            outcomeTokens,
+            takerOrder.order.price,
+            takerOrder.side
+        );
+        
+        // Collect fee from taker if any
+        if (takerFee > 0) {
+            usdc.transferFrom(takerOrder.order.maker, address(this), takerFee);
+        }
+    }
+
+    /// @notice Calculate and collect fees for maker orders
+    /// @param makerOrders Array of maker orders
+    /// @param fillAmount The fill amount
+    /// @return totalMakerFees Total fees collected from all makers
+    function _calculateAndCollectMakerFees(
+        ICTFExchange.OrderIntent[] calldata makerOrders,
+        uint256 fillAmount
+    ) internal returns (uint256 totalMakerFees) {
+        for (uint256 i = 0; i < makerOrders.length; i++) {
+            uint256 outcomeTokens = makerOrders[i].side == ICTFExchange.Side.BUY ? 
+                (fillAmount * makerOrders[i].order.price) / 1e6 : fillAmount;
+            
+            uint256 makerFee = _calculateFee(
+                makerOrders[i].order.feeRateBps,
+                outcomeTokens,
+                makerOrders[i].order.price,
+                makerOrders[i].side
+            );
+            
+            totalMakerFees += makerFee;
+            
+            // Collect fee from maker if any
+            if (makerFee > 0) {
+                usdc.transferFrom(makerOrders[i].order.maker, address(this), makerFee);
+            }
+        }
+    }
+
+    /// @notice Calculate fee using the same logic as CalculatorHelper.calculateFee
+    /// @param feeRateBps Fee rate in basis points
+    /// @param outcomeTokens Number of outcome tokens
+    /// @param orderPrice Order price in 6 decimals
+    /// @param side Order side
+    /// @return fee Calculated fee amount
+    function _calculateFee(
+        uint256 feeRateBps,
+        uint256 outcomeTokens,
+        uint256 orderPrice,
+        ICTFExchange.Side side
+    ) internal pure returns (uint256 fee) {
+        if (feeRateBps > 0) {
+            // Keep price in 6 decimals (1e6 = 100%)
+            uint256 price = orderPrice;
+            if (price > 0 && price <= 1e6) {
+                if (side == ICTFExchange.Side.BUY) {
+                    // Fee charged on Token Proceeds:
+                    // baseRate * min(price, 1-price) * (outcomeTokens/price)
+                    fee = (feeRateBps * _min(price, 1e6 - price) * outcomeTokens) / (price * 10000);
+                } else {
+                    // Fee charged on Collateral proceeds:
+                    // baseRate * min(price, 1-price) * outcomeTokens
+                    fee = feeRateBps * _min(price, 1e6 - price) * outcomeTokens / (10000 * 1e6);
+                }
+            }
+        }
+    }
+
+    /// @notice Min function for fee calculation
+    function _min(uint256 a, uint256 b) internal pure returns (uint256) {
+        return a < b ? a : b;
     }
 
     function _executeShortCrossMatch(
         Parsed[] memory parsedOrders,
         bytes32 marketId,
         uint256 totalSellUSDC,
-        uint256 fillAmount
+        uint256 fillAmount,
+        uint256 totalTakerFee,
+        uint256 totalMakerFees
     ) internal {
         _collectBuyerUSDC(parsedOrders, true);
 
@@ -371,6 +464,12 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         // Merge all the YES tokens to get USDC
         uint8 pivotIndex = _getQuestionIndexFromPositionId(parsedOrders[0].tokenId, marketId);
         revNeg.mergeAllYesTokens(marketId, fillAmount, pivotIndex);
+
+        // Transfer fees to the operator (negOperator)
+        uint256 totalFees = totalTakerFee + totalMakerFees;
+        if (totalFees > 0) {
+            usdc.transfer(address(negOperator), totalFees);
+        }
 
         // transfer the shares * ONE of USDC to the vault, since we took it from the vault
         usdc.transfer(neg.vault(), fillAmount + totalSellUSDC);
