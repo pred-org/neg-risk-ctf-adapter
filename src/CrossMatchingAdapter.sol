@@ -27,6 +27,7 @@ interface ICrossMatchingAdapterEE {
     error InvalidFillAmount();     // fill amount is invalid (zero or exceeds order quantity)
     error InvalidCombinedPrice();  // combined price of all orders must equal total shares
     error InsufficientUSDCBalance(); // insufficient USDC balance for WCOL minting
+    error InvalidUSDCBalance(); // invalid USDC balance for WCOL minting
     error MissingUnresolvedQuestion(); // some unresolved questions are missing from orders
 }
 
@@ -340,9 +341,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         _executeShortCrossMatch(parsedOrders, marketId, totalSellUSDC, fillAmount);
     }
 
-
-
-
     function _executeShortCrossMatch(
         Parsed[] memory parsedOrders,
         bytes32 marketId,
@@ -566,11 +564,13 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         uint256 totalVaultUSDC = _handleSellOrders(parsedOrders, fillAmount);
         
         // STEP 5: Return any remaining USDC to the vault to maintain self-financing
-        // Since we're not taking USDC from the vault upfront for seller returns,
-        // we only need to return any excess USDC from the CTF operations
+        // Since we're taking USDC from the vault upfront for seller returns,
+        // we need to return it back to the vault
         uint256 remainingUSDC = usdc.balanceOf(address(this));
-        if (remainingUSDC == totalVaultUSDC) {
+        if (remainingUSDC == totalVaultUSDC && remainingUSDC == totalSellUSDC) {
             usdc.transfer(neg.vault(), remainingUSDC);
+        } else {
+            revert InvalidUSDCBalance();
         }
     }
     
@@ -616,15 +616,21 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         // This ensures the tokens are merged correctly with the right collateral token
         neg.mergePositions(conditionId, mergeAmount);
         
-        // Now we have USDC from the merge operation
-        // USDC TO pay to the seller
-        uint256 usdcToPay = order.counterPayAmount;
-        uint256 vaultUSDC = order.payAmount;
+        // Calculate fee for this order
+        uint256 feeAmount = (fillAmount * order.feeRateBps) / 10000;
+        uint256 amountOut = order.counterPayAmount - feeAmount;
         
-        // Transfer USDC to seller
-        usdc.transfer(order.maker, usdcToPay);
+        // Collect fee in USDC if any
+        if (feeAmount > 0) {
+            usdc.transfer(neg.vault(), feeAmount);
+        }
         
-        return vaultUSDC;
+        // Transfer remaining USDC to the seller
+        if (amountOut > 0) {
+            usdc.transfer(order.maker, amountOut);
+        }
+        
+        return order.payAmount;
     }
     
     function _distributeYesTokens(
@@ -638,14 +644,25 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
                 // Get the YES token position ID for this specific question
                 uint256 yesPositionId = parsedOrders[i].tokenId;
                 
-                // Transfer the specific YES token to the buyer
-                ctf.safeTransferFrom(
-                    address(this),
-                    parsedOrders[i].maker,
-                    yesPositionId,
-                    fillAmount,
-                    ""
-                );
+                // Calculate fee for this order
+                uint256 feeAmount = (fillAmount * parsedOrders[i].feeRateBps) / 10000;
+                uint256 amountOut = fillAmount - feeAmount;
+                
+                // Collect fee in YES tokens if any
+                if (feeAmount > 0) {
+                    ctf.safeTransferFrom(address(this), address(neg), yesPositionId, feeAmount, "");
+                }
+                
+                // Distribute remaining YES tokens to the buyer
+                if (amountOut > 0) {
+                    ctf.safeTransferFrom(
+                        address(this),
+                        parsedOrders[i].maker,
+                        yesPositionId,
+                        amountOut,
+                        ""
+                    );
+                }
 
                 // No YES tokens are left in the adapter
             }
