@@ -981,6 +981,91 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         
         console.log("Balance conservation test passed!");
     }
+
+    function testHybridMatchOrdersDuplicateQuestionIdsInCrossMatch() public {
+        console.log("=== Testing Duplicate Question IDs in Cross-Match Orders ===");
+        
+        // Create 5 questions for the test scenario
+        bytes32[] memory questionIds = new bytes32[](5);
+        uint256[] memory yesPositionIds = new uint256[](5);
+        uint256[] memory noPositionIds = new uint256[](5);
+
+        questionIds[0] = questionId;
+        yesPositionIds[0] = yesPositionId;
+        noPositionIds[0] = noPositionId;
+        
+        for (uint256 i = 1; i < 5; i++) {
+            questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
+            yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
+            noPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], false);
+            _registerTokensWithCTFExchange(yesPositionIds[i], noPositionIds[i], negRiskAdapter.getConditionId(questionIds[i]));
+        }
+
+        vm.startPrank(oracle);
+        // negRiskOperator.reportPayouts(bytes32(0), dummyPayout);
+        // negRiskOperator.reportPayouts(bytes32(uint256(1)), dummyPayout);
+        // negRiskOperator.reportPayouts(bytes32(uint256(2)), dummyPayout);
+        negRiskOperator.reportPayouts(bytes32(uint256(3)), dummyPayout);
+        // negRiskOperator.reportPayouts(bytes32(uint256(4)), dummyPayout);
+        // negRiskOperator.reportPayouts(bytes32(uint256(5)), dummyPayout);
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 2 * negRiskOperator.DELAY_PERIOD());
+
+        // // Resolve questions to make them available for trading
+        // negRiskOperator.resolveQuestion(questionId);
+        // negRiskOperator.resolveQuestion(questionIds[0]);
+        // negRiskOperator.resolveQuestion(questionIds[1]);
+        // negRiskOperator.resolveQuestion(questionIds[2]);
+        negRiskOperator.resolveQuestion(questionIds[3]);
+        // negRiskOperator.resolveQuestion(questionIds[4]);
+
+        // Setup: 4 maker orders (cross-match) + 1 taker order
+        // Two of the maker orders will have the same question ID (questionIds[0])
+        CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](4);
+        uint256[] memory makerFillAmounts = new uint256[](4);
+        
+        // Maker order 1: User2 buying YES tokens for question 0 (price 0.2) - LONG intent
+        makerOrders[0].orders = new ICTFExchange.OrderIntent[](1);
+        makerOrders[0].orders[0] = _createAndSignOrder(user2, yesPositionIds[0], 0, 0.2e6, 1e6, questionIds[0], 0, _user2PK);
+        makerOrders[0].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
+        makerFillAmounts[0] = 0.1e6;
+
+        // Maker order 2: User3 buying YES tokens for question 1 (price 0.2) - LONG intent
+        makerOrders[1].orders = new ICTFExchange.OrderIntent[](1);
+        makerOrders[1].orders[0] = _createAndSignOrder(user3, yesPositionIds[1], 0, 0.2e6, 1e6, questionIds[1], 0, _user3PK);
+        makerOrders[1].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
+        makerFillAmounts[1] = 0.1e6;
+
+        // Maker order 3: User4 buying YES tokens for question 0 (price 0.2) - LONG intent
+        // This is a DUPLICATE question ID with maker order 1 - should cause revert
+        makerOrders[2].orders = new ICTFExchange.OrderIntent[](1);
+        makerOrders[2].orders[0] = _createAndSignOrder(user4, yesPositionIds[0], 0, 0.2e6, 1e6, questionIds[0], 0, _user4PK);
+        makerOrders[2].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
+        makerFillAmounts[2] = 0.1e6;
+
+        // Maker order 4: User5 buying YES tokens for question 2 (price 0.2) - LONG intent
+        makerOrders[3].orders = new ICTFExchange.OrderIntent[](1);
+        makerOrders[3].orders[0] = _createAndSignOrder(user5, yesPositionIds[2], 0, 0.2e6, 1e6, questionIds[2], 0, _user5PK);
+        makerOrders[3].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
+        makerFillAmounts[3] = 0.1e6;
+
+        // Taker order: User1 selling NO tokens for question 4 (price 0.4) - SHORT intent
+        // Total prices: 0.2 + 0.2 + 0.2 + 0.2 + 0.4 = 1.2 ≠ 1.0, but the main issue is duplicate question IDs
+        ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, noPositionIds[4], 1, 0.4e6, 1e6, questionIds[4], 1, _user1PK);
+        
+        // Mint NO tokens to user1 for selling
+        _mintTokensToUser(user1, noPositionIds[4], 1e6);
+        vm.prank(user1);
+        ctf.setApprovalForAll(address(adapter), true);
+        
+        // This should revert because two maker orders have the same question ID (questionIds[0])
+        // The contract should detect that questionIds[0] appears twice in the cross-match orders
+        vm.expectRevert();
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, makerFillAmounts, 0);
+        
+        console.log("Duplicate question IDs in cross-match test passed - correctly reverted!");
+    }
 }
 
 // Mock USDC contract
