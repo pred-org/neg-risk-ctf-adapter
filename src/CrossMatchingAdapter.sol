@@ -27,6 +27,7 @@ interface ICrossMatchingAdapterEE {
     error InvalidFillAmount();     // fill amount is invalid (zero or exceeds order quantity)
     error InvalidCombinedPrice();  // combined price of all orders must equal total shares
     error InsufficientUSDCBalance(); // insufficient USDC balance for WCOL minting
+    error InvalidUSDCBalance(); // invalid USDC balance for WCOL minting
     error MissingUnresolvedQuestion(); // some unresolved questions are missing from orders
 }
 
@@ -84,6 +85,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         uint256 payAmount;    // = shares * price (for buy orders)
         uint256 counterPayAmount; // = shares * (1 - price) (for sell orders)
         bytes32 questionId;     // which question id
+        uint256 feeRateBps;     // fee rate in basis points
     }
 
     struct MakerOrder {
@@ -335,7 +337,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
             revert InvalidCombinedPrice();
         }
 
-        // Execute cross-matching logic
+        // Execute cross-matching logic (fees will be collected from tokens during execution)
         _executeShortCrossMatch(parsedOrders, marketId, totalSellUSDC, fillAmount);
     }
 
@@ -372,6 +374,8 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         uint8 pivotIndex = _getQuestionIndexFromPositionId(parsedOrders[0].tokenId, marketId);
         revNeg.mergeAllYesTokens(marketId, fillAmount, pivotIndex);
 
+        // Fees are collected during token distribution/merging
+
         // transfer the shares * ONE of USDC to the vault, since we took it from the vault
         usdc.transfer(neg.vault(), fillAmount + totalSellUSDC);
     }
@@ -380,8 +384,19 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         Parsed memory order,
         uint256 fillAmount
     ) internal {
-        // Distribute NO tokens to the buyers
-        ctf.safeTransferFrom(address(this), order.maker, order.tokenId, fillAmount, "");
+        // Calculate fee for this order
+        uint256 feeAmount = (fillAmount * order.feeRateBps) / 10000;
+        uint256 amountOut = fillAmount - feeAmount;
+        
+        // Collect fee in NO tokens if any
+        if (feeAmount > 0) {
+            ctf.safeTransferFrom(address(this), address(neg), order.tokenId, feeAmount, "");
+        }
+        
+        // Distribute remaining NO tokens to the buyer
+        if (amountOut > 0) {
+            ctf.safeTransferFrom(address(this), order.maker, order.tokenId, amountOut, "");
+        }
     }
 
     function _mergeNoTokens(
@@ -395,7 +410,20 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         // The NO tokens are already in the adapter from the split operation
         bytes32 conditionId = neg.getConditionId(order.questionId);
         neg.mergePositions(conditionId, fillAmount);
-        usdc.transfer(order.maker, order.payAmount);
+        
+        // Calculate fee for this order
+        uint256 feeAmount = (fillAmount * order.feeRateBps) / 10000;
+        uint256 amountOut = order.payAmount - feeAmount;
+        
+        // Collect fee in USDC if any
+        if (feeAmount > 0) {
+            usdc.transfer(neg.vault(), feeAmount);
+        }
+        
+        // Transfer remaining USDC to the seller
+        if (amountOut > 0) {
+            usdc.transfer(order.maker, amountOut);
+        }
     }
 
     function crossMatchLongOrders(
@@ -536,11 +564,13 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         uint256 totalVaultUSDC = _handleSellOrders(parsedOrders, fillAmount);
         
         // STEP 5: Return any remaining USDC to the vault to maintain self-financing
-        // Since we're not taking USDC from the vault upfront for seller returns,
-        // we only need to return any excess USDC from the CTF operations
+        // Since we're taking USDC from the vault upfront for seller returns,
+        // we need to return it back to the vault
         uint256 remainingUSDC = usdc.balanceOf(address(this));
-        if (remainingUSDC == totalVaultUSDC) {
+        if (remainingUSDC == totalVaultUSDC && remainingUSDC == totalSellUSDC) {
             usdc.transfer(neg.vault(), remainingUSDC);
+        } else {
+            revert InvalidUSDCBalance();
         }
     }
     
@@ -586,15 +616,21 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         // This ensures the tokens are merged correctly with the right collateral token
         neg.mergePositions(conditionId, mergeAmount);
         
-        // Now we have USDC from the merge operation
-        // USDC TO pay to the seller
-        uint256 usdcToPay = order.counterPayAmount;
-        uint256 vaultUSDC = order.payAmount;
+        // Calculate fee for this order
+        uint256 feeAmount = (fillAmount * order.feeRateBps) / 10000;
+        uint256 amountOut = order.counterPayAmount - feeAmount;
         
-        // Transfer USDC to seller
-        usdc.transfer(order.maker, usdcToPay);
+        // Collect fee in USDC if any
+        if (feeAmount > 0) {
+            usdc.transfer(neg.vault(), feeAmount);
+        }
         
-        return vaultUSDC;
+        // Transfer remaining USDC to the seller
+        if (amountOut > 0) {
+            usdc.transfer(order.maker, amountOut);
+        }
+        
+        return order.payAmount;
     }
     
     function _distributeYesTokens(
@@ -608,14 +644,25 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
                 // Get the YES token position ID for this specific question
                 uint256 yesPositionId = parsedOrders[i].tokenId;
                 
-                // Transfer the specific YES token to the buyer
-                ctf.safeTransferFrom(
-                    address(this),
-                    parsedOrders[i].maker,
-                    yesPositionId,
-                    fillAmount,
-                    ""
-                );
+                // Calculate fee for this order
+                uint256 feeAmount = (fillAmount * parsedOrders[i].feeRateBps) / 10000;
+                uint256 amountOut = fillAmount - feeAmount;
+                
+                // Collect fee in YES tokens if any
+                if (feeAmount > 0) {
+                    ctf.safeTransferFrom(address(this), address(neg), yesPositionId, feeAmount, "");
+                }
+                
+                // Distribute remaining YES tokens to the buyer
+                if (amountOut > 0) {
+                    ctf.safeTransferFrom(
+                        address(this),
+                        parsedOrders[i].maker,
+                        yesPositionId,
+                        amountOut,
+                        ""
+                    );
+                }
 
                 // No YES tokens are left in the adapter
             }
@@ -668,7 +715,8 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
             priceQ6: priceQ6,
             payAmount: payUSDC,
             counterPayAmount: usdcToReturn,
-            questionId: order.order.questionId
+            questionId: order.order.questionId,
+            feeRateBps: order.order.feeRateBps
         });
     }
     
