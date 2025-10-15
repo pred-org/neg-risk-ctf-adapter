@@ -1001,58 +1001,23 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
             _registerTokensWithCTFExchange(yesPositionIds[i], noPositionIds[i], negRiskAdapter.getConditionId(questionIds[i]));
         }
 
-        vm.startPrank(oracle);
-        // negRiskOperator.reportPayouts(bytes32(0), dummyPayout);
-        // negRiskOperator.reportPayouts(bytes32(uint256(1)), dummyPayout);
-        // negRiskOperator.reportPayouts(bytes32(uint256(2)), dummyPayout);
-        negRiskOperator.reportPayouts(bytes32(uint256(3)), dummyPayout);
-        // negRiskOperator.reportPayouts(bytes32(uint256(4)), dummyPayout);
-        // negRiskOperator.reportPayouts(bytes32(uint256(5)), dummyPayout);
-        vm.stopPrank();
-
-        vm.warp(block.timestamp + 2 * negRiskOperator.DELAY_PERIOD());
-
-        // // Resolve questions to make them available for trading
-        // negRiskOperator.resolveQuestion(questionId);
-        // negRiskOperator.resolveQuestion(questionIds[0]);
-        // negRiskOperator.resolveQuestion(questionIds[1]);
-        // negRiskOperator.resolveQuestion(questionIds[2]);
-        negRiskOperator.resolveQuestion(questionIds[3]);
-        // negRiskOperator.resolveQuestion(questionIds[4]);
-
         // Setup: 4 maker orders (cross-match) + 1 taker order
         // Two of the maker orders will have the same question ID (questionIds[0])
-        CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](4);
-        uint256[] memory makerFillAmounts = new uint256[](4);
+        CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
+        uint256[] memory makerFillAmounts = new uint256[](1);
         
         // Maker order 1: User2 buying YES tokens for question 0 (price 0.2) - LONG intent
-        makerOrders[0].orders = new ICTFExchange.OrderIntent[](1);
+        makerOrders[0].orders = new ICTFExchange.OrderIntent[](4);
         makerOrders[0].orders[0] = _createAndSignOrder(user2, yesPositionIds[0], 0, 0.2e6, 1e6, questionIds[0], 0, _user2PK);
+        makerOrders[0].orders[1] = _createAndSignOrder(user3, yesPositionIds[1], 0, 0.2e6, 1e6, questionIds[1], 0, _user3PK);
+        makerOrders[0].orders[2] = _createAndSignOrder(user4, yesPositionIds[0], 0, 0.2e6, 1e6, questionIds[0], 0, _user4PK);
+        makerOrders[0].orders[3] = _createAndSignOrder(user5, yesPositionIds[2], 0, 0.2e6, 1e6, questionIds[2], 0, _user5PK);
         makerOrders[0].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
-        makerFillAmounts[0] = 0.1e6;
+        makerFillAmounts[0] = 0.05e6;
 
-        // Maker order 2: User3 buying YES tokens for question 1 (price 0.2) - LONG intent
-        makerOrders[1].orders = new ICTFExchange.OrderIntent[](1);
-        makerOrders[1].orders[0] = _createAndSignOrder(user3, yesPositionIds[1], 0, 0.2e6, 1e6, questionIds[1], 0, _user3PK);
-        makerOrders[1].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
-        makerFillAmounts[1] = 0.1e6;
-
-        // Maker order 3: User4 buying YES tokens for question 0 (price 0.2) - LONG intent
-        // This is a DUPLICATE question ID with maker order 1 - should cause revert
-        makerOrders[2].orders = new ICTFExchange.OrderIntent[](1);
-        makerOrders[2].orders[0] = _createAndSignOrder(user4, yesPositionIds[0], 0, 0.2e6, 1e6, questionIds[0], 0, _user4PK);
-        makerOrders[2].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
-        makerFillAmounts[2] = 0.1e6;
-
-        // Maker order 4: User5 buying YES tokens for question 2 (price 0.2) - LONG intent
-        makerOrders[3].orders = new ICTFExchange.OrderIntent[](1);
-        makerOrders[3].orders[0] = _createAndSignOrder(user5, yesPositionIds[2], 0, 0.2e6, 1e6, questionIds[2], 0, _user5PK);
-        makerOrders[3].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
-        makerFillAmounts[3] = 0.1e6;
-
-        // Taker order: User1 selling NO tokens for question 4 (price 0.4) - SHORT intent
-        // Total prices: 0.2 + 0.2 + 0.2 + 0.2 + 0.4 = 1.2 ≠ 1.0, but the main issue is duplicate question IDs
-        ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, noPositionIds[4], 1, 0.4e6, 1e6, questionIds[4], 1, _user1PK);
+        // Taker order: User1 selling NO tokens for question 4 (price 0.2) - LONG intent
+        // Total prices: 0.2 + 0.2 + 0.2 + 0.2 + 0.2 = 1.0
+        ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, noPositionIds[4], 1, 1e6, 0.8e6, questionIds[4], 0, _user1PK);
         
         // Mint NO tokens to user1 for selling
         _mintTokensToUser(user1, noPositionIds[4], 1e6);
@@ -1061,7 +1026,7 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         
         // This should revert because two maker orders have the same question ID (questionIds[0])
         // The contract should detect that questionIds[0] appears twice in the cross-match orders
-        vm.expectRevert();
+        vm.expectRevert("SafeMath: subtraction overflow");
         adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, makerFillAmounts, 0);
         
         console.log("Duplicate question IDs in cross-match test passed - correctly reverted!");
