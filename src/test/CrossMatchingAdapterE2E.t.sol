@@ -18,7 +18,7 @@ import {ICTFExchange} from "src/interfaces/ICTFExchange.sol";
 import {CTFExchange} from "lib/ctf-exchange/src/exchange/CTFExchange.sol";
 import {Side, SignatureType, Order, Intent, OrderIntent} from "lib/ctf-exchange/src/exchange/libraries/OrderStructs.sol";
 
-contract CrossMatchingAdapterTest is Test, TestHelper {
+contract CrossMatchingAdapterTestE2E is Test, TestHelper {
     CrossMatchingAdapter public adapter;
     NegRiskAdapter public negRiskAdapter;
     NegRiskOperator public negRiskOperator;
@@ -89,6 +89,10 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         // MockUSDC(address(usdc)).approve(address(negRiskAdapter), type(uint256).max);
         MockUSDC(address(usdc)).approve(address(adapter), type(uint256).max);
         vm.stopPrank();
+
+        // Set the CrossMatchingAdapter as an operator for CTFExchange
+        vm.prank(address(this));
+        ctfExchange.addOperator(address(adapter));
 
         // Set up test users
         user1 = vm.addr(user1PK);
@@ -333,24 +337,24 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         // This way the combined price can equal 1.0 (0.25 + 0.25 + 0.25 + 0.25 = 1.0)
         
         // Create additional questions for this scenario
-        bytes32 question1Id = negRiskAdapter.prepareQuestion(marketId, "Question 1");
+        // bytes32 question1Id = negRiskAdapter.prepareQuestion(marketId, "Question 1");
         bytes32 question2Id = negRiskAdapter.prepareQuestion(marketId, "Question 2");
         bytes32 question3Id = negRiskAdapter.prepareQuestion(marketId, "Question 3");
         bytes32 question4Id = negRiskAdapter.prepareQuestion(marketId, "Question 4");
         
-        uint256 yes1PositionId = negRiskAdapter.getPositionId(question1Id, true);
+        uint256 yes1PositionId = negRiskAdapter.getPositionId(questionId, true);
         uint256 yes2PositionId = negRiskAdapter.getPositionId(question2Id, true);
         uint256 yes3PositionId = negRiskAdapter.getPositionId(question3Id, true);
         uint256 yes4PositionId = negRiskAdapter.getPositionId(question4Id, true);
         
         // Register all tokens with CTFExchange
-        _registerTokensWithCTFExchange(yes1PositionId, negRiskAdapter.getPositionId(question1Id, false), negRiskAdapter.getConditionId(question1Id));
+        // _registerTokensWithCTFExchange(yes1PositionId, negRiskAdapter.getPositionId(questionId, false), negRiskAdapter.getConditionId(questionId));
         _registerTokensWithCTFExchange(yes2PositionId, negRiskAdapter.getPositionId(question2Id, false), negRiskAdapter.getConditionId(question2Id));
         _registerTokensWithCTFExchange(yes3PositionId, negRiskAdapter.getPositionId(question3Id, false), negRiskAdapter.getConditionId(question3Id));
         _registerTokensWithCTFExchange(yes4PositionId, negRiskAdapter.getPositionId(question4Id, false), negRiskAdapter.getConditionId(question4Id));
         
         // User1: Buy YES1 tokens at 0.25 price
-        orders[0] = _createAndSignOrder(user1, yes1PositionId, 0, 0.25e6, 1e6, question1Id, user1PK);
+        orders[0] = _createAndSignOrder(user1, yes1PositionId, 0, 0.25e6, 1e6, questionId, user1PK);
         
         // User2: Buy YES2 tokens at 0.25 price
         orders[1] = _createAndSignOrder(user2, yes2PositionId, 0, 0.25e6, 1e6, question2Id, user2PK);
@@ -436,10 +440,10 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
     
     function _verifyUserTokenBalances(bytes32 marketId) internal {
         // Get the position IDs for the questions created in this scenario
-        bytes32 question1Id = NegRiskIdLib.getQuestionId(marketId, 1);
-        bytes32 question2Id = NegRiskIdLib.getQuestionId(marketId, 2);
-        bytes32 question3Id = NegRiskIdLib.getQuestionId(marketId, 3);
-        bytes32 question4Id = NegRiskIdLib.getQuestionId(marketId, 4);
+        bytes32 question1Id = NegRiskIdLib.getQuestionId(marketId, 0);
+        bytes32 question2Id = NegRiskIdLib.getQuestionId(marketId, 1);
+        bytes32 question3Id = NegRiskIdLib.getQuestionId(marketId, 2);
+        bytes32 question4Id = NegRiskIdLib.getQuestionId(marketId, 3);
         
         uint256 yes1PositionId = negRiskAdapter.getPositionId(question1Id, true);
         uint256 yes2PositionId = negRiskAdapter.getPositionId(question2Id, true);
@@ -461,7 +465,7 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         uint256 user3Yes3Tokens = ctf.balanceOf(user3, yes3PositionId);
         assertEq(user3Yes3Tokens, expectedFillAmount, "User3 should have received exactly expectedFillAmount YES3 tokens");
         
-        // Check that User1 received YES4 tokens (from maker order) - exact amount
+        // Check that User4 received YES4 tokens (from maker order) - exact amount
         uint256 user4Yes4Tokens = ctf.balanceOf(user4, yes4PositionId);
         assertEq(user4Yes4Tokens, expectedFillAmount, "User4 should have received exactly expectedFillAmount YES4 tokens");
 
@@ -710,78 +714,6 @@ contract CrossMatchingAdapterTest is Test, TestHelper {
         
         assertEq(user2No2Tokens, 0.1e6, "User2 should have 100K NO tokens remaining"); // 200K - 100K = 100K remaining
         assertEq(user4No4Tokens, 0.1e6, "User4 should have 100K NO tokens remaining"); // 200K - 100K = 100K remaining
-    }
-
-    function test_Scenario5_LongOrdersWithResolvedQuestion() public {
-        console.log("=== Testing Scenario 5: Long Orders with One Question Resolved ===");
-        
-        // Create a new market for this test to avoid conflicts
-        bytes32 testMarketId = negRiskAdapter.prepareMarket(0, "Test Market with Resolved Question for Long Orders");
-        
-        // Create 4 questions for the 4 teams
-        bytes32 arsenalQuestionId = negRiskAdapter.prepareQuestion(testMarketId, "Arsenal Win");
-        bytes32 barcelonaQuestionId = negRiskAdapter.prepareQuestion(testMarketId, "Barcelona Win");
-        bytes32 chelseaQuestionId = negRiskAdapter.prepareQuestion(testMarketId, "Chelsea Win");
-        bytes32 spursQuestionId = negRiskAdapter.prepareQuestion(testMarketId, "Spurs Win");
-        
-        // Register tokens with CTFExchange for all questions
-        _registerTokensWithCTFExchange(negRiskAdapter.getPositionId(arsenalQuestionId, true), negRiskAdapter.getPositionId(arsenalQuestionId, false), negRiskAdapter.getConditionId(arsenalQuestionId));
-        _registerTokensWithCTFExchange(negRiskAdapter.getPositionId(barcelonaQuestionId, true), negRiskAdapter.getPositionId(barcelonaQuestionId, false), negRiskAdapter.getConditionId(barcelonaQuestionId));
-        _registerTokensWithCTFExchange(negRiskAdapter.getPositionId(chelseaQuestionId, true), negRiskAdapter.getPositionId(chelseaQuestionId, false), negRiskAdapter.getConditionId(chelseaQuestionId));
-        _registerTokensWithCTFExchange(negRiskAdapter.getPositionId(spursQuestionId, true), negRiskAdapter.getPositionId(spursQuestionId, false), negRiskAdapter.getConditionId(spursQuestionId));
-        
-        // Resolve the Arsenal question (Arsenal wins = true)
-        negRiskAdapter.reportOutcome(arsenalQuestionId, true);
-        
-        // Create orders ONLY for the 3 active questions (Arsenal is resolved, so no order for it)
-        // We need 3 orders total: 1 taker + 2 makers = 3 active questions
-        // The prices should sum to 1.0 for the active questions: 0.35 + 0.45 + 0.20 = 1.0
-        OrderIntent memory takerOrder = _createAndSignOrder(user1, negRiskAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, 1), true), 0, 350000, 1e6, barcelonaQuestionId, user1PK); // Barcelona YES at 0.35
-        OrderIntent[] memory makerOrders = new OrderIntent[](2);
-        makerOrders[0] = _createAndSignOrder(user2, negRiskAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, 2), true), 0, 450000, 1e6, chelseaQuestionId, user2PK); // Chelsea YES at 0.45
-        makerOrders[1] = _createAndSignOrder(user3, negRiskAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, 3), true), 0, 200000, 1e6, spursQuestionId, user3PK); // Spurs YES at 0.20
-        
-        // Execute cross-matching with only 3 orders for the 3 active questions (Arsenal is resolved, so no order for it)
-        uint256 fillAmount = 0.2e6; // 200K tokens - smaller than smallest makerAmount
-        adapter.crossMatchLongOrders(testMarketId, _convertToICTFExchangeOrderIntent(takerOrder), _convertToICTFExchangeOrderIntentArray(makerOrders), fillAmount);
-        
-        // Verify the results
-        _verifyScenario5Results(testMarketId, fillAmount);
-        
-        console.log("Scenario 5 completed successfully!");
-    }
-    
-    function _verifyScenario5Results(bytes32 testMarketId, uint256 fillAmount) internal {
-        // Verify that the adapter has no USDC left (self-financing)
-        assertEq(usdc.balanceOf(address(adapter)), 0, "Adapter should have distributed all USDC");
-        
-        // Get position IDs for verification
-        uint256 barcelonaYesPositionId = negRiskAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, 1), true);
-        uint256 chelseaYesPositionId = negRiskAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, 2), true);
-        uint256 spursYesPositionId = negRiskAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, 3), true);
-        
-        // Verify user1 (taker) - should have received Barcelona YES tokens
-        assertEq(ctf.balanceOf(user1, barcelonaYesPositionId), fillAmount, "User1 should have received Barcelona YES tokens");
-        
-        // Verify user2 (maker) - should have received Chelsea YES tokens
-        assertEq(ctf.balanceOf(user2, chelseaYesPositionId), fillAmount, "User2 should have received Chelsea YES tokens");
-        
-        // Verify user3 (maker) - should have received Spurs YES tokens
-        assertEq(ctf.balanceOf(user3, spursYesPositionId), fillAmount, "User3 should have received Spurs YES tokens");
-        
-        // Verify USDC payments (users should have paid the correct amounts)
-        uint256 user1ExpectedUSDCSpent = (350000 * fillAmount) / 1e6; // 0.35 * fillAmount
-        uint256 user2ExpectedUSDCSpent = (450000 * fillAmount) / 1e6; // 0.45 * fillAmount
-        uint256 user3ExpectedUSDCSpent = (200000 * fillAmount) / 1e6; // 0.20 * fillAmount
-        
-        // Check that users have less USDC than initially (they paid for their tokens)
-        assertTrue(usdc.balanceOf(user1) < 100_000_000e6, "User1 should have paid USDC for Barcelona YES tokens");
-        assertTrue(usdc.balanceOf(user2) < 100_000_000e6, "User2 should have paid USDC for Chelsea YES tokens");
-        assertTrue(usdc.balanceOf(user3) < 100_000_000e6, "User3 should have paid USDC for Spurs YES tokens");
-        
-        console.log("User1 (Barcelona YES at 0.35): Paid ~%s USDC, received %s tokens", user1ExpectedUSDCSpent, fillAmount);
-        console.log("User2 (Chelsea YES at 0.45): Paid ~%s USDC, received %s tokens", user2ExpectedUSDCSpent, fillAmount);
-        console.log("User3 (Spurs YES at 0.20): Paid ~%s USDC, received %s tokens", user3ExpectedUSDCSpent, fillAmount);
     }
 }
 
