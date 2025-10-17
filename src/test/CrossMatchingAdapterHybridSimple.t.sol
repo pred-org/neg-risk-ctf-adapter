@@ -306,16 +306,16 @@ contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
         uint256[] memory makerFillAmounts = new uint256[](1);
         
         // Create additional questions for cross-matching
-        bytes32 question1Id = negRiskAdapter.prepareQuestion(marketId, "Question 1");
+        // bytes32 question1Id = negRiskAdapter.prepareQuestion(marketId, "Question 1");
         bytes32 question2Id = negRiskAdapter.prepareQuestion(marketId, "Question 2");
         bytes32 question3Id = negRiskAdapter.prepareQuestion(marketId, "Question 3");
         
-        uint256 yes1PositionId = negRiskAdapter.getPositionId(question1Id, true);
+        uint256 yes1PositionId = negRiskAdapter.getPositionId(questionId, true);
         uint256 yes2PositionId = negRiskAdapter.getPositionId(question2Id, true);
         uint256 yes3PositionId = negRiskAdapter.getPositionId(question3Id, true);
         
         // Register tokens with CTFExchange
-        _registerTokensWithCTFExchange(yes1PositionId, negRiskAdapter.getPositionId(question1Id, false), negRiskAdapter.getConditionId(question1Id));
+        // _registerTokensWithCTFExchange(yes1PositionId, negRiskAdapter.getPositionId(questionId, false), negRiskAdapter.getConditionId(questionId));
         _registerTokensWithCTFExchange(yes2PositionId, negRiskAdapter.getPositionId(question2Id, false), negRiskAdapter.getConditionId(question2Id));
         _registerTokensWithCTFExchange(yes3PositionId, negRiskAdapter.getPositionId(question3Id, false), negRiskAdapter.getConditionId(question3Id));
         
@@ -333,7 +333,7 @@ contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
         makerFillAmounts[0] = 0.1e6; // 100K tokens - smaller than makerAmount (1e6)
         
         // Create taker order - user1 buys YES tokens for question1
-        ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yes1PositionId, 0, 0.15e6, 1e6, question1Id, 0, user1PK);
+        ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yes1PositionId, 0, 0.15e6, 1e6, questionId, 0, user1PK);
         
         // Execute hybrid match orders (0 single orders, all cross-match)
         adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, makerFillAmounts, 0);
@@ -441,16 +441,16 @@ contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
         uint256[] memory makerFillAmounts = new uint256[](1);
         
         // Create additional questions for cross-matching
-        bytes32 question1Id = negRiskAdapter.prepareQuestion(marketId, "Question 1");
+        // bytes32 question1Id = negRiskAdapter.prepareQuestion(marketId, "Question 1");
         bytes32 question2Id = negRiskAdapter.prepareQuestion(marketId, "Question 2");
         bytes32 question3Id = negRiskAdapter.prepareQuestion(marketId, "Question 3");
         
-        uint256 yes1PositionId = negRiskAdapter.getPositionId(question1Id, true);
+        uint256 yes1PositionId = negRiskAdapter.getPositionId(questionId, true);
         uint256 yes2PositionId = negRiskAdapter.getPositionId(question2Id, true);
         uint256 yes3PositionId = negRiskAdapter.getPositionId(question3Id, true);
         
         // Register tokens with CTFExchange
-        _registerTokensWithCTFExchange(yes1PositionId, negRiskAdapter.getPositionId(question1Id, false), negRiskAdapter.getConditionId(question1Id));
+        // _registerTokensWithCTFExchange(yes1PositionId, negRiskAdapter.getPositionId(question1Id, false), negRiskAdapter.getConditionId(question1Id));
         _registerTokensWithCTFExchange(yes2PositionId, negRiskAdapter.getPositionId(question2Id, false), negRiskAdapter.getConditionId(question2Id));
         _registerTokensWithCTFExchange(yes3PositionId, negRiskAdapter.getPositionId(question3Id, false), negRiskAdapter.getConditionId(question3Id));
         
@@ -465,7 +465,7 @@ contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
         makerFillAmounts[0] = 0.1e6; // 100K tokens - smaller than makerAmount (1e6)
         
         // Create taker order - user1 buys YES tokens for question1
-        ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yes1PositionId, 0, 0.2e6, 1e6, question1Id, 0, user1PK);
+        ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yes1PositionId, 0, 0.2e6, 1e6, questionId, 0, user1PK);
         
         // Execute with 0 single orders (correct count)
         adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, makerFillAmounts, 0);
