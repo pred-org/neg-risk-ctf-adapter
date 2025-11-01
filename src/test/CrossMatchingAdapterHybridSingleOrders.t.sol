@@ -263,6 +263,9 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
       uint256[] memory takerFillAmounts = new uint256[](1);
         
       makerOrders[0].orders = new ICTFExchange.OrderIntent[](1);
+      // Yes tokens selling order
+      // For sell order: makerAmount = token amount (1e6), takerAmount = USDC amount (0.45e6)
+      // price = 0.55$ per token
       makerOrders[0].orders[0] = _createAndSignOrder(
           user1, 
           yesPositionId, 
@@ -286,7 +289,9 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
       WrappedCollateral(address(negRiskAdapter.wcol())).transfer(address(ctf), 1e6);
       vm.stopPrank();
         
-      // Taker order - price 0.45 (minting one NO token)
+      // Taker order - NO tokens selling order
+      // For sell order: makerAmount = token amount (1e6), takerAmount = USDC amount (0.55e6)
+      // price = 0.45$
       ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user2, noPositionId, 1, 1e6, 0.55e6, questionId, 0, _user2PK);
 
       console.log("=== Taker Order ===");
@@ -356,6 +361,9 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
       uint256[] memory takerFillAmounts = new uint256[](1);
         
       makerOrders[0].orders = new ICTFExchange.OrderIntent[](1);
+      // NO tokens buying order
+      // For buy order: makerAmount = USDC amount (0.55e6), takerAmount = token amount (1e6)
+      // price = 0.55$ per token
       makerOrders[0].orders[0] = _createAndSignOrder(
           user1, 
           noPositionId, 
@@ -372,7 +380,9 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
 
       _mintTokensToUser(user2, noPositionId, 5e6);
         
-      // Taker order - price 0.45 (minting one NO token)
+      // Taker order - NO tokens selling order
+      // For sell order: makerAmount = token amount (1e6), takerAmount = USDC amount (0.55e6)
+      // price = 0.45$ per token
       ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user2, noPositionId, 1, 1e6, 0.55e6, questionId, 0, _user2PK);
 
       console.log("=== Taker Order ===");
@@ -437,6 +447,9 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
       uint256[] memory takerFillAmounts = new uint256[](1);
         
       makerOrders[0].orders = new ICTFExchange.OrderIntent[](1);
+      // YES tokens buying order
+      // For buy order: makerAmount = USDC amount (0.55e6), takerAmount = token amount (1e6)
+      // price = 0.55$ per token
       makerOrders[0].orders[0] = _createAndSignOrder(
           user1, 
           yesPositionId, 
@@ -451,7 +464,9 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
       makerFillAmounts[0] = 0.55e6;
       takerFillAmounts[0] = 0.45e6;
         
-      // Taker order - price 0.45 (minting one NO token)
+      // Taker order - NO tokens buying order
+      // For buy order: makerAmount = USDC amount (0.45e6), takerAmount = token amount (1e6)
+      // price = 0.45$ per token
       ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user2, noPositionId, 0, 0.45e6, 1e6, questionId, 1, _user2PK);
 
       // Log 0th maker order
