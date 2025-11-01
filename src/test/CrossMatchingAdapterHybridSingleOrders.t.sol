@@ -536,6 +536,154 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
         
       console.log("Single orders mint one test passed!");
     }
+
+    function testSingleOrdersMergeMultipleTest() public {
+      console.log("=== Testing Single Orders Merge Multiple Test ===");
+        
+      // Create 3 single orders
+      CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](3);
+      uint256[] memory makerFillAmounts = new uint256[](3);
+      uint256[] memory takerFillAmounts = new uint256[](3);
+        
+      for (uint256 i = 0; i < 3; i++) {
+        makerOrders[i].orders = new ICTFExchange.OrderIntent[](1);
+        _mintTokensToUser(vm.addr(1000 + i), yesPositionId, 1e6);
+
+        _setupUser(vm.addr(1000 + i), 1e6);
+        vm.label(vm.addr(1000 + i), string(abi.encodePacked("User random", vm.toString(i))));
+
+        makerOrders[i].orders[0] = _createAndSignOrder(
+          vm.addr(1000 + i), 
+          yesPositionId, 
+          1, 
+          1e6, 
+          0.45e6, 
+          questionId, 
+          1, 
+          1000 + i
+        );
+        makerOrders[i].orderType = CrossMatchingAdapter.OrderType.SINGLE;
+        makerFillAmounts[i] = 1e6;
+        takerFillAmounts[i] = 1e6;
+      }
+
+      _mintTokensToUser(user1, yesPositionId, 5e6);
+      _mintTokensToUser(user2, noPositionId, 5e6);
+
+      MockUSDC(address(usdc)).mint(address(negRiskAdapter.wcol()), 3e6);
+      vm.startPrank(address(negRiskAdapter));
+      WrappedCollateral(address(negRiskAdapter.wcol())).mint(3e6);
+      WrappedCollateral(address(negRiskAdapter.wcol())).transfer(address(ctf), 3e6);
+      vm.stopPrank();
+        
+      // Taker order - price 0.45 (minting one NO token)
+      ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user2, noPositionId, 1, 3e6, 0.55e6 * 3, questionId, 0, _user2PK);
+
+      // Log all maker orders
+      console2.log("=== Maker Orders ===");
+      console2.log("Number of maker orders:", makerOrders.length);
+      
+      for (uint256 i = 0; i < makerOrders.length; i++) {
+        console2.log("--- Maker Order", i, "---");
+        console2.log("  Order Type:", uint8(makerOrders[i].orderType));
+        console2.log("  Number of orders in makerOrder:", makerOrders[i].orders.length);
+        console2.log("  Maker Fill Amount:", makerFillAmounts[i]);
+        console2.log("  Taker Fill Amount:", takerFillAmounts[i]);
+        
+        for (uint256 j = 0; j < makerOrders[i].orders.length; j++) {
+          console2.log("  --- Order Intent", j, "---");
+          console2.log("    TokenId:", makerOrders[i].orders[j].tokenId);
+          console2.log("    Side:", uint8(makerOrders[i].orders[j].side));
+          console2.log("    MakerAmount:", makerOrders[i].orders[j].makerAmount);
+          console2.log("    TakerAmount:", makerOrders[i].orders[j].takerAmount);
+          
+          console2.log("    Order.salt:", makerOrders[i].orders[j].order.salt);
+          console2.log("    Order.maker:", uint256(uint160(makerOrders[i].orders[j].order.maker)));
+          console2.log("    Order.signer:", uint256(uint160(makerOrders[i].orders[j].order.signer)));
+          console2.log("    Order.taker:", uint256(uint160(makerOrders[i].orders[j].order.taker)));
+          console2.log("    Order.price:", makerOrders[i].orders[j].order.price);
+          console2.log("    Order.quantity:", makerOrders[i].orders[j].order.quantity);
+          console2.log("    Order.expiration:", makerOrders[i].orders[j].order.expiration);
+          console2.log("    Order.nonce:", makerOrders[i].orders[j].order.nonce);
+          console2.log("    Order.questionId:", uint256(makerOrders[i].orders[j].order.questionId));
+          console2.log("    Order.intent:", uint8(makerOrders[i].orders[j].order.intent));
+          console2.log("    Order.feeRateBps:", makerOrders[i].orders[j].order.feeRateBps);
+          console2.log("    Order.signatureType:", uint8(makerOrders[i].orders[j].order.signatureType));
+          console2.log("    Order.signature.length:", makerOrders[i].orders[j].order.signature.length);
+        }
+      }
+
+      console.log("=== Taker Order ===");
+      // Log taker order
+      console2.log("=== Taker Order ===");
+      console2.log("TokenId:", takerOrder.tokenId);
+      console2.log("Side:", uint8(takerOrder.side));
+      console2.log("MakerAmount:", takerOrder.makerAmount);
+      console2.log("TakerAmount:", takerOrder.takerAmount);
+      console2.log("Price:", takerOrder.order.price);
+      console2.log("Quantity:", takerOrder.order.quantity);
+      console2.log("Maker:", takerOrder.order.maker);
+      console2.log("QuestionId:", uint256(takerOrder.order.questionId));
+      console2.log("Intent:", uint8(takerOrder.order.intent));
+
+      // Store initial balances
+      uint256 initialUser2USDC = usdc.balanceOf(user2);
+      uint256 initialUser2NO = ctf.balanceOf(user2, noPositionId);
+      
+      // Store initial balances for each maker
+      uint256[] memory initialMakerUSDC = new uint256[](3);
+      uint256[] memory initialMakerYES = new uint256[](3);
+      for (uint256 i = 0; i < 3; i++) {
+        initialMakerUSDC[i] = usdc.balanceOf(vm.addr(1000 + i));
+        initialMakerYES[i] = ctf.balanceOf(vm.addr(1000 + i), yesPositionId);
+      }
+
+      // Execute hybrid match orders (3 single orders)
+      adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, makerFillAmounts, takerFillAmounts, 3);
+
+      // Verify token balances after execution
+      console.log("=== Verifying Token Balances After Hybrid Match ===");
+      
+      // Verify each maker has sold their YES tokens
+      for (uint256 i = 0; i < 3; i++) {
+        address maker = vm.addr(1000 + i);
+        // For SELL order: loses makerFillAmount tokens = 1e6 YES tokens
+        assertEq(ctf.balanceOf(maker, yesPositionId), initialMakerYES[i] - makerFillAmounts[i], 
+          string(abi.encodePacked("Maker ", vm.toString(i), " should have sold YES tokens")));
+        console.log("Maker %s YES tokens: %s", i, ctf.balanceOf(maker, yesPositionId));
+      }
+      
+      // User2 (taker) should have sold NO tokens
+      // For SELL order: loses makerAmount (3e6) NO tokens
+      assertEq(ctf.balanceOf(user2, noPositionId), initialUser2NO - takerOrder.makerAmount, "User2 should have sold NO tokens");
+      console.log("User2 NO tokens: %s", ctf.balanceOf(user2, noPositionId));
+      
+      // Verify USDC balance changes
+      console.log("=== Verifying USDC Balance Changes ===");
+      
+      // Verify each maker received USDC for selling YES tokens
+      for (uint256 i = 0; i < 3; i++) {
+        address maker = vm.addr(1000 + i);
+        // For SELL order: receives takerAmount (0.45e6) USDC minus fees
+        // Since feeRateBps is 0, receives full takerAmount
+        assertEq(usdc.balanceOf(maker), initialMakerUSDC[i] + makerOrders[i].orders[0].takerAmount, 
+          string(abi.encodePacked("Maker ", vm.toString(i), " should receive USDC for selling YES tokens")));
+        console.log("Maker %s USDC: %s", i, usdc.balanceOf(maker));
+      }
+      
+      // User2 should have received USDC for selling NO tokens
+      // For SELL order: receives takerAmount (1.65e6) USDC minus fees
+      // Since feeRateBps is 0, receives full takerAmount
+      assertEq(usdc.balanceOf(user2), initialUser2USDC + takerOrder.takerAmount, "User2 should receive USDC for selling NO tokens");
+      console.log("User2 USDC: %s", usdc.balanceOf(user2));
+      
+      // Verify adapter has no remaining tokens or USDC (self-financing)
+      assertEq(usdc.balanceOf(address(adapter)), 0, "Adapter should have no remaining USDC");
+      assertEq(ctf.balanceOf(address(adapter), yesPositionId), 0, "Adapter should have no remaining YES tokens");
+      assertEq(ctf.balanceOf(address(adapter), noPositionId), 0, "Adapter should have no remaining NO tokens");
+        
+      console.log("Single orders merge multiple test passed!");
+    }
 }
 
 // Mock USDC contract
