@@ -246,6 +246,7 @@ contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
         // Create 2 single maker orders
         CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](2);
         uint256[] memory makerFillAmounts = new uint256[](2);
+        uint256[] memory takerFillAmounts = new uint256[](2);
         
         // Create additional questions
         bytes32 question1Id = negRiskAdapter.prepareQuestion(marketId, "Question 1");
@@ -276,12 +277,12 @@ contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
         makerOrders[0].orders[0] = _createAndSignOrder(user2, negRiskAdapter.getPositionId(question1Id, true), 1, 1e6, 0.25e6, question1Id, 1, user2PK);
         makerOrders[0].orderType = CrossMatchingAdapter.OrderType.SINGLE;
         makerFillAmounts[0] = 0.1e6; // 100K tokens - the amount of YES tokens maker2 will sell
-        
+        takerFillAmounts[0] = 0.25e6;
         makerOrders[1].orders = new ICTFExchange.OrderIntent[](1);
         makerOrders[1].orders[0] = _createAndSignOrder(user3, negRiskAdapter.getPositionId(question1Id, true), 1, 1e6, 0.25e6, question1Id, 1, user3PK);
         makerOrders[1].orderType = CrossMatchingAdapter.OrderType.SINGLE;
         makerFillAmounts[1] = 0.1e6; // 100K tokens - the amount of YES tokens maker3 will sell
-        
+        takerFillAmounts[1] = 0.25e6;
         // Create taker order - user1 buys YES tokens for question1
         // For buy order: makerAmount = USDC amount (0.25e6), takerAmount = token amount (1e6)
         // price = (makerAmount * 1e6) / takerAmount = (0.25e6 * 1e6) / 1e6 = 0.25e6
@@ -291,7 +292,7 @@ contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
         ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, negRiskAdapter.getPositionId(question1Id, true), 0, 0.25e6, 1e6, question1Id, 0, user1PK);
         
         // Execute hybrid match orders (2 single orders)
-        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, makerFillAmounts, 2);
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, makerFillAmounts, takerFillAmounts, 2);
         
         // For real CTFExchange, we can't easily track call counts, so we'll verify the execution completed successfully
         // The test passes if no revert occurs during execution
@@ -304,7 +305,7 @@ contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
         // Create 1 cross-match maker order (length > 1)
         CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
         uint256[] memory makerFillAmounts = new uint256[](1);
-        
+        uint256[] memory takerFillAmounts = new uint256[](1);
         // Create additional questions for cross-matching
         // bytes32 question1Id = negRiskAdapter.prepareQuestion(marketId, "Question 1");
         bytes32 question2Id = negRiskAdapter.prepareQuestion(marketId, "Question 2");
@@ -331,12 +332,12 @@ contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
         makerOrders[0].orders[1] = _createAndSignOrder(user3, yes3PositionId, 0, 0.5e6, 1e6, question3Id, 0, user3PK);
         makerOrders[0].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
         makerFillAmounts[0] = 0.1e6; // 100K tokens - smaller than makerAmount (1e6)
-        
+        takerFillAmounts[0] = 0.15e6;
         // Create taker order - user1 buys YES tokens for question1
         ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yes1PositionId, 0, 0.15e6, 1e6, questionId, 0, user1PK);
         
         // Execute hybrid match orders (0 single orders, all cross-match)
-        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, makerFillAmounts, 0);
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, makerFillAmounts, takerFillAmounts, 0);
         
         // For real CTFExchange, we can't easily track call counts, so we'll verify the execution completed successfully
         // The test passes if no revert occurs during execution
@@ -351,7 +352,7 @@ contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
         // Cross-match order: taker vs maker2 + maker3 (cross-match - different tokens)
         CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](2);
         uint256[] memory makerFillAmounts = new uint256[](2);
-        
+        uint256[] memory takerFillAmounts = new uint256[](2);
         // Create additional questions for cross-match
         bytes32 question2Id = negRiskAdapter.prepareQuestion(marketId, "Question 2");
         bytes32 question3Id = negRiskAdapter.prepareQuestion(marketId, "Question 3");
@@ -375,7 +376,7 @@ contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
         makerOrders[0].orders[0] = _createAndSignOrder(user2, yesPositionId, 1, 1e6, 0.3e6, questionId, 1, user2PK);
         makerOrders[0].orderType = CrossMatchingAdapter.OrderType.SINGLE;
         makerFillAmounts[0] = 0.1e6; // 100K tokens
-        
+        takerFillAmounts[0] = 0.4e6;
         // Second maker order: Cross-match order (2 orders) - user3 and user4 buy different tokens
         // In a cross-match, the taker (user1) is also involved, so user1 gets tokens from both single and cross-match
         makerOrders[1].orders = new ICTFExchange.OrderIntent[](2);
@@ -383,12 +384,12 @@ contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
         makerOrders[1].orders[1] = _createAndSignOrder(user4, yes3PositionId, 0, 0.35e6, 1e6, question3Id, 0, user4PK);
         makerOrders[1].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
         makerFillAmounts[1] = 0.1e6; // 100K tokens
-        
+        takerFillAmounts[1] = 0.7e6;
         // Create taker order - user1 buys YES tokens for questionId
         ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionId, 0, 0.4e6, 1e6, questionId, 0, user1PK);
         
         // Execute hybrid match orders (1 single order, 1 cross-match)
-        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, makerFillAmounts, 1);
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, makerFillAmounts, takerFillAmounts, 1);
         
         // Verify token balances after execution
         console.log("=== Verifying Token Balances After Hybrid Match ===");
@@ -439,7 +440,7 @@ contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
         // Create 1 cross-match maker order (no single orders)
         CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
         uint256[] memory makerFillAmounts = new uint256[](1);
-        
+        uint256[] memory takerFillAmounts = new uint256[](1);
         // Create additional questions for cross-matching
         // bytes32 question1Id = negRiskAdapter.prepareQuestion(marketId, "Question 1");
         bytes32 question2Id = negRiskAdapter.prepareQuestion(marketId, "Question 2");
@@ -463,12 +464,12 @@ contract CrossMatchingAdapterHybridSimpleTest is Test, TestHelper {
         makerOrders[0].orders[1] = _createAndSignOrder(user3, yes3PositionId, 0, 0.4e6, 1e6, question3Id, 0, user3PK);
         makerOrders[0].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
         makerFillAmounts[0] = 0.1e6; // 100K tokens - smaller than makerAmount (1e6)
-        
+        takerFillAmounts[0] = 0.2e6;
         // Create taker order - user1 buys YES tokens for question1
         ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yes1PositionId, 0, 0.2e6, 1e6, questionId, 0, user1PK);
         
         // Execute with 0 single orders (correct count)
-        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, makerFillAmounts, 0);
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, makerFillAmounts, takerFillAmounts, 0);
         
         // For real CTFExchange, we can't easily track call counts, so we'll verify the execution completed successfully
         // The test passes if no revert occurs during execution
