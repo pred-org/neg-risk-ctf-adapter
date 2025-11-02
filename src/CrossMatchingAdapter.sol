@@ -91,6 +91,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
     struct MakerOrder {
         ICTFExchange.OrderIntent[] orders;
         OrderType orderType;
+        uint256[] makerFillAmounts;
     }
 
     enum OrderType {
@@ -127,51 +128,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         }
     }
 
-    /// @notice Internal function to validate that all unresolved questions are present in orders
-    /// @param marketId The market ID to check
-    /// @param takerOrder The taker order
-    /// @param makerOrders Array of maker orders
-    function _validateAllUnresolvedQuestionsPresent(
-        bytes32 marketId,
-        ICTFExchange.OrderIntent calldata takerOrder,
-        ICTFExchange.OrderIntent[] calldata makerOrders
-    ) internal view {
-        uint256 questionCount = neg.getQuestionCount(marketId);
-        
-        // Early termination: if no questions, validation passes
-        if (questionCount == 0) {
-            return;
-        }
-        
-        // Ultra-optimized approach: use bitmap to track covered questions
-        // This is O(n+m) where n = questions, m = orders
-        uint256[] memory questionBitmap = new uint256[]((questionCount + 255) / 256);
-        
-        // Mark taker order question as covered
-        _markQuestionInBitmap(takerOrder.order.questionId, questionBitmap);
-        
-        // Mark all maker order questions as covered
-        for (uint256 i = 0; i < makerOrders.length;) {
-            _markQuestionInBitmap(makerOrders[i].order.questionId, questionBitmap);
-            unchecked {
-                ++i;
-            }
-        }
-        
-        // Check all unresolved questions are covered
-        for (uint256 i = 0; i < questionCount; i++) {
-            bytes32 questionId = NegRiskIdLib.getQuestionId(marketId, uint8(i));
-            
-            // Only check if this question is unresolved
-            if (_isQuestionUnresolved(questionId)) {
-                // Check if this unresolved question is covered using bitmap
-                if (!_isQuestionMarkedInBitmap(questionId, questionBitmap)) {
-                    revert MissingUnresolvedQuestion();
-                }
-            }
-        }
-    }
-
     /// @notice Internal function to check if a question is unresolved using NegRiskOperator
     /// @param questionId The question ID to check
     /// @return true if the question is unresolved, false if resolved
@@ -193,48 +149,10 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         return ctf.payoutDenominator(conditionId) == 0;
     }
 
-    /// @notice Internal function to mark a question as covered in the bitmap
-    /// @param questionId The question ID to mark
-    /// @param questionBitmap The bitmap array
-    function _markQuestionInBitmap(
-        bytes32 questionId,
-        uint256[] memory questionBitmap
-    ) internal pure {
-        // Get the question index within the market
-        uint8 questionIndex = NegRiskIdLib.getQuestionIndex(questionId);
-        
-        // Calculate bitmap position
-        uint256 bitmapIndex = questionIndex / 256;
-        uint256 bitPosition = questionIndex % 256;
-        
-        // Set the bit
-        questionBitmap[bitmapIndex] |= (1 << bitPosition);
-    }
-
-    /// @notice Internal function to check if a question is marked in the bitmap
-    /// @param questionId The question ID to check
-    /// @param questionBitmap The bitmap array
-    /// @return true if the question is marked, false otherwise
-    function _isQuestionMarkedInBitmap(
-        bytes32 questionId,
-        uint256[] memory questionBitmap
-    ) internal pure returns (bool) {
-        // Get the question index within the market
-        uint8 questionIndex = NegRiskIdLib.getQuestionIndex(questionId);
-        
-        // Calculate bitmap position
-        uint256 bitmapIndex = questionIndex / 256;
-        uint256 bitPosition = questionIndex % 256;
-        
-        // Check if the bit is set
-        return (questionBitmap[bitmapIndex] & (1 << bitPosition)) != 0;
-    }
-
     function hybridMatchOrders(
         bytes32 marketId,
         ICTFExchange.OrderIntent calldata takerOrder, 
         MakerOrder[] calldata makerOrders, 
-        uint256[] calldata makerFillAmounts,
         uint256[] calldata takerFillAmounts,
         uint8 singleOrderCount
     ) external nonReentrant {
@@ -243,15 +161,14 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         uint256[] memory singleMakerFillAmounts = new uint256[](singleOrderCount);
         uint256 singleOrdersTakerAmount = 0;
         uint256 singleOrderIndex = 0;
+        bool isLong = takerOrder.order.intent == ICTFExchange.Intent.LONG;
 
-        // bool isTakerBuying = takerOrder.side == ICTFExchange.Side.BUY;
-        
         for (uint256 i = 0; i < makerOrders.length;) {
             MakerOrder calldata makerOrder = makerOrders[i];
             if (makerOrder.orderType == OrderType.SINGLE) {
                 // Collect single maker orders for batch processing
                 singleMakerOrders[singleOrderIndex] = makerOrder.orders[0];
-                singleMakerFillAmounts[singleOrderIndex] = makerFillAmounts[i];
+                singleMakerFillAmounts[singleOrderIndex] = makerOrder.makerFillAmounts[0];
                 
                 // For COMPLEMENTARY matches, calculate the correct taker fill amount
                 // The taker fill amount should be the USDC amount needed to buy the tokens
@@ -259,13 +176,21 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
                 
                 singleOrderIndex++;
             } else {
-                // cross match
-                if (takerOrder.order.intent == ICTFExchange.Intent.LONG) {
-                    // LONG
-                    crossMatchLongOrders(marketId, takerOrder, makerOrder.orders, makerFillAmounts[i]);
-                } else {
-                    // SHORT
-                    crossMatchShortOrders(marketId, takerOrder, makerOrder.orders, makerFillAmounts[i]);
+                // cross match - extract variables to reduce stack depth
+                {
+                    bytes32 mId = marketId;
+                    ICTFExchange.OrderIntent calldata tOrder = takerOrder;
+                    uint256 fillAmount = takerFillAmounts[i];
+                    uint256[] calldata makerFills = makerOrder.makerFillAmounts;
+                    ICTFExchange.OrderIntent[] calldata makerOrderList = makerOrder.orders;
+                    
+                    if (isLong) {
+                        // LONG
+                        crossMatchLongOrders(mId, tOrder, makerOrderList, fillAmount, makerFills);
+                    } else {
+                        // SHORT
+                        crossMatchShortOrders(mId, tOrder, makerOrderList, fillAmount, makerFills);
+                    }
                 }
             }
             unchecked {
@@ -284,60 +209,69 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         bytes32 marketId,
         ICTFExchange.OrderIntent calldata takerOrder,
         ICTFExchange.OrderIntent[] calldata multiOrderMaker,
-        uint256 fillAmount
+        uint256 takerFillAmount,
+        uint256[] calldata makerFillAmounts
     ) public allUnresolvedQuestionsPresent(marketId, multiOrderMaker) {
-        if (fillAmount == 0) {
+        if (takerFillAmount == 0) {
             revert InvalidFillAmount();
         }
 
-        // Validate taker order signature and parameters
-        ctfExchange.validateOrder(takerOrder);
-        ctfExchange.updateOrderStatus(takerOrder, fillAmount);
+        uint256 fillAmount;
+        {
+            // Validate taker order signature and parameters
+            (uint256 takingAmount, ) = ctfExchange.performOrderChecks(takerOrder, takerFillAmount);
 
-        // Validate all maker orders signatures and parameters and update the order status
-        for (uint256 i = 0; i < multiOrderMaker.length; i++) {
-            ctfExchange.validateOrder(multiOrderMaker[i]);
-            ctfExchange.updateOrderStatus(multiOrderMaker[i], fillAmount);
-        }
+            // Validate all maker orders signatures and parameters and update the order status
+            for (uint256 i = 0; i < multiOrderMaker.length; i++) {
+                ctfExchange.performOrderChecks(multiOrderMaker[i], makerFillAmounts[i]);
+            }
 
-        Parsed[] memory parsedOrders = new Parsed[](multiOrderMaker.length + 1);
-        uint256 totalBuyUSDC = 0;
-        uint256 totalSellUSDC = 0;
-        uint256 totalCombinedPrice = 0;
-        
-        // Parse taker order
-        parsedOrders[0] = _parseOrder(takerOrder, fillAmount);
-        if (parsedOrders[0].side == uint8(ICTFExchange.Side.BUY)) {
-            totalBuyUSDC += parsedOrders[0].counterPayAmount;
-        } else {
-            totalSellUSDC += parsedOrders[0].counterPayAmount;
-        }
-
-        totalCombinedPrice += parsedOrders[0].priceQ6;
-        
-        // Parse maker orders
-        for (uint256 i = 0; i < multiOrderMaker.length; i++) {
-            parsedOrders[i + 1] = _parseOrder(multiOrderMaker[i], fillAmount);
-            totalCombinedPrice += parsedOrders[i + 1].priceQ6;
-            if (parsedOrders[i + 1].side == uint8(ICTFExchange.Side.BUY)) {
-                totalBuyUSDC += parsedOrders[i + 1].counterPayAmount;
+            if (takerOrder.side == ICTFExchange.Side.BUY) {
+                fillAmount = takingAmount;
             } else {
-                // For sell orders, amount that we need for minting 
-                totalSellUSDC += parsedOrders[i + 1].counterPayAmount;
+                fillAmount = takerFillAmount;
             }
         }
 
-        // The total combined price must equal to one
-        if (totalCombinedPrice != ONE) {
-            revert InvalidCombinedPrice();
+        Parsed[] memory parsedOrders;
+        uint256 totalSellUSDC;
+        {
+            parsedOrders = new Parsed[](multiOrderMaker.length + 1);
+            uint256 totalBuyUSDC = 0;
+            totalSellUSDC = 0;
+            uint256 totalCombinedPrice = 0;
+            
+            // Parse taker order
+            parsedOrders[0] = _parseOrder(takerOrder, fillAmount);
+            if (parsedOrders[0].side == uint8(ICTFExchange.Side.BUY)) {
+                totalBuyUSDC += parsedOrders[0].counterPayAmount;
+            } else {
+                totalSellUSDC += parsedOrders[0].counterPayAmount;
+            }
+
+            totalCombinedPrice += parsedOrders[0].priceQ6;
+            
+            // Parse maker orders
+            for (uint256 i = 0; i < multiOrderMaker.length; i++) {
+                parsedOrders[i + 1] = _parseOrder(multiOrderMaker[i], fillAmount);
+                totalCombinedPrice += parsedOrders[i + 1].priceQ6;
+                if (parsedOrders[i + 1].side == uint8(ICTFExchange.Side.BUY)) {
+                    totalBuyUSDC += parsedOrders[i + 1].counterPayAmount;
+                } else {
+                    // For sell orders, amount that we need for minting 
+                    totalSellUSDC += parsedOrders[i + 1].counterPayAmount;
+                }
+            }
+
+            // The total combined price must equal to one
+            if (totalCombinedPrice != ONE) {
+                revert InvalidCombinedPrice();
+            }
         }
 
         // Execute cross-matching logic (fees will be collected from tokens during execution)
         _executeShortCrossMatch(parsedOrders, marketId, totalSellUSDC, fillAmount);
     }
-
-
-
 
     function _executeShortCrossMatch(
         Parsed[] memory parsedOrders,
@@ -428,19 +362,27 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         bytes32 marketId,
         ICTFExchange.OrderIntent calldata takerOrder,
         ICTFExchange.OrderIntent[] calldata multiOrderMaker,
-        uint256 fillAmount
+        uint256 takerFillAmount,
+        uint256[] calldata makerFillAmounts
     ) public allUnresolvedQuestionsPresent(marketId, multiOrderMaker) {
-        if (fillAmount == 0) {
+        if (takerFillAmount == 0) {
             revert InvalidFillAmount();
         }
 
-        // Validate taker order signature and parameters
-        ctfExchange.validateOrder(takerOrder);
-        ctfExchange.updateOrderStatus(takerOrder, fillAmount);
-        // Validate all maker orders signatures and parameters
-        for (uint256 i = 0; i < multiOrderMaker.length; i++) {
-            ctfExchange.validateOrder(multiOrderMaker[i]);
-            ctfExchange.updateOrderStatus(multiOrderMaker[i], fillAmount);
+        uint256 fillAmount;
+        {
+            // Validate taker order signature and parameters
+            (uint256 takingAmount, ) = ctfExchange.performOrderChecks(takerOrder, takerFillAmount);
+            // Validate all maker orders signatures and parameters
+            for (uint256 i = 0; i < multiOrderMaker.length; i++) {
+                ctfExchange.performOrderChecks(multiOrderMaker[i], makerFillAmounts[i]);
+            }
+
+            if (takerOrder.side == ICTFExchange.Side.BUY) {
+                fillAmount = takingAmount;
+            } else {
+                fillAmount = takerFillAmount;
+            }
         }
 
         // Cross-matching function that handles scenarios including resolved questions:
@@ -468,49 +410,53 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         // - Use taker's question ID as pivot instead of hardcoded 0
         // - Handle USDC flow correctly for partial market scenarios
         
-        Parsed[] memory parsedOrders = new Parsed[](multiOrderMaker.length + 1);
-        uint256 totalSellUSDC = 0;
-        uint256 totalCombinedPrice = 0;
-        
-        // Parse taker order
-        parsedOrders[0] = _parseOrder(takerOrder, fillAmount);
-        if (parsedOrders[0].side == uint8(ICTFExchange.Side.SELL)) {
-            totalSellUSDC += parsedOrders[0].payAmount;
-        }
-        totalCombinedPrice += parsedOrders[0].priceQ6;
-        
-        // Parse maker orders
-        for (uint256 i = 0; i < multiOrderMaker.length; i++) {
-            parsedOrders[i + 1] = _parseOrder(multiOrderMaker[i], fillAmount);
-            if (parsedOrders[i + 1].side == uint8(ICTFExchange.Side.SELL)) {
-                totalSellUSDC += parsedOrders[i + 1].payAmount;
+        Parsed[] memory parsedOrders;
+        uint256 totalSellUSDC;
+        {
+            parsedOrders = new Parsed[](multiOrderMaker.length + 1);
+            totalSellUSDC = 0;
+            uint256 totalCombinedPrice = 0;
+            
+            // Parse taker order
+            parsedOrders[0] = _parseOrder(takerOrder, fillAmount);
+            if (parsedOrders[0].side == uint8(ICTFExchange.Side.SELL)) {
+                totalSellUSDC += parsedOrders[0].payAmount;
             }
-            totalCombinedPrice += parsedOrders[i + 1].priceQ6;
-        }
-        
-        // Note: We can have:
-        // 1. All buy orders: 4 users buying different YES tokens (Yes1, Yes2, Yes3, Yes4)
-        // 2. All sell orders: users selling NO tokens (e.g., No Barca, No Arsenal, No Chelsea)
-        // 3. Mixed buy/sell orders: some users buying YES, some selling NO
-        
-        // Validate that the combined price of all orders equals 1
-        // This is required for cross-matching to work properly
-        // 
-        // Why this validation is crucial:
-        // 1. For cross-matching to be self-financing, the total value of all orders must balance
-        // 2. Each YES/NO token pair must sum to 1 (Yi + Ni = 1)
-        // 3. If the combined price ≠ total shares, we cannot create a balanced position
-        // 4. This prevents arbitrage and ensures the mechanism works correctly
-        // 
-        // Examples:
-        // Scenario 1 (all buy): Buy Yes1(0.25) + Buy Yes2(0.25) + Buy Yes3(0.25) + Buy Yes4(0.25) = 1.0
-        // Scenario 2 (mixed): Buy Yes1(0.25) + Sell No2(0.75) + Buy Yes3(0.25) + Sell No4(0.75) = 0.25 + 0.25 + 0.25 + 0.25 = 1.0
-        // 
-        // For sell orders, we use (1 - price) since Yi + Ni = 1
-        
-        // The total combined price must equal to one
-        if (totalCombinedPrice != ONE) {
-            revert InvalidCombinedPrice();
+            totalCombinedPrice += parsedOrders[0].priceQ6;
+            
+            // Parse maker orders
+            for (uint256 i = 0; i < multiOrderMaker.length; i++) {
+                parsedOrders[i + 1] = _parseOrder(multiOrderMaker[i], fillAmount);
+                if (parsedOrders[i + 1].side == uint8(ICTFExchange.Side.SELL)) {
+                    totalSellUSDC += parsedOrders[i + 1].payAmount;
+                }
+                totalCombinedPrice += parsedOrders[i + 1].priceQ6;
+            }
+            
+            // Note: We can have:
+            // 1. All buy orders: 4 users buying different YES tokens (Yes1, Yes2, Yes3, Yes4)
+            // 2. All sell orders: users selling NO tokens (e.g., No Barca, No Arsenal, No Chelsea)
+            // 3. Mixed buy/sell orders: some users buying YES, some selling NO
+            
+            // Validate that the combined price of all orders equals 1
+            // This is required for cross-matching to work properly
+            // 
+            // Why this validation is crucial:
+            // 1. For cross-matching to be self-financing, the total value of all orders must balance
+            // 2. Each YES/NO token pair must sum to 1 (Yi + Ni = 1)
+            // 3. If the combined price ≠ total shares, we cannot create a balanced position
+            // 4. This prevents arbitrage and ensures the mechanism works correctly
+            // 
+            // Examples:
+            // Scenario 1 (all buy): Buy Yes1(0.25) + Buy Yes2(0.25) + Buy Yes3(0.25) + Buy Yes4(0.25) = 1.0
+            // Scenario 2 (mixed): Buy Yes1(0.25) + Sell No2(0.75) + Buy Yes3(0.25) + Sell No4(0.75) = 0.25 + 0.25 + 0.25 + 0.25 = 1.0
+            // 
+            // For sell orders, we use (1 - price) since Yi + Ni = 1
+            
+            // The total combined price must equal to one
+            if (totalCombinedPrice != ONE) {
+                revert InvalidCombinedPrice();
+            }
         }
         
         // Execute cross-matching logic
