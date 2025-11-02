@@ -11,7 +11,7 @@ import {NegRiskOperator} from "./NegRiskOperator.sol";
 import {IRevNegRiskAdapter} from "./interfaces/IRevNegRiskAdapter.sol";
 import {WrappedCollateral} from "src/WrappedCollateral.sol";
 import {NegRiskIdLib} from "./libraries/NegRiskIdLib.sol";
-
+import {AssetOperations} from "lib/ctf-exchange/src/exchange/mixins/AssetOperations.sol";
 import {ICTFExchange} from "src/interfaces/ICTFExchange.sol";
 import {OrderStatus} from "lib/ctf-exchange/src/exchange/libraries/OrderStructs.sol";
 
@@ -44,7 +44,7 @@ interface ICrossMatchingAdapterEE {
  * Uses pivot index 0 (no external field) via neg.getQuestionId(marketId, 0).
  */
 
-contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMatchingAdapterEE {
+contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOperations, ICrossMatchingAdapterEE {
     // constants
     bytes32  constant PARENT = bytes32(0);
     uint256  constant ONE = 1e6; // fixed-point for price (6 decimals to match USDC)
@@ -271,6 +271,25 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
 
         // Execute cross-matching logic (fees will be collected from tokens during execution)
         _executeShortCrossMatch(parsedOrders, marketId, totalSellUSDC, fillAmount);
+
+        // Refund any leftover tokens pulled from the taker to the taker order
+        _refundLeftoverTokens(takerOrder);
+    }
+
+    function _refundLeftoverTokens(
+        ICTFExchange.OrderIntent calldata takerOrder
+    ) internal {
+        uint256 makerAssetId;
+        uint256 takerAssetId;
+        if (takerOrder.side == ICTFExchange.Side.BUY){
+            makerAssetId = 0;
+            takerAssetId = takerOrder.tokenId;
+        } else {
+            makerAssetId = takerOrder.tokenId;
+            takerAssetId = 0;
+        }
+        uint256 refund = _getBalance(makerAssetId);
+        if (refund > 0) _transfer(address(this), takerOrder.order.maker, makerAssetId, refund);
     }
 
     function _executeShortCrossMatch(
@@ -461,6 +480,9 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         
         // Execute cross-matching logic
         _executeLongCrossMatch(parsedOrders, marketId, totalSellUSDC, fillAmount);
+
+        // Refund any leftover tokens pulled from the taker to the taker order
+        _refundLeftoverTokens(takerOrder);
     }
     
     function _executeLongCrossMatch(
@@ -686,5 +708,13 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, ICrossMa
         
         // If we can't find a matching question, revert
         revert UnsupportedToken();
+    }
+
+    function getCollateral() public view override returns (address) {
+        return address(usdc);
+    }
+
+    function getCtf() public view override returns (address) {
+        return address(ctf);
     }
 }
