@@ -294,37 +294,95 @@ contract CrossMatchingAdapterHybridComplexTest is Test, TestHelper {
         // Total prices: 0.1 + 0.1 + 0.1 + 0.1 + 0.6 = 1.0
         ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionIds[4], 0, 0.6e6, 1e6, questionIds[4], 0, _user1PK);
         
-        // Record initial balances for verification
-        uint256 initialUser1USDC = usdc.balanceOf(user1);
-        uint256 initialUser2USDC = usdc.balanceOf(user2);
-        uint256 initialUser3USDC = usdc.balanceOf(user3);
-        uint256 initialUser4USDC = usdc.balanceOf(user4);
-        uint256 initialUser5USDC = usdc.balanceOf(user5);
+        // Record initial balances using arrays to reduce stack depth
+        address[] memory users = new address[](5);
+        users[0] = user1;
+        users[1] = user2;
+        users[2] = user3;
+        users[3] = user4;
+        users[4] = user5;
+        
+        uint256[] memory initialUSDC = new uint256[](5);
+        uint256[] memory initialYES = new uint256[](5);
+        uint256[] memory tokenIndices = new uint256[](5);
+        tokenIndices[0] = 4; // user1 -> yesPositionIds[4]
+        tokenIndices[1] = 0; // user2 -> yesPositionIds[0]
+        tokenIndices[2] = 1; // user3 -> yesPositionIds[1]
+        tokenIndices[3] = 2; // user4 -> yesPositionIds[2]
+        tokenIndices[4] = 3; // user5 -> yesPositionIds[3]
+        
+        for (uint256 i = 0; i < 5; i++) {
+            initialUSDC[i] = usdc.balanceOf(users[i]);
+            initialYES[i] = ctf.balanceOf(users[i], yesPositionIds[tokenIndices[i]]);
+        }
         
         // Execute hybrid match orders
         adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, 0);
-        
-        // Verify all participants received their tokens
-        // assertEq(ctf.balanceOf(user1, yesPositionIds[4]), makerFillAmounts[0], "User1 should receive YES tokens from taker order");
-        // assertEq(ctf.balanceOf(user2, yesPositionIds[0]), makerFillAmounts[0], "User2 should receive YES tokens from cross-match");
-        // assertEq(ctf.balanceOf(user3, yesPositionIds[1]), makerFillAmounts[0], "User3 should receive YES tokens from cross-match");
-        // assertEq(ctf.balanceOf(user4, yesPositionIds[2]), makerFillAmounts[0], "User4 should receive YES tokens from cross-match");
-        // assertEq(ctf.balanceOf(user5, yesPositionIds[3]), makerFillAmounts[0], "User5 should receive YES tokens from cross-match");
-        
-        // // Verify USDC balance changes (users should pay for tokens received)
-        // assertEq(usdc.balanceOf(user1), (initialUser1USDC - (makerFillAmounts[0] * takerOrder.order.price)/1e6), "User1 should pay USDC for tokens received");
-        // assertEq(usdc.balanceOf(user2), (initialUser2USDC - (makerFillAmounts[0] * makerOrders[0].orders[0].order.price)/1e6), "User2 should pay USDC for tokens received");
-        // assertEq(usdc.balanceOf(user3), (initialUser3USDC - (makerFillAmounts[0] * makerOrders[0].orders[0].order.price)/1e6), "User3 should pay USDC for tokens received");
-        // assertEq(usdc.balanceOf(user4), (initialUser4USDC - (makerFillAmounts[0] * makerOrders[0].orders[0].order.price)/1e6), "User4 should pay USDC for tokens received");
-        // assertEq(usdc.balanceOf(user5), (initialUser5USDC - (makerFillAmounts[0] * makerOrders[0].orders[0].order.price)/1e6), "User5 should pay USDC for tokens received");
-        
-        // // Verify no tokens were left in adapter
-        // for (uint256 i = 0; i < 5; i++) {
-        //     assertEq(ctf.balanceOf(address(adapter), yesPositionIds[i]), 0, 
-        //         string(abi.encodePacked("Adapter should not hold any YES tokens for question ", vm.toString(i))));
-        // }
+
+        // Verify results using helper function to reduce stack depth
+        _verifyCrossMatchResults(users, yesPositionIds, tokenIndices, initialUSDC, initialYES, takerFillAmount, makerOrders, takerOrder);
         
         console.log("Extreme price distribution test passed!");
+    }
+    
+    function _verifyCrossMatchResults(
+        address[] memory users,
+        uint256[] memory yesPositionIds,
+        uint256[] memory tokenIndices,
+        uint256[] memory initialUSDC,
+        uint256[] memory initialYES,
+        uint256[] memory takerFillAmount,
+        CrossMatchingAdapter.MakerOrder[] memory makerOrders,
+        ICTFExchange.OrderIntent memory takerOrder
+    ) internal {
+        // Verify token balances after execution
+        console.log("=== Verifying Token Balances After Hybrid Match ===");
+        
+        // In cross-match, all orders receive the same fillAmount tokens (calculated from taker order)
+        // For BUY orders: fillAmount = takerFillAmount * takerAmount / makerAmount = 0.6e6 * 1e6 / 0.6e6 = 1e6
+        uint256 expectedFillAmount = takerFillAmount[0] * takerOrder.takerAmount / takerOrder.makerAmount;
+        
+        // Verify all users received tokens
+        for (uint256 i = 0; i < 5; i++) {
+            uint256 tokenId = yesPositionIds[tokenIndices[i]];
+            assertEq(
+                ctf.balanceOf(users[i], tokenId),
+                initialYES[i] + expectedFillAmount,
+                string(abi.encodePacked("User", vm.toString(i + 1), " should receive YES tokens"))
+            );
+            console.log("User%i YES tokens: %s", i + 1, ctf.balanceOf(users[i], tokenId));
+        }
+        
+        // Verify USDC balance changes
+        console.log("=== Verifying USDC Balance Changes ===");
+        
+        // Taker (user1) should have paid USDC
+        assertEq(
+            usdc.balanceOf(users[0]),
+            initialUSDC[0] - takerFillAmount[0],
+            "User1 (taker) should pay USDC for buying YES tokens"
+        );
+        console.log("User1 USDC: %s", usdc.balanceOf(users[0]));
+        
+        // Makers should have paid their respective fill amounts
+        for (uint256 i = 1; i < 5; i++) {
+            assertEq(
+                usdc.balanceOf(users[i]),
+                initialUSDC[i] - makerOrders[0].makerFillAmounts[i - 1],
+                string(abi.encodePacked("User", vm.toString(i + 1), " (maker) should pay USDC for buying YES tokens"))
+            );
+            console.log("User%i USDC: %s", i + 1, usdc.balanceOf(users[i]));
+        }
+        
+        // Verify adapter has no remaining tokens or USDC (self-financing)
+        assertEq(usdc.balanceOf(address(adapter)), 0, "Adapter should have no remaining USDC");
+        for (uint256 i = 0; i < 5; i++) {
+            assertEq(
+                ctf.balanceOf(address(adapter), yesPositionIds[i]),
+                0,
+                string(abi.encodePacked("Adapter should have no remaining YES tokens for question ", vm.toString(i)))
+            );
+        }
     }
 }
 
