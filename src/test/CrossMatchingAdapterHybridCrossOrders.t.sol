@@ -312,6 +312,8 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper {
         tokenIndices[3] = 2; // user4 -> yesPositionIds[2]
         tokenIndices[4] = 3; // user5 -> yesPositionIds[3]
         
+        uint256 initialVaultBalance = usdc.balanceOf(vault);
+        
         for (uint256 i = 0; i < 5; i++) {
             initialUSDC[i] = usdc.balanceOf(users[i]);
             initialYES[i] = ctf.balanceOf(users[i], yesPositionIds[tokenIndices[i]]);
@@ -321,7 +323,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper {
         adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, 0);
 
         // Verify results using helper function to reduce stack depth
-        _verifyCrossMatchResults(users, yesPositionIds, tokenIndices, initialUSDC, initialYES, takerFillAmount, makerOrders, takerOrder);
+        _verifyCrossMatchResults(users, yesPositionIds, tokenIndices, initialUSDC, initialYES, initialVaultBalance, takerFillAmount, makerOrders, takerOrder);
         
         console.log("Extreme price distribution test passed!");
     }
@@ -399,9 +401,6 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper {
         users[3] = user4; // maker 3
         users[4] = user5; // maker 4
         
-        uint256[] memory initialUSDC = new uint256[](5);
-        uint256[] memory initialYES = new uint256[](5);
-        uint256[] memory initialNO = new uint256[](5);
         uint256[] memory tokenIndices = new uint256[](5);
         tokenIndices[0] = 4; // user1 -> noPositionId4
         tokenIndices[1] = 0; // user2 -> yesPositionIds[0]
@@ -409,64 +408,156 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper {
         tokenIndices[3] = 2; // user4 -> yesPositionIds[2]
         tokenIndices[4] = 3; // user5 -> yesPositionIds[3]
         
+        // Store all initial balances in arrays to reduce stack depth
+        uint256[] memory initialBalances = new uint256[](11); // 5 USDC + 4 YES + 1 NO + 1 vault
+        initialBalances[10] = usdc.balanceOf(vault); // Vault balance
+        
         for (uint256 i = 0; i < 5; i++) {
-            initialUSDC[i] = usdc.balanceOf(users[i]);
+            initialBalances[i] = usdc.balanceOf(users[i]); // USDC balances
             if (i == 0) {
-                initialNO[i] = ctf.balanceOf(users[i], noPositionId4);
+                initialBalances[9] = ctf.balanceOf(users[i], noPositionId4); // NO balance
             } else {
-                initialYES[i] = ctf.balanceOf(users[i], yesPositionIds[tokenIndices[i]]);
+                initialBalances[4 + i] = ctf.balanceOf(users[i], yesPositionIds[tokenIndices[i]]); // YES balances
             }
         }
         
         // Execute hybrid match orders
         adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, 0);
 
-        // Verify results inline to avoid stack too deep
-        console.log("=== Verifying Token Balances After Hybrid Match ===");
-        
-        // In cross-match, fillAmount is the same for all orders (1e6 tokens)
-        // For BUY order: fillAmount = takerFillAmount * takerAmount / makerAmount = 0.4e6 * 1e6 / 0.4e6 = 1e6
-        uint256 fillAmount = takerFillAmount[0] * 1e6 / 0.4e6;
-        
-        // Taker (user1) should receive NO tokens (buying NO with SHORT intent)
-        assertEq(ctf.balanceOf(users[0], noPositionId4), initialNO[0] + fillAmount, "User1 (taker) should receive NO tokens from buying");
-        console.log("User1 NO tokens: %s", ctf.balanceOf(users[0], noPositionId4));
-        
-        // Makers should have sold their YES tokens
-        for (uint256 i = 1; i < 5; i++) {
-            uint256 tokenIdx = tokenIndices[i];
-            uint256 yesId = yesPositionIds[tokenIdx];
-            uint256 balance = ctf.balanceOf(users[i], yesId);
-            assertEq(balance, initialYES[i] - makerOrders[0].makerFillAmounts[i - 1], 
-                string(abi.encodePacked("User", vm.toString(i + 1), " should have sold YES tokens")));
-            console.log("User%i YES tokens: %s", i + 1, balance);
-        }
-        
-        // Verify USDC balance changes
-        console.log("=== Verifying USDC Balance Changes ===");
-        
-        // Taker (user1) should have paid USDC for buying NO tokens
-        assertEq(usdc.balanceOf(users[0]), initialUSDC[0] - takerFillAmount[0], "User1 (taker) should pay USDC for buying NO tokens");
-        console.log("User1 USDC: %s", usdc.balanceOf(users[0]));
-        
-        // Makers should have received USDC for selling
-        for (uint256 i = 1; i < 5; i++) {
-            uint256 expectedUSDC = makerOrders[0].makerFillAmounts[i - 1] * makerOrders[0].orders[i - 1].takerAmount / makerOrders[0].orders[i - 1].makerAmount;
-            assertEq(usdc.balanceOf(users[i]), initialUSDC[i] + expectedUSDC, 
-                string(abi.encodePacked("User", vm.toString(i + 1), " should receive USDC for selling YES tokens")));
-            console.log("User%i USDC: %s", i + 1, usdc.balanceOf(users[i]));
-        }
-        
-        // Verify adapter has no remaining tokens or USDC (self-financing)
-        assertEq(usdc.balanceOf(address(adapter)), 0, "Adapter should have no remaining USDC");
-        for (uint256 i = 0; i < 5; i++) {
-            assertEq(ctf.balanceOf(address(adapter), yesPositionIds[i]), 0, 
-                string(abi.encodePacked("Adapter should have no remaining YES tokens for question ", vm.toString(i))));
-        }
-        uint256 adapterNO = ctf.balanceOf(address(adapter), noPositionId4);
-        assertEq(adapterNO, 0, "Adapter should have no remaining NO tokens for question 4");
+        // Verify results using helper function to reduce stack depth
+        _verifyCrossMatchSellersResults(
+            users,
+            yesPositionIds,
+            tokenIndices,
+            noPositionId4,
+            initialBalances,
+            takerFillAmount,
+            makerOrders
+        );
         
         console.log("Cross match sellers test passed!");
+    }
+
+    function testHybridMatchCrossOrdersRefundLeftoverTokens() public {
+        console.log("=== Testing Hybrid Match Cross Orders ===");
+        
+        // Create 5 questions with extreme price distributions
+        bytes32[] memory questionIds = new bytes32[](3);
+        uint256[] memory yesPositionIds = new uint256[](3);
+
+        questionIds[0] = questionId;
+        yesPositionIds[0] = yesPositionId;
+
+        
+        for (uint256 i = 1; i < 3; i++) {
+            questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
+            yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
+            uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
+            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
+        }
+        
+        CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
+        makerOrders[0].makerFillAmounts = new uint256[](2);
+        makerOrders[0].makerFillAmounts[0] = 0.3e6;
+        makerOrders[0].makerFillAmounts[1] = 0.2e6;
+        
+        makerOrders[0].orders = new ICTFExchange.OrderIntent[](2);
+        makerOrders[0].orders[0] = _createAndSignOrder(user2, yesPositionIds[0], 0, 0.3e6, 1e6, questionIds[0], 0, _user2PK);
+        makerOrders[0].orders[1] = _createAndSignOrder(user3, yesPositionIds[1], 0, 0.2e6, 1e6, questionIds[1], 0, _user3PK);
+        makerOrders[0].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
+        uint256[] memory takerFillAmount = new uint256[](1);
+        takerFillAmount[0] = 0.6e6;
+
+        // Taker order - price 0.6
+        // Total prices: 0.1 + 0.1 + 0.1 + 0.1 + 0.6 = 1.0
+        ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionIds[2], 0, 0.6e6, 1e6, questionIds[2], 0, _user1PK);
+        
+        // Record initial balances before execution (using arrays to reduce stack depth)
+        uint256[] memory initialBalances = new uint256[](7);
+        initialBalances[0] = usdc.balanceOf(user1);
+        initialBalances[1] = usdc.balanceOf(user2);
+        initialBalances[2] = usdc.balanceOf(user3);
+        initialBalances[3] = ctf.balanceOf(user1, yesPositionIds[2]);
+        initialBalances[4] = ctf.balanceOf(user2, yesPositionIds[0]);
+        initialBalances[5] = ctf.balanceOf(user3, yesPositionIds[1]);
+        initialBalances[6] = usdc.balanceOf(vault); // Vault balance
+        
+        // Execute hybrid match orders
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, 0);
+
+        // Verify results using helper function to reduce stack depth
+        _verifyCrossMatchRefundResults(
+            yesPositionIds,
+            initialBalances,
+            takerFillAmount,
+            makerOrders,
+            takerOrder
+        );
+        
+        console.log("Hybrid Match Cross Orders Refund test passed!");
+    }
+
+    function testHybridMatchCrossOrdersMixedLong() public {
+        console.log("=== Testing Hybrid Match Cross Orders Mixed Long ===");
+        
+        // Create 5 questions with extreme price distributions
+        bytes32[] memory questionIds = new bytes32[](3);
+        uint256[] memory yesPositionIds = new uint256[](3);
+
+        questionIds[0] = questionId;
+        yesPositionIds[0] = yesPositionId;
+        
+        for (uint256 i = 1; i < 3; i++) {
+            questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
+            yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
+            uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
+            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
+        }
+
+        uint256 noPosId1 = negRiskAdapter.getPositionId(questionIds[1], false);
+        
+        CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
+        makerOrders[0].makerFillAmounts = new uint256[](2);
+        makerOrders[0].makerFillAmounts[0] = 0.3e6;
+        makerOrders[0].makerFillAmounts[1] = 1e6;
+
+        _mintTokensToUser(user3, noPosId1, 1e6);
+        
+        makerOrders[0].orders = new ICTFExchange.OrderIntent[](2);
+        makerOrders[0].orders[0] = _createAndSignOrder(user2, yesPositionIds[0], 0, 0.3e6, 1e6, questionIds[0], 0, _user2PK);
+        makerOrders[0].orders[1] = _createAndSignOrder(user3, noPosId1, 1, 1e6, 0.9e6, questionIds[1], 0, _user3PK);
+        makerOrders[0].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
+        uint256[] memory takerFillAmount = new uint256[](1);
+        takerFillAmount[0] = 0.6e6;
+
+        // Taker order - price 0.6
+        // Total prices: 0.1 + 0.1 + 0.1 + 0.1 + 0.6 = 1.0
+        ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionIds[2], 0, 0.6e6, 1e6, questionIds[2], 0, _user1PK);
+        
+        // Record initial balances before execution (using arrays to reduce stack depth)
+        uint256[] memory initialBalances = new uint256[](7);
+        initialBalances[0] = usdc.balanceOf(user1);
+        initialBalances[1] = usdc.balanceOf(user2);
+        initialBalances[2] = usdc.balanceOf(user3);
+        initialBalances[3] = ctf.balanceOf(user1, yesPositionIds[2]);
+        initialBalances[4] = ctf.balanceOf(user2, yesPositionIds[0]);
+        initialBalances[5] = ctf.balanceOf(user3, noPosId1);
+        initialBalances[6] = usdc.balanceOf(vault); // Vault balance
+        
+        // Execute hybrid match orders
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, 0);
+
+        // Verify results using helper function to reduce stack depth
+        _verifyCrossMatchMixedLongResults(
+            yesPositionIds,
+            noPosId1,
+            initialBalances,
+            takerFillAmount,
+            makerOrders,
+            takerOrder
+        );
+        
+        console.log("Mixed Long cross match test passed!");
     }
     
     function _verifyCrossMatchResults(
@@ -475,6 +566,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper {
         uint256[] memory tokenIndices,
         uint256[] memory initialUSDC,
         uint256[] memory initialYES,
+        uint256 initialVaultBalance,
         uint256[] memory takerFillAmount,
         CrossMatchingAdapter.MakerOrder[] memory makerOrders,
         ICTFExchange.OrderIntent memory takerOrder
@@ -489,12 +581,13 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper {
         // Verify all users received tokens
         for (uint256 i = 0; i < 5; i++) {
             uint256 tokenId = yesPositionIds[tokenIndices[i]];
+            uint256 balance = ctf.balanceOf(users[i], tokenId);
             assertEq(
-                ctf.balanceOf(users[i], tokenId),
+                balance,
                 initialYES[i] + expectedFillAmount,
                 string(abi.encodePacked("User", vm.toString(i + 1), " should receive YES tokens"))
             );
-            console.log("User%i YES tokens: %s", i + 1, ctf.balanceOf(users[i], tokenId));
+            console.log("User%i YES tokens: %s", i + 1, balance);
         }
         
         // Verify USDC balance changes
@@ -527,31 +620,38 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper {
                 string(abi.encodePacked("Adapter should have no remaining YES tokens for question ", vm.toString(i)))
             );
         }
+        
+        // Verify vault balance remains the same (self-financing)
+        assertEq(usdc.balanceOf(vault), initialVaultBalance, "Vault balance should remain the same");
+        console.log("Vault USDC balance: %s (unchanged)", usdc.balanceOf(vault));
     }
     
-    function _verifyCrossMatchSellersResultsInline(
+    function _verifyCrossMatchSellersResults(
         address[] memory users,
         uint256[] memory yesPositionIds,
         uint256[] memory tokenIndices,
-        uint256[] memory initialUSDC,
-        uint256[] memory initialYES,
-        uint256[] memory initialNO,
         uint256 noPositionId4,
+        uint256[] memory initialBalances,
         uint256[] memory takerFillAmount,
         CrossMatchingAdapter.MakerOrder[] memory makerOrders
     ) internal {
+        // initialBalances array indices:
+        // [0-4] = initialUSDC for users 0-4
+        // [5-8] = initialYES for users 1-4 (indices 5,6,7,8)
+        // [9] = initialNO for user 0
+        // [10] = initialVaultBalance
+        
         // Verify token balances after execution
         console.log("=== Verifying Token Balances After Hybrid Match ===");
         
         // In cross-match, fillAmount is the same for all orders (1e6 tokens)
-        // For BUY order: fillAmount = takerFillAmount * takerAmount / makerAmount = 0.6e6 * 1e6 / 0.6e6 = 1e6
-        // Taker order: makerAmount=0.6e6, takerAmount=1e6
-        uint256 fillAmount = takerFillAmount[0] * 1e6 / 0.6e6;
+        // For BUY order: fillAmount = takerFillAmount * takerAmount / makerAmount = 0.4e6 * 1e6 / 0.4e6 = 1e6
+        uint256 fillAmount = takerFillAmount[0] * 1e6 / 0.4e6;
         
         // Taker (user1) should receive NO tokens (buying NO with SHORT intent)
         assertEq(
             ctf.balanceOf(users[0], noPositionId4),
-            initialNO[0] + fillAmount,
+            initialBalances[9] + fillAmount,
             "User1 (taker) should receive NO tokens from buying"
         );
         console.log("User1 NO tokens: %s", ctf.balanceOf(users[0], noPositionId4));
@@ -560,7 +660,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper {
         for (uint256 i = 1; i < 5; i++) {
             assertEq(
                 ctf.balanceOf(users[i], yesPositionIds[tokenIndices[i]]),
-                initialYES[i] - makerOrders[0].makerFillAmounts[i - 1],
+                initialBalances[4 + i] - makerOrders[0].makerFillAmounts[i - 1],
                 string(abi.encodePacked("User", vm.toString(i + 1), " should have sold YES tokens"))
             );
             console.log("User%i YES tokens: %s", i + 1, ctf.balanceOf(users[i], yesPositionIds[tokenIndices[i]]));
@@ -570,10 +670,9 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper {
         console.log("=== Verifying USDC Balance Changes ===");
         
         // Taker (user1) should have paid USDC for buying NO tokens
-        // For BUY order: pays takerFillAmount (0.6e6) USDC
         assertEq(
             usdc.balanceOf(users[0]),
-            initialUSDC[0] - takerFillAmount[0],
+            initialBalances[0] - takerFillAmount[0],
             "User1 (taker) should pay USDC for buying NO tokens"
         );
         console.log("User1 USDC: %s", usdc.balanceOf(users[0]));
@@ -584,7 +683,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper {
             uint256 expectedUSDC = makerOrders[0].makerFillAmounts[i - 1] * makerOrders[0].orders[i - 1].takerAmount / makerOrders[0].orders[i - 1].makerAmount;
             assertEq(
                 usdc.balanceOf(users[i]),
-                initialUSDC[i] + expectedUSDC,
+                initialBalances[i] + expectedUSDC,
                 string(abi.encodePacked("User", vm.toString(i + 1), " should receive USDC for selling YES tokens"))
             );
             console.log("User%i USDC: %s", i + 1, usdc.balanceOf(users[i]));
@@ -600,6 +699,201 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper {
             );
         }
         assertEq(ctf.balanceOf(address(adapter), noPositionId4), 0, "Adapter should have no remaining NO tokens for question 4");
+        
+        // Verify vault balance remains the same (self-financing)
+        assertEq(usdc.balanceOf(vault), initialBalances[10], "Vault balance should remain the same");
+        console.log("Vault USDC balance: %s (unchanged)", usdc.balanceOf(vault));
+    }
+    
+    function _verifyCrossMatchMixedLongResults(
+        uint256[] memory yesPositionIds,
+        uint256 noPosId1,
+        uint256[] memory initialBalances,
+        uint256[] memory takerFillAmount,
+        CrossMatchingAdapter.MakerOrder[] memory makerOrders,
+        ICTFExchange.OrderIntent memory takerOrder
+    ) internal {
+        // initialBalances array indices:
+        // [0] = initialUSDC1, [1] = initialUSDC2, [2] = initialUSDC3
+        // [3] = initialYES1, [4] = initialYES2, [5] = initialNO3, [6] = initialVaultBalance
+        
+        // Verify token balances after execution
+        console.log("=== Verifying Token Balances After Hybrid Match ===");
+        
+        // In cross-match, all orders receive the same fillAmount tokens
+        // For BUY orders: fillAmount = takerFillAmount * takerAmount / makerAmount = 0.6e6 * 1e6 / 0.6e6 = 1e6
+        uint256 expectedFillAmount = takerFillAmount[0] * takerOrder.takerAmount / takerOrder.makerAmount;
+        
+        // User1 (taker) should receive YES2 tokens
+        assertEq(
+            ctf.balanceOf(user1, yesPositionIds[2]),
+            initialBalances[3] + expectedFillAmount,
+            "User1 (taker) should receive YES2 tokens"
+        );
+        console.log("User1 YES2 tokens: %s", ctf.balanceOf(user1, yesPositionIds[2]));
+        
+        // User2 (maker) should receive YES0 tokens
+        // For BUY order with makerFillAmount=0.3e6: fillAmount = makerFillAmount * takerAmount / makerAmount = 0.3e6 * 1e6 / 0.3e6 = 1e6
+        uint256 fillAmountUser2 = makerOrders[0].makerFillAmounts[0] * makerOrders[0].orders[0].takerAmount / makerOrders[0].orders[0].makerAmount;
+        assertEq(
+            ctf.balanceOf(user2, yesPositionIds[0]),
+            initialBalances[4] + fillAmountUser2,
+            "User2 (maker) should receive YES0 tokens"
+        );
+        console.log("User2 YES0 tokens: %s", ctf.balanceOf(user2, yesPositionIds[0]));
+        
+        // User3 (maker) should have sold NO1 tokens
+        assertEq(
+            ctf.balanceOf(user3, noPosId1),
+            initialBalances[5] - makerOrders[0].makerFillAmounts[1],
+            "User3 (maker) should have sold NO1 tokens"
+        );
+        console.log("User3 NO1 tokens: %s", ctf.balanceOf(user3, noPosId1));
+        
+        // Verify USDC balance changes
+        console.log("=== Verifying USDC Balance Changes ===");
+        
+        // User1 (taker) should have paid USDC for buying YES2 tokens
+        assertEq(
+            usdc.balanceOf(user1),
+            initialBalances[0] - takerFillAmount[0],
+            "User1 (taker) should pay USDC for buying YES2 tokens"
+        );
+        console.log("User1 USDC: %s", usdc.balanceOf(user1));
+        
+        // User2 (maker) should have paid USDC for buying YES0 tokens
+        assertEq(
+            usdc.balanceOf(user2),
+            initialBalances[1] - makerOrders[0].makerFillAmounts[0],
+            "User2 (maker) should pay USDC for buying YES0 tokens"
+        );
+        console.log("User2 USDC: %s", usdc.balanceOf(user2));
+        
+        // User3 (maker) should have received USDC for selling NO1 tokens
+        // For SELL order: receive takerAmount per makerAmount sold = 0.9e6 * 1e6 / 1e6 = 0.9e6
+        uint256 expectedUSDCUser3 = makerOrders[0].makerFillAmounts[1] * makerOrders[0].orders[1].takerAmount / makerOrders[0].orders[1].makerAmount;
+        assertEq(
+            usdc.balanceOf(user3),
+            initialBalances[2] + expectedUSDCUser3,
+            "User3 (maker) should receive USDC for selling NO1 tokens"
+        );
+        console.log("User3 USDC: %s", usdc.balanceOf(user3));
+        
+        // Verify adapter has no remaining tokens or USDC (self-financing)
+        assertEq(usdc.balanceOf(address(adapter)), 0, "Adapter should have no remaining USDC");
+        for (uint256 i = 0; i < 3; i++) {
+            assertEq(
+                ctf.balanceOf(address(adapter), yesPositionIds[i]),
+                0,
+                string(abi.encodePacked("Adapter should have no remaining YES tokens for question ", vm.toString(i)))
+            );
+        }
+        assertEq(
+            ctf.balanceOf(address(adapter), noPosId1),
+            0,
+            "Adapter should have no remaining NO tokens for question 1"
+        );
+        
+        // Verify vault balance remains the same (self-financing)
+        assertEq(usdc.balanceOf(vault), initialBalances[6], "Vault balance should remain the same");
+        console.log("Vault USDC balance: %s (unchanged)", usdc.balanceOf(vault));
+    }
+    
+    function _verifyCrossMatchRefundResults(
+        uint256[] memory yesPositionIds,
+        uint256[] memory initialBalances,
+        uint256[] memory takerFillAmount,
+        CrossMatchingAdapter.MakerOrder[] memory makerOrders,
+        ICTFExchange.OrderIntent memory takerOrder
+    ) internal {
+        // initialBalances array indices:
+        // [0] = initialUSDC1, [1] = initialUSDC2, [2] = initialUSDC3
+        // [3] = initialYES1, [4] = initialYES2, [5] = initialYES3, [6] = initialVaultBalance
+        
+        // Verify token balances after execution
+        console.log("=== Verifying Token Balances After Hybrid Match ===");
+        
+        // In cross-match, all orders receive the same fillAmount tokens
+        // For BUY orders: fillAmount = takerFillAmount * takerAmount / makerAmount = 0.6e6 * 1e6 / 0.6e6 = 1e6
+        uint256 expectedFillAmount = takerFillAmount[0] * takerOrder.takerAmount / takerOrder.makerAmount;
+        
+        // User1 (taker) should receive YES2 tokens
+        assertEq(
+            ctf.balanceOf(user1, yesPositionIds[2]),
+            initialBalances[3] + expectedFillAmount,
+            "User1 (taker) should receive YES2 tokens"
+        );
+        console.log("User1 YES2 tokens: %s", ctf.balanceOf(user1, yesPositionIds[2]));
+        
+        // User2 (maker) should receive YES0 tokens
+        // For BUY order with makerFillAmount=0.3e6: fillAmount = makerFillAmount * takerAmount / makerAmount = 0.3e6 * 1e6 / 0.3e6 = 1e6
+        uint256 fillAmountUser2 = makerOrders[0].makerFillAmounts[0] * makerOrders[0].orders[0].takerAmount / makerOrders[0].orders[0].makerAmount;
+        assertEq(
+            ctf.balanceOf(user2, yesPositionIds[0]),
+            initialBalances[4] + fillAmountUser2,
+            "User2 (maker) should receive YES0 tokens"
+        );
+        console.log("User2 YES0 tokens: %s", ctf.balanceOf(user2, yesPositionIds[0]));
+        
+        // User3 (maker) should receive YES1 tokens
+        // For BUY order with makerFillAmount=0.2e6: fillAmount = makerFillAmount * takerAmount / makerAmount = 0.2e6 * 1e6 / 0.2e6 = 1e6
+        uint256 fillAmountUser3 = makerOrders[0].makerFillAmounts[1] * makerOrders[0].orders[1].takerAmount / makerOrders[0].orders[1].makerAmount;
+        assertEq(
+            ctf.balanceOf(user3, yesPositionIds[1]),
+            initialBalances[5] + fillAmountUser3,
+            "User3 (maker) should receive YES1 tokens"
+        );
+        console.log("User3 YES1 tokens: %s", ctf.balanceOf(user3, yesPositionIds[1]));
+        
+        // Verify USDC balance changes
+        console.log("=== Verifying USDC Balance Changes ===");
+        
+        // Total fill amounts: 0.3e6 + 0.2e6 + 0.6e6 = 1.1e6, but cross-match only needs 1.0e6
+        // So user1 (taker) should receive 0.1e6 USDC refund
+        // User1 (taker) should have paid takerFillAmount but get refund of 0.1e6
+        // Expected: initialUSDC[0] - takerFillAmount[0] + 0.1e6
+        uint256 expectedRefund = 0.1e6;
+        assertEq(
+            usdc.balanceOf(user1),
+            initialBalances[0] - takerFillAmount[0] + expectedRefund,
+            "User1 (taker) should pay USDC and receive 0.1e6 refund"
+        );
+        console.log("User1 USDC: %s (should have refund of 0.1e6)", usdc.balanceOf(user1));
+        
+        // User2 (maker) should have paid USDC for buying YES0 tokens
+        assertEq(
+            usdc.balanceOf(user2),
+            initialBalances[1] - makerOrders[0].makerFillAmounts[0],
+            "User2 (maker) should pay USDC for buying YES0 tokens"
+        );
+        console.log("User2 USDC: %s", usdc.balanceOf(user2));
+        
+        // User3 (maker) should have paid USDC for buying YES1 tokens
+        assertEq(
+            usdc.balanceOf(user3),
+            initialBalances[2] - makerOrders[0].makerFillAmounts[1],
+            "User3 (maker) should pay USDC for buying YES1 tokens"
+        );
+        console.log("User3 USDC: %s", usdc.balanceOf(user3));
+        
+        // Verify adapter has no remaining tokens or USDC (self-financing)
+        assertEq(usdc.balanceOf(address(adapter)), 0, "Adapter should have no remaining USDC");
+        for (uint256 i = 0; i < 3; i++) {
+            assertEq(
+                ctf.balanceOf(address(adapter), yesPositionIds[i]),
+                0,
+                string(abi.encodePacked("Adapter should have no remaining YES tokens for question ", vm.toString(i)))
+            );
+        }
+        
+        // Verify vault balance remains the same (self-financing)
+        assertEq(usdc.balanceOf(vault), initialBalances[6], "Vault balance should remain the same");
+        console.log("Vault USDC balance: %s (unchanged)", usdc.balanceOf(vault));
+    }
+    
+    function _checkVaultBalanceUnchanged(uint256 initialBalance) internal {
+        assertEq(usdc.balanceOf(vault), initialBalance, "Vault balance should remain the same");
+        console.log("Vault USDC balance: %s (unchanged)", usdc.balanceOf(vault));
     }
 }
 

@@ -264,7 +264,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
             }
 
             // The total combined price must equal to one
-            if (totalCombinedPrice != ONE) {
+            if (totalCombinedPrice < ONE) {
                 revert InvalidCombinedPrice();
             }
         }
@@ -280,13 +280,10 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         ICTFExchange.OrderIntent calldata takerOrder
     ) internal {
         uint256 makerAssetId;
-        uint256 takerAssetId;
         if (takerOrder.side == ICTFExchange.Side.BUY){
             makerAssetId = 0;
-            takerAssetId = takerOrder.tokenId;
         } else {
             makerAssetId = takerOrder.tokenId;
-            takerAssetId = 0;
         }
         uint256 refund = _getBalance(makerAssetId);
         if (refund > 0) _transfer(address(this), takerOrder.order.maker, makerAssetId, refund);
@@ -473,7 +470,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
             // For sell orders, we use (1 - price) since Yi + Ni = 1
             
             // The total combined price must equal to one
-            if (totalCombinedPrice != ONE) {
+            if (totalCombinedPrice < ONE) {
                 revert InvalidCombinedPrice();
             }
         }
@@ -532,12 +529,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         // STEP 5: Return any remaining USDC to the vault to maintain self-financing
         // Since we're taking USDC from the vault upfront for seller returns,
         // we need to return it back to the vault
-        uint256 remainingUSDC = usdc.balanceOf(address(this));
-        if (remainingUSDC == totalVaultUSDC && remainingUSDC == totalSellUSDC) {
-            usdc.transfer(neg.vault(), remainingUSDC);
-        } else {
-            revert InvalidUSDCBalance();
-        }
+        usdc.transfer(neg.vault(), totalVaultUSDC);
     }
     
     function _handleSellOrders(
