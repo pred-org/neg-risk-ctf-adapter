@@ -559,6 +559,120 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper {
         
         console.log("Mixed Long cross match test passed!");
     }
+
+    function testHybridMatchCrossOrdersMixedLongResolvedQuestion() public {
+        console.log("=== Testing Hybrid Match Cross Orders Mixed Long Resolved Question ===");
+        
+        // Create 5 questions with extreme price distributions
+        bytes32[] memory questionIds = new bytes32[](4);
+        uint256[] memory yesPositionIds = new uint256[](4);
+
+        questionIds[0] = questionId;
+        yesPositionIds[0] = yesPositionId;
+        
+        for (uint256 i = 1; i < 4; i++) {
+            questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
+            yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
+            uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
+            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
+        }
+
+        vm.prank(oracle);
+        negRiskOperator.reportPayouts(bytes32(uint256(4)), dummyPayout);
+
+        vm.warp(block.timestamp + 2 * negRiskOperator.DELAY_PERIOD());
+
+        negRiskOperator.resolveQuestion(questionIds[3]);
+
+        uint256 noPosId1 = negRiskAdapter.getPositionId(questionIds[1], false);
+        
+        CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
+        makerOrders[0].makerFillAmounts = new uint256[](2);
+        makerOrders[0].makerFillAmounts[0] = 0.3e6;
+        makerOrders[0].makerFillAmounts[1] = 1e6;
+
+        _mintTokensToUser(user3, noPosId1, 1e6);
+        
+        makerOrders[0].orders = new ICTFExchange.OrderIntent[](2);
+        makerOrders[0].orders[0] = _createAndSignOrder(user2, yesPositionIds[0], 0, 0.3e6, 1e6, questionIds[0], 0, _user2PK);
+        makerOrders[0].orders[1] = _createAndSignOrder(user3, noPosId1, 1, 1e6, 0.9e6, questionIds[1], 0, _user3PK);
+        makerOrders[0].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
+        uint256[] memory takerFillAmount = new uint256[](1);
+        takerFillAmount[0] = 0.6e6;
+
+        // Taker order - price 0.6
+        // Total prices: 0.1 + 0.1 + 0.1 + 0.1 + 0.6 = 1.0
+        ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionIds[2], 0, 0.6e6, 1e6, questionIds[2], 0, _user1PK);
+        
+        // Record initial balances before execution (using arrays to reduce stack depth)
+        uint256[] memory initialBalances = new uint256[](7);
+        initialBalances[0] = usdc.balanceOf(user1);
+        initialBalances[1] = usdc.balanceOf(user2);
+        initialBalances[2] = usdc.balanceOf(user3);
+        initialBalances[3] = ctf.balanceOf(user1, yesPositionIds[2]);
+        initialBalances[4] = ctf.balanceOf(user2, yesPositionIds[0]);
+        initialBalances[5] = ctf.balanceOf(user3, noPosId1);
+        initialBalances[6] = usdc.balanceOf(vault); // Vault balance
+        
+        // Execute hybrid match orders
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, 0);
+
+        // Verify results using helper function to reduce stack depth
+        _verifyCrossMatchMixedLongResults(
+            yesPositionIds,
+            noPosId1,
+            initialBalances,
+            takerFillAmount,
+            makerOrders,
+            takerOrder
+        );
+        
+        console.log("Mixed Long cross match test passed!");
+    }
+
+    function testHybridMatchCrossOrdersMixedLongResolvedQuestionFails() public {
+        console.log("=== Testing Hybrid Match Cross Orders Mixed Long Resolved Question Fail ===");
+        
+        // Create 5 questions with extreme price distributions
+        bytes32[] memory questionIds = new bytes32[](4);
+        uint256[] memory yesPositionIds = new uint256[](4);
+
+        questionIds[0] = questionId;
+        yesPositionIds[0] = yesPositionId;
+        
+        for (uint256 i = 1; i < 4; i++) {
+            questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
+            yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
+            uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
+            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
+        }
+
+        uint256 noPosId1 = negRiskAdapter.getPositionId(questionIds[1], false);
+        
+        CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
+        makerOrders[0].makerFillAmounts = new uint256[](2);
+        makerOrders[0].makerFillAmounts[0] = 0.3e6;
+        makerOrders[0].makerFillAmounts[1] = 1e6;
+
+        _mintTokensToUser(user3, noPosId1, 1e6);
+        
+        makerOrders[0].orders = new ICTFExchange.OrderIntent[](2);
+        makerOrders[0].orders[0] = _createAndSignOrder(user2, yesPositionIds[0], 0, 0.3e6, 1e6, questionIds[0], 0, _user2PK);
+        makerOrders[0].orders[1] = _createAndSignOrder(user3, noPosId1, 1, 1e6, 0.9e6, questionIds[1], 0, _user3PK);
+        makerOrders[0].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
+        uint256[] memory takerFillAmount = new uint256[](1);
+        takerFillAmount[0] = 0.6e6;
+
+        // Taker order - price 0.6
+        // Total prices: 0.1 + 0.1 + 0.1 + 0.1 + 0.6 = 1.0
+        ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionIds[2], 0, 0.6e6, 1e6, questionIds[2], 0, _user1PK);
+        
+        // Execute hybrid match orders
+        vm.expectRevert(abi.encodeWithSelector(ICrossMatchingAdapterEE.MissingUnresolvedQuestion.selector, questionIds[3]));
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, 0);
+        
+        console.log("Mixed Long cross match test failed!");
+    }
     
     function _verifyCrossMatchResults(
         address[] memory users,
