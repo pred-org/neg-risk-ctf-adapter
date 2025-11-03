@@ -86,12 +86,6 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper {
         revNegRiskAdapter = new RevNegRiskAdapter(address(ctf), address(usdc), vault, INegRiskAdapter(address(negRiskAdapter)));
         vm.label(address(revNegRiskAdapter), "RevNegRiskAdapter");
         
-        // Add RevNegRiskAdapter as owner of WrappedCollateral so it can mint tokens
-        // We need to call this from the NegRiskAdapter since it's the owner
-        vm.startPrank(address(negRiskAdapter));
-        ctf.setApprovalForAll(address(ctfExchange), true);
-        negRiskAdapter.wcol().addOwner(address(revNegRiskAdapter));
-        vm.stopPrank();
         negRiskAdapter.addAdmin(address(ctfExchange));
 
         vm.startPrank(address(ctfExchange));
@@ -103,10 +97,22 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper {
         adapter = new CrossMatchingAdapter(negRiskOperator, IERC20(address(usdc)), ICTFExchange(address(ctfExchange)), IRevNegRiskAdapter(address(revNegRiskAdapter)));
         vm.label(address(adapter), "CrossMatchingAdapter");
 
+        // Add RevNegRiskAdapter as owner of WrappedCollateral so it can mint tokens
+        // We need to call this from the NegRiskAdapter since it's the owner
+        vm.startPrank(address(negRiskAdapter));
+        ctf.setApprovalForAll(address(ctfExchange), true);
+        negRiskAdapter.wcol().addOwner(address(revNegRiskAdapter));
+        negRiskAdapter.wcol().addOwner(address(adapter));
+        vm.stopPrank();
+
         // Setup vault with USDC and approve adapter
         MockUSDC(address(usdc)).mint(address(vault), 1000000000e6);
         vm.startPrank(address(vault));
         MockUSDC(address(usdc)).approve(address(adapter), type(uint256).max);
+        vm.stopPrank();
+
+        vm.startPrank(address(adapter));
+        MockUSDC(address(usdc)).approve(address(negRiskAdapter.wcol()), type(uint256).max);
         vm.stopPrank();
 
         // Set up test users
