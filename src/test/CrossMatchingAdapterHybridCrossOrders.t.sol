@@ -94,7 +94,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper {
         vm.stopPrank();
 
         // Deploy CrossMatchingAdapter
-        adapter = new CrossMatchingAdapter(negRiskOperator, IERC20(address(usdc)), ICTFExchange(address(ctfExchange)), IRevNegRiskAdapter(address(revNegRiskAdapter)));
+        adapter = new CrossMatchingAdapter(negRiskOperator, ICTFExchange(address(ctfExchange)), IRevNegRiskAdapter(address(revNegRiskAdapter)));
         vm.label(address(adapter), "CrossMatchingAdapter");
 
         // Add RevNegRiskAdapter as owner of WrappedCollateral so it can mint tokens

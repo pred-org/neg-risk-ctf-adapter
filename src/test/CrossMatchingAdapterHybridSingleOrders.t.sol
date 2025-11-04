@@ -100,7 +100,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
         vm.stopPrank();
 
         // Deploy CrossMatchingAdapter
-        adapter = new CrossMatchingAdapter(negRiskOperator, IERC20(address(usdc)), ICTFExchange(address(ctfExchange)), IRevNegRiskAdapter(address(revNegRiskAdapter)));
+        adapter = new CrossMatchingAdapter(negRiskOperator, ICTFExchange(address(ctfExchange)), IRevNegRiskAdapter(address(revNegRiskAdapter)));
         vm.label(address(adapter), "CrossMatchingAdapter");
 
         // Setup vault with USDC and approve adapter

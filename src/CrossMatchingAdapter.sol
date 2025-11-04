@@ -60,14 +60,14 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
     WrappedCollateral public immutable wcol; // wrapped USDC
     IERC20 public immutable usdc;
 
-    constructor(NegRiskOperator negOperator_, IERC20 usdc_, ICTFExchange ctfExchange_, IRevNegRiskAdapter revNeg_) {
+    constructor(NegRiskOperator negOperator_, ICTFExchange ctfExchange_, IRevNegRiskAdapter revNeg_) {
         negOperator = negOperator_;
         revNeg = revNeg_;
         neg  = INegRiskAdapter(address(negOperator_.nrAdapter()));
         ctfExchange = ctfExchange_;
         ctf  = IConditionalTokens(neg.ctf());
         wcol = WrappedCollateral(neg.wcol());
-        usdc = usdc_;
+        usdc = IERC20(address(neg.col()));
         
         // Approve CTF contract to transfer WCOL on our behalf
         wcol.approve(address(ctf), type(uint256).max);
