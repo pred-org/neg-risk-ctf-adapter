@@ -16,20 +16,17 @@ import {NegRiskOperator} from "src/NegRiskOperator.sol";
 contract DeployCrossMatchingAdapter is Script {
     /// @notice Deploys the CrossMatchingAdapter contract
     /// @param _negOperator The NegRiskOperator contract address
-    /// @param _usdc The USDC token address
     /// @param _ctfExchange The CTFExchange contract address (NegRiskCtfExchange)
     /// @param _revNeg The RevNegRiskAdapter contract address
     /// @return adapter The deployed CrossMatchingAdapter address
-    function deploy(address _negOperator, address _usdc, address _ctfExchange, address _revNeg) public returns (address adapter) {
+    function deploy(address _negOperator, address _ctfExchange, address _revNeg) public returns (address adapter) {
         // Validate inputs
         require(_negOperator != address(0), "Invalid NegRiskOperator address");
-        require(_usdc != address(0), "Invalid USDC address");
         require(_ctfExchange != address(0), "Invalid CTFExchange address");
         require(_revNeg != address(0), "Invalid RevNegRiskAdapter address");
 
         console.log("Deploying CrossMatchingAdapter...");
         console.log("NegRiskOperator address:", _negOperator);
-        console.log("USDC address:", _usdc);
         console.log("CTFExchange address:", _ctfExchange);
         console.log("RevNegRiskAdapter address:", _revNeg);
 
@@ -38,7 +35,6 @@ contract DeployCrossMatchingAdapter is Script {
         // Deploy the CrossMatchingAdapter
         adapter = address(new CrossMatchingAdapter(
             NegRiskOperator(_negOperator),
-            IERC20(_usdc),
             ICTFExchange(_ctfExchange),
             IRevNegRiskAdapter(_revNeg)
         ));
@@ -50,7 +46,6 @@ contract DeployCrossMatchingAdapter is Script {
         // Verify the deployment
         CrossMatchingAdapter adapterContract = CrossMatchingAdapter(adapter);
         require(address(adapterContract.negOperator()) == _negOperator, "NegRiskOperator not set correctly");
-        require(address(adapterContract.usdc()) == _usdc, "USDC not set correctly");
         require(address(adapterContract.ctfExchange()) == _ctfExchange, "CTFExchange not set correctly");
         require(address(adapterContract.revNeg()) == _revNeg, "RevNegRiskAdapter not set correctly");
 
@@ -68,12 +63,11 @@ contract DeployCrossMatchingAdapter is Script {
         string memory chainKey = vm.toString(chainId);
         
         address negRiskOperator = vm.parseJsonAddress(addressesJson, string(abi.encodePacked(".", chainKey, ".negRiskOperator")));
-        address usdc = vm.parseJsonAddress(addressesJson, string(abi.encodePacked(".", chainKey, ".usdc")));
         address negRiskCtfExchange = vm.parseJsonAddress(addressesJson, string(abi.encodePacked(".", chainKey, ".negRiskCtfExchange")));
         address revNegRiskAdapter = vm.parseJsonAddress(addressesJson, string(abi.encodePacked(".", chainKey, ".revNegRiskAdapter")));
         
         console.log("Deploying for chain ID:", chainId);
-        return deploy(negRiskOperator, usdc, negRiskCtfExchange, revNegRiskAdapter);
+        return deploy(negRiskOperator, negRiskCtfExchange, revNegRiskAdapter);
     }
 
     /// @notice Deploy for Polygon Mumbai testnet
@@ -93,18 +87,16 @@ contract DeployCrossMatchingAdapter is Script {
 
     /// @notice Deploy with custom parameters and save to addresses.json
     /// @param _negOperator The NegRiskOperator contract address
-    /// @param _usdc The USDC token address
     /// @param _ctfExchange The CTFExchange contract address
     /// @param _revNeg The RevNegRiskAdapter contract address
     /// @param chainId The chain ID to save the address for
     function deployAndSave(
         address _negOperator,
-        address _usdc,
         address _ctfExchange,
         address _revNeg,
         uint256 chainId
     ) public returns (address adapter) {
-        adapter = deploy(_negOperator, _usdc, _ctfExchange, _revNeg);
+        adapter = deploy(_negOperator, _ctfExchange, _revNeg);
         
         // Save the deployed address to addresses.json
         string memory addressesPath = "./addresses.json";
