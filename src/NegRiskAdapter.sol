@@ -66,6 +66,7 @@ contract NegRiskAdapter is ERC1155TokenReceiver, MarketStateManager, INegRiskAda
         vault = _vault;
 
         wcol = new WrappedCollateral(_collateral, col.decimals());
+        wcol.addOwner(msg.sender);
         // approve the ctf to transfer wcol on our behalf
         wcol.approve(_ctf, type(uint256).max);
         // approve wcol to transfer collateral on our behalf
