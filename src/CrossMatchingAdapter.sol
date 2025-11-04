@@ -169,9 +169,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
                 // Collect single maker orders for batch processing
                 singleMakerOrders[singleOrderIndex] = makerOrder.orders[0];
                 singleMakerFillAmounts[singleOrderIndex] = makerOrder.makerFillAmounts[0];
-                
-                // For COMPLEMENTARY matches, calculate the correct taker fill amount
-                // The taker fill amount should be the USDC amount needed to buy the tokens
+
                 singleOrdersTakerAmount += takerFillAmounts[i];
                 
                 singleOrderIndex++;
@@ -258,7 +256,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
                 }
             }
 
-            // The total combined price must equal to one
+            // The total combined price must be greater than or equal to one
             if (totalCombinedPrice < ONE) {
                 revert InvalidCombinedPrice();
             }
@@ -444,7 +442,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
             // Why this validation is crucial:
             // 1. For cross-matching to be self-financing, the total value of all orders must balance
             // 2. Each YES/NO token pair must sum to 1 (Yi + Ni = 1)
-            // 3. If the combined price ≠ total shares, we cannot create a balanced position
+            // 3. If the combined price is less than one, we cannot create a balanced position
             // 4. This prevents arbitrage and ensures the mechanism works correctly
             // 
             // Examples:
@@ -453,7 +451,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
             // 
             // For sell orders, we use (1 - price) since Yi + Ni = 1
             
-            // The total combined price must equal to one
+            // The total combined price must equal or greater than one
             if (totalCombinedPrice < ONE) {
                 revert InvalidCombinedPrice();
             }
