@@ -111,10 +111,6 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper {
         MockUSDC(address(usdc)).approve(address(adapter), type(uint256).max);
         vm.stopPrank();
 
-        vm.startPrank(address(adapter));
-        MockUSDC(address(usdc)).approve(address(negRiskAdapter.wcol()), type(uint256).max);
-        vm.stopPrank();
-
         // Set up test users
         user1 = vm.addr(_user1PK);
         user2 = vm.addr(_user2PK);

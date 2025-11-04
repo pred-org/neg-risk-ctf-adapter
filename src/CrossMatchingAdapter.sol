@@ -72,6 +72,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         // Approve CTF contract to transfer WCOL on our behalf
         wcol.approve(address(ctf), type(uint256).max);
         usdc.approve(address(neg), type(uint256).max);
+        usdc.approve(address(wcol), type(uint256).max);
 
         ctf.setApprovalForAll(address(revNeg), true);
         ctf.setApprovalForAll(address(neg), true);
