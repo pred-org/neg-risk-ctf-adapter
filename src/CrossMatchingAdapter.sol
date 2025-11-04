@@ -75,7 +75,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
 
         ctf.setApprovalForAll(address(revNeg), true);
         ctf.setApprovalForAll(address(neg), true);
-        // Note: The vault must approve this contract to transfer USDC for seller returns
     }
     
     struct Parsed {
@@ -213,10 +212,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         uint256 takerFillAmount,
         uint256[] calldata makerFillAmounts
     ) public allUnresolvedQuestionsPresent(marketId, multiOrderMaker) {
-        if (takerFillAmount == 0) {
-            revert InvalidFillAmount();
-        }
-
         uint256 fillAmount;
         {
             // Validate taker order signature and parameters
@@ -234,19 +229,20 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
             }
         }
 
+        if (fillAmount == 0) {
+            revert InvalidFillAmount();
+        }
+
         Parsed[] memory parsedOrders;
         uint256 totalSellUSDC;
         {
             parsedOrders = new Parsed[](multiOrderMaker.length + 1);
-            uint256 totalBuyUSDC = 0;
             totalSellUSDC = 0;
             uint256 totalCombinedPrice = 0;
             
             // Parse taker order
             parsedOrders[0] = _parseOrder(takerOrder, fillAmount);
-            if (parsedOrders[0].side == uint8(ICTFExchange.Side.BUY)) {
-                totalBuyUSDC += parsedOrders[0].counterPayAmount;
-            } else {
+            if (parsedOrders[0].side == uint8(ICTFExchange.Side.SELL)) {
                 totalSellUSDC += parsedOrders[0].counterPayAmount;
             }
 
@@ -256,9 +252,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
             for (uint256 i = 0; i < multiOrderMaker.length; i++) {
                 parsedOrders[i + 1] = _parseOrder(multiOrderMaker[i], fillAmount);
                 totalCombinedPrice += parsedOrders[i + 1].priceQ6;
-                if (parsedOrders[i + 1].side == uint8(ICTFExchange.Side.BUY)) {
-                    totalBuyUSDC += parsedOrders[i + 1].counterPayAmount;
-                } else {
+                if (parsedOrders[i + 1].side == uint8(ICTFExchange.Side.SELL)) {
                     // For sell orders, amount that we need for minting 
                     totalSellUSDC += parsedOrders[i + 1].counterPayAmount;
                 }
@@ -371,10 +365,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         uint256 takerFillAmount,
         uint256[] calldata makerFillAmounts
     ) public allUnresolvedQuestionsPresent(marketId, multiOrderMaker) {
-        if (takerFillAmount == 0) {
-            revert InvalidFillAmount();
-        }
-
         uint256 fillAmount;
         {
             // Validate taker order signature and parameters
@@ -389,6 +379,10 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
             } else {
                 fillAmount = takerFillAmount;
             }
+        }
+
+        if (fillAmount == 0) {
+            revert InvalidFillAmount();
         }
 
         // Cross-matching function that handles scenarios including resolved questions:
