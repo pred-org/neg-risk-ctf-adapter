@@ -278,11 +278,6 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper {
         for (uint256 i = 0; i < 4; i++) {
             makerOrders[0].makerFillAmounts[i] = 0.1e6;
         }
-        // negRiskOperator.reportPayouts(bytes32(0), dummyPayout);
-
-        // vm.warp(block.timestamp + 2 * negRiskOperator.DELAY_PERIOD());
-
-        // negRiskOperator.resolveQuestion(questionId);
         
         makerOrders[0].orders = new ICTFExchange.OrderIntent[](4);
         makerOrders[0].orders[0] = _createAndSignOrder(user2, yesPositionIds[0], 0, 0.1e6, 1e6, questionIds[0], 0, _user2PK);
@@ -581,8 +576,6 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper {
 
         vm.prank(oracle);
         negRiskOperator.reportPayouts(bytes32(uint256(4)), dummyPayout);
-
-        vm.warp(block.timestamp + 2 * negRiskOperator.DELAY_PERIOD());
 
         negRiskOperator.resolveQuestion(questionIds[3]);
 

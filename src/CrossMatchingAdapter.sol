@@ -140,12 +140,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
             return true;
         }
         
-        // If reported but delay period hasn't passed, it's still unresolved
-        if (block.timestamp < reportedAt_ + negOperator.DELAY_PERIOD()) {
-            return true;
-        }
-        
-        // If reported and delay period has passed, check if it's been resolved
+        // If reported, check if it's been resolved
         bytes32 conditionId = neg.getConditionId(questionId);
         return ctf.payoutDenominator(conditionId) == 0;
     }
