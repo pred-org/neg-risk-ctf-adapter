@@ -144,4 +144,5 @@ interface ICTFExchange {
     function validateOrderSignature(bytes32 orderHash, Order memory order) external view;
     function validateTokenId(uint256 tokenId) external view;
     function updateOrderStatus(OrderIntent memory orderIntent, uint256 makingAmount) external;
+    function performOrderChecks(OrderIntent memory orderIntent, uint256 making) external returns (uint256, bytes32);
 }
