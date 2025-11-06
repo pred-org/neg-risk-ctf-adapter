@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.15;
 
-import {ICTFExchange} from "./ICTFExchange.sol";
+import {Order, Side} from "lib/ctf-exchange/src/exchange/libraries/OrderStructs.sol";
 
 interface IFeeModule {
     event FeeRefunded(address token, address to, uint256 id, uint256 amount);
@@ -16,8 +16,8 @@ interface IFeeModule {
     function exchange() external view returns (address);
     function isAdmin(address addr) external view returns (bool);
     function matchOrders(
-        ICTFExchange.Order memory takerOrder,
-        ICTFExchange.Order[] memory makerOrders,
+        Order memory takerOrder,
+        Order[] memory makerOrders,
         uint256 takerFillAmount,
         uint256[] memory makerFillAmounts,
         uint256 makerFeeRate

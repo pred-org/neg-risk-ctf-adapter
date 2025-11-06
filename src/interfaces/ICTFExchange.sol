@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.15;
 
+import {OrderIntent, OrderStatus, Order, Side} from "lib/ctf-exchange/src/exchange/libraries/OrderStructs.sol";
+
 interface ICTFExchange {
     error MakingGtRemaining();
 
@@ -34,56 +36,7 @@ interface ICTFExchange {
     event TradingPaused(address indexed pauser);
     event TradingUnpaused(address indexed pauser);
 
-    enum SignatureType {
-        EOA,
-        POLY_PROXY,
-        POLY_GNOSIS_SAFE
-    }
-
-    enum Intent {
-        LONG,
-        SHORT
-    }
-
-    enum Side {
-        BUY,
-        SELL
-    }
-
-    enum MatchType {
-        COMPLEMENTARY,
-        MINT,
-        MERGE
-    }
-
-    struct Order {
-        uint256 salt;
-        address maker;
-        address signer;
-        address taker;
-        uint256 price;
-        uint256 quantity;
-        uint256 expiration;
-        uint256 nonce;
-        bytes32 questionId;
-        Intent intent;
-        uint256 feeRateBps;
-        SignatureType signatureType;
-        bytes signature;
-    }
-
-    struct OrderIntent {
-        uint256 tokenId;
-        Side side;
-        Order order;
-        uint256 makerAmount;
-        uint256 takerAmount;
-    }
-
-    struct OrderStatus {
-        bool isFilledOrCancelled;
-        uint256 remaining;
-    }
+    function FEE_RATIO() external view returns (uint256);
 
     function addAdmin(address admin_) external;
     function addOperator(address operator_) external;
