@@ -47,6 +47,10 @@ abstract contract MarketStateManager is IMarketStateManagerEE {
         return marketData[_marketId].feeBips();
     }
 
+    function getPrepared(bytes32 _marketId) external view returns (bool) {
+        return marketData[_marketId].prepared();
+    }
+
     /*//////////////////////////////////////////////////////////////
                                 INTERNAL
     //////////////////////////////////////////////////////////////*/
@@ -104,5 +108,13 @@ abstract contract MarketStateManager is IMarketStateManagerEE {
             if (data.determined()) revert MarketAlreadyDetermined();
             marketData[marketId] = data.determine(questionIndex);
         }
+    }
+
+    /// @notice Marks a market as prepared
+    /// @param _marketId - the market id
+    function _setPrepared(bytes32 _marketId) internal {
+        MarketData md = marketData[_marketId];
+        if (md.oracle() == address(0)) revert MarketNotPrepared();
+        marketData[_marketId] = md.setPrepared();
     }
 }

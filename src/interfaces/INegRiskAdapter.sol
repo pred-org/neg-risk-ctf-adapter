@@ -67,4 +67,5 @@ interface INegRiskAdapter {
     function splitPosition(bytes32 _conditionId, uint256 _amount) external;
     function vault() external view returns (address);
     function wcol() external view returns (address);
+    function getPrepared(bytes32 _marketId) external view returns (bool);
 }
