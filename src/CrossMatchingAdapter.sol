@@ -226,56 +226,51 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         uint256[] calldata makerFillAmounts
     ) public allUnresolvedQuestionsPresent(marketId, multiOrderMaker) {
         uint256 fillAmount;
-        Parsed[] memory parsedOrders;
-        {
-            parsedOrders = new Parsed[](multiOrderMaker.length + 1);
-            
-            // Validate taker order signature and parameters
-            (uint256 takingAmount, ) = ctfExchange.performOrderChecks(takerOrder, takerFillAmount);
+        uint256 makersLength = multiOrderMaker.length;
 
-            if (takerOrder.side == Side.BUY) {
-                fillAmount = takingAmount;
-            } else {
-                fillAmount = takerFillAmount;
-            }
+        // Validate taker order signature and parameters
+        (uint256 takingAmount, ) = ctfExchange.performOrderChecks(takerOrder, takerFillAmount);
 
-            parsedOrders[0] = _parseOrder(takerOrder, fillAmount, takerFillAmount, takingAmount);
-            // Validate all maker orders signatures and parameters and update the order status
-            for (uint256 i = 0; i < multiOrderMaker.length; i++) {
-                (uint256 makerTakingAmount, ) = ctfExchange.performOrderChecks(multiOrderMaker[i], makerFillAmounts[i]);
-                parsedOrders[i + 1] = _parseOrder(multiOrderMaker[i], fillAmount, makerFillAmounts[i], makerTakingAmount);
-            }
+        if (takerOrder.side == Side.BUY) {
+            fillAmount = takingAmount;
+        } else {
+            fillAmount = takerFillAmount;
         }
 
         if (fillAmount == 0) {
             revert InvalidFillAmount();
         }
 
+        Parsed[] memory parsedOrders = new Parsed[](makersLength + 1);
+
         uint256 totalSellUSDC;
-        {
-            totalSellUSDC = 0;
-            uint256 totalCombinedPrice = 0;
-            
-            // Parse taker order
-            if (parsedOrders[0].side == Side.SELL) {
-                totalSellUSDC += parsedOrders[0].counterPayAmount;
-            }
+        uint256 totalCombinedPrice;
 
-            totalCombinedPrice += parsedOrders[0].priceQ6;
-            
-            // Parse maker orders
-            for (uint256 i = 0; i < multiOrderMaker.length; i++) {
-                totalCombinedPrice += parsedOrders[i + 1].priceQ6;
-                if (parsedOrders[i + 1].side == Side.SELL) {
-                    // For sell orders, amount that we need for minting 
-                    totalSellUSDC += parsedOrders[i + 1].counterPayAmount;
-                }
-            }
+        Parsed memory takerParsed = _parseOrder(takerOrder, fillAmount, takerFillAmount, takingAmount);
+        parsedOrders[0] = takerParsed;
+        totalCombinedPrice = takerParsed.priceQ6;
+        if (takerParsed.side == Side.SELL) {
+            totalSellUSDC = takerParsed.counterPayAmount;
+        }
 
-            // The total combined price must be greater than or equal to one
-            if (totalCombinedPrice < ONE) {
-                revert InvalidCombinedPrice();
+        // Validate all maker orders signatures and parameters and update the order status
+        for (uint256 i = 0; i < makersLength; ) {
+            (uint256 makerTakingAmount, ) = ctfExchange.performOrderChecks(multiOrderMaker[i], makerFillAmounts[i]);
+            Parsed memory makerParsed = _parseOrder(multiOrderMaker[i], fillAmount, makerFillAmounts[i], makerTakingAmount);
+            parsedOrders[i + 1] = makerParsed;
+            totalCombinedPrice += makerParsed.priceQ6;
+            if (makerParsed.side == Side.SELL) {
+                // For sell orders, amount that we need for minting
+                totalSellUSDC += makerParsed.counterPayAmount;
             }
+            unchecked {
+                ++i;
+            }
+        }
+
+        // The total combined price must be greater than or equal to one
+        if (totalCombinedPrice < ONE) {
+            revert InvalidCombinedPrice();
         }
 
         // Execute cross-matching logic (fees will be collected from tokens during execution)
