@@ -32,6 +32,9 @@ interface ICrossMatchingAdapterEE {
     error InsufficientUSDCBalance(); // insufficient USDC balance for WCOL minting
     error InvalidUSDCBalance(); // invalid USDC balance for WCOL minting
     error MissingUnresolvedQuestion(); // some unresolved questions are missing from orders
+    error SingleOrderCountMismatch(); // provided single order count does not match detected orders
+    error MakerFillLengthMismatch(); // taker fill lengths do not match maker orders length
+    error InvalidSingleOrderShape(); // single maker order must have exactly one nested order and fill amount
 }
 
 /*
@@ -49,10 +52,7 @@ interface ICrossMatchingAdapterEE {
 
 contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOperations, ICrossMatchingAdapterEE {
     // constants
-    bytes32  constant PARENT = bytes32(0);
     uint256  constant ONE = 1e6; // fixed-point for price (6 decimals to match USDC)
-    address public constant YES_TOKEN_BURN_ADDRESS = address(bytes20(bytes32(keccak256("PRED_YES_TOKEN_BURN_ADDRESS"))));    
-    address public constant NO_TOKEN_BURN_ADDRESS = address(bytes20(bytes32(keccak256("PRED_NO_TOKEN_BURN_ADDRESS"))));
 
     NegRiskOperator public immutable negOperator;
     INegRiskAdapter public immutable neg;
@@ -84,10 +84,10 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         address maker;
         Side side;
         uint256 tokenId;
-        uint256 priceQ6;    // USDC/share (≤ 1e6) - updated from priceQ18
+        uint256 priceQ6;    
         uint256 payAmount;    // = shares * price (for buy orders)
         uint256 counterPayAmount; // = shares * (1 - price) (for sell orders)
-        bytes32 questionId;     // which question id
+        bytes32 questionId;     
         uint256 feeRateBps;     // fee rate in basis points
         uint256 feeAmount;     // fee amount
         uint256 makingAmount; // making amount
@@ -157,21 +157,33 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         uint256[] calldata takerFillAmounts,
         uint8 singleOrderCount
     ) external nonReentrant {
-        // Pre-allocate arrays for single orders using the provided count
-        OrderIntent[] memory singleMakerOrders = new OrderIntent[](singleOrderCount);
-        uint256[] memory singleMakerFillAmounts = new uint256[](singleOrderCount);
+        if (makerOrders.length != takerFillAmounts.length) {
+            revert MakerFillLengthMismatch();
+        }
+
+        OrderIntent[] memory singleMakerOrders;
+        uint256[] memory singleMakerFillAmounts;
         uint256 singleOrdersTakerAmount = 0;
         uint256 singleOrderIndex = 0;
+        if (singleOrderCount > 0) {
+            singleMakerOrders = new OrderIntent[](singleOrderCount);
+            singleMakerFillAmounts = new uint256[](singleOrderCount);
+        }
         bool isLong = takerOrder.order.intent == Intent.LONG;
 
         for (uint256 i = 0; i < makerOrders.length;) {
             MakerOrder calldata makerOrder = makerOrders[i];
-            if (makerOrder.orderType == OrderType.SINGLE) {
+            OrderType orderType = makerOrder.orderType;
+            uint256 takerFillAmount = takerFillAmounts[i];
+            if (orderType == OrderType.SINGLE) {
+                if (makerOrder.orders.length != 1 || makerOrder.makerFillAmounts.length != 1) {
+                    revert InvalidSingleOrderShape();
+                }
                 // Collect single maker orders for batch processing
                 singleMakerOrders[singleOrderIndex] = makerOrder.orders[0];
                 singleMakerFillAmounts[singleOrderIndex] = makerOrder.makerFillAmounts[0];
 
-                singleOrdersTakerAmount += takerFillAmounts[i];
+                singleOrdersTakerAmount += takerFillAmount;
                 
                 singleOrderIndex++;
             } else {
@@ -179,7 +191,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
                 {
                     bytes32 mId = marketId;
                     OrderIntent calldata tOrder = takerOrder;
-                    uint256 fillAmount = takerFillAmounts[i];
+                    uint256 fillAmount = takerFillAmount;
                     uint256[] calldata makerFills = makerOrder.makerFillAmounts;
                     OrderIntent[] calldata makerOrderList = makerOrder.orders;
                     
@@ -197,6 +209,10 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
             }
         }
         
+        if (singleOrderIndex != singleOrderCount) {
+            revert SingleOrderCountMismatch();
+        }
+
         // Process all single maker orders in a single batch call
         if (singleOrderCount > 0) {
             // Single call to match all orders at once
