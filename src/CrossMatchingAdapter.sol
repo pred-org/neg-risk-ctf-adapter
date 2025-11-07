@@ -316,11 +316,11 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
 
         uint256 takingAmount = _updateTakingWithSurplus(parsedOrders[0].takingAmount, parsedOrders[0].tokenId);
         if (parsedOrders[0].side == Side.BUY) {
-            uint256 feeAmount = CalculatorHelper.calculateFee(parsedOrders[0].feeRateBps, takingAmount, parsedOrders[0].makingAmount, parsedOrders[0].takingAmount, parsedOrders[0].side);
+            uint256 feeAmount = CalculatorHelper.calculateFee(parsedOrders[0].feeRateBps, takingAmount, parsedOrders[0].makingAmount, parsedOrders[0].takingAmount, parsedOrders[0].side,ctfExchange.FEE_RATIO());
             parsedOrders[0].feeAmount = feeAmount;
             _distributeNoTokens(parsedOrders[0], fillAmount);
         } else {
-            uint256 feeAmount = CalculatorHelper.calculateFee(parsedOrders[0].feeRateBps, parsedOrders[0].makingAmount, parsedOrders[0].makingAmount, parsedOrders[0].takingAmount, parsedOrders[0].side);
+            uint256 feeAmount = CalculatorHelper.calculateFee(parsedOrders[0].feeRateBps, parsedOrders[0].makingAmount, parsedOrders[0].makingAmount, parsedOrders[0].takingAmount, parsedOrders[0].side,ctfExchange.FEE_RATIO());
             parsedOrders[0].feeAmount = feeAmount;
             _mergeNoTokens(parsedOrders[0], fillAmount);
         }
@@ -539,11 +539,11 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
 
         uint256 takingAmount = _updateTakingWithSurplus(parsedOrders[0].takingAmount, parsedOrders[0].tokenId);
         if (parsedOrders[0].side == Side.BUY) {
-            uint256 feeAmount = CalculatorHelper.calculateFee(parsedOrders[0].feeRateBps, takingAmount, parsedOrders[0].makingAmount, parsedOrders[0].takingAmount, parsedOrders[0].side);
+            uint256 feeAmount = CalculatorHelper.calculateFee(parsedOrders[0].feeRateBps, takingAmount, parsedOrders[0].makingAmount, parsedOrders[0].takingAmount, parsedOrders[0].side,ctfExchange.FEE_RATIO());
             parsedOrders[0].feeAmount = feeAmount;
             _processBuyOrder(parsedOrders[0], fillAmount);
         } else {
-            uint256 feeAmount = CalculatorHelper.calculateFee(parsedOrders[0].feeRateBps, parsedOrders[0].makingAmount, parsedOrders[0].makingAmount, parsedOrders[0].takingAmount, parsedOrders[0].side);
+            uint256 feeAmount = CalculatorHelper.calculateFee(parsedOrders[0].feeRateBps, parsedOrders[0].makingAmount, parsedOrders[0].makingAmount, parsedOrders[0].takingAmount, parsedOrders[0].side,ctfExchange.FEE_RATIO());
             parsedOrders[0].feeAmount = feeAmount;
             totalVaultUSDC += _processSellOrder(parsedOrders[0], fillAmount);
         }
@@ -684,7 +684,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         // the usdc amount that we need to return to the seller
         uint256 usdcToReturn = (ONE - priceQ6) * fillAmount / ONE;
 
-        uint256 feeAmount = CalculatorHelper.calculateFee(order.order.feeRateBps, order.side == Side.BUY ? takingAmount : makingAmount, order.makerAmount, order.takerAmount, order.side);
+        uint256 feeAmount = CalculatorHelper.calculateFee(order.order.feeRateBps, order.side == Side.BUY ? takingAmount : makingAmount, order.makerAmount, order.takerAmount, order.side,ctfExchange.FEE_RATIO());
 
         // token side
         bool isYes = true;
