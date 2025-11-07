@@ -292,20 +292,21 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         // Add the fillAmount to this amount to get the total WCOL that we need to complete the split
         wcol.mint(fillAmount + totalSellUSDC);
 
-        // split positions for all the orders
-        for (uint256 i = 0; i < parsedOrders.length; i++) {
-            bytes32 conditionId = neg.getConditionId(parsedOrders[i].questionId);
+        for (uint256 i = 0; i < parsedOrders.length; ) {
+            Parsed memory order = parsedOrders[i];
+            bytes32 conditionId = neg.getConditionId(order.questionId);
             _splitPosition(conditionId, fillAmount);
-        }
 
-        // Based on order is a BUY no or SELL yes, we will either directly distribute the NO tokens to the buyers or merge the NO tokens with the YES tokens to get USDC for the sellers
-        for (uint256 i = 1; i < parsedOrders.length; i++) {
-            if (parsedOrders[i].side == Side.BUY) {
-                // Distribute NO tokens to the buyers
-                _distributeNoTokens(parsedOrders[i], fillAmount);
-            } else {
-                // Merge NO tokens with YES tokens to get USDC for the sellers
-                _mergeNoTokens(parsedOrders[i], fillAmount);
+            if (i != 0) { // only process maker orders
+                if (order.side == Side.BUY) {
+                    _distributeNoTokens(order, fillAmount);
+                } else {
+                    _mergeNoTokens(order, fillAmount);
+                }
+            }
+
+            unchecked {
+                ++i;
             }
         }
 
