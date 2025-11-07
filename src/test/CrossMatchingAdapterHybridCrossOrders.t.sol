@@ -342,6 +342,8 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper {
             _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
         }
         
+        negRiskAdapter.setPrepared(marketId);
+        
         CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
         makerOrders[0].makerFillAmounts = new uint256[](4);
         // For SELL orders, makerFillAmounts is in token amount (1e6 tokens each)
