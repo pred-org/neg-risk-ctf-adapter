@@ -33,6 +33,8 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
             ++i;
         }
 
+        nrAdapter.setPrepared(marketId);
+
         assertEq(nrAdapter.getQuestionCount(marketId), _questionCount);
 
         // Give Brian USDC for the reverse conversion operation
@@ -291,13 +293,15 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
     }
 
     function test_revert_convertPositions_marketNotPrepared(bytes32 _marketId) public {
-        vm.expectRevert(NoConvertiblePositions.selector);
+        vm.expectRevert(MarketNotPrepared.selector);
         revAdapter.convertPositions(_marketId, 0, 0, brian);
     }
 
     function test_revert_convertPositions_noConvertiblePositions() public {
         vm.prank(oracle);
         marketId = nrAdapter.prepareMarket(0, "");
+
+        nrAdapter.setPrepared(marketId);
 
         // 0 questions prepared
         vm.expectRevert(NoConvertiblePositions.selector);
@@ -330,6 +334,8 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
             vm.prank(oracle);
             nrAdapter.prepareQuestion(marketId, "");
         }
+
+        nrAdapter.setPrepared(marketId);
 
         vm.expectRevert(InvalidTargetIndex.selector);
         revAdapter.convertPositions(marketId, _targetIndex, 0, brian);
@@ -464,6 +470,8 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
                 nrAdapter.prepareQuestion(newMarketId, "");
             }
 
+            nrAdapter.setPrepared(newMarketId);
+
             // Give brian YES positions for all questions
             for (uint256 j = 0; j < questionCount; j++) {
                 bytes32 questionId = NegRiskIdLib.getQuestionId(newMarketId, uint8(j));
@@ -528,6 +536,8 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
                 nrAdapter.prepareQuestion(newMarketId, "");
             }
 
+            nrAdapter.setPrepared(newMarketId);
+
             // Give brian YES positions for all questions
             for (uint256 j = 0; j < questionCount; j++) {
                 bytes32 questionId = NegRiskIdLib.getQuestionId(newMarketId, uint8(j));
@@ -591,6 +601,8 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
                 nrAdapter.prepareQuestion(newMarketId, "");
             }
 
+            nrAdapter.setPrepared(newMarketId);
+
             // Give brian YES positions for all questions
             for (uint256 j = 0; j < questionCount; j++) {
                 bytes32 questionId = NegRiskIdLib.getQuestionId(newMarketId, uint8(j));
@@ -645,6 +657,8 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
                 vm.prank(oracle);
                 nrAdapter.prepareQuestion(newMarketId, "");
             }
+
+            nrAdapter.setPrepared(newMarketId);
 
             // Give brian YES positions for all questions
             for (uint256 j = 0; j < questionCount; j++) {

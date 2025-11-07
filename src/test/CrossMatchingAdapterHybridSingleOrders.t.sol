@@ -176,10 +176,10 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
         bytes32 questionIdParam,
         uint8 intent,
         uint256 privateKey
-    ) internal returns (ICTFExchange.OrderIntent memory) {
+    ) internal returns (OrderIntent memory) {
         uint256 price;
         uint256 quantity;
-        if (side == uint8(ICTFExchange.Side.BUY)) {
+        if (side == uint8(Side.BUY)) {
             price = (makerAmount * 1e6) / takerAmount;
             quantity = takerAmount;
         } else {
@@ -188,14 +188,14 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
         }
 
         bool isYes = true;
-        if (intent == uint8(ICTFExchange.Intent.LONG)) {
-            if (side == uint8(ICTFExchange.Side.BUY)) {
+        if (intent == uint8(Intent.LONG)) {
+            if (side == uint8(Side.BUY)) {
                 isYes = true;
             } else {
                 isYes = false;
             }
         } else {
-            if (side == uint8(ICTFExchange.Side.SELL)) {
+            if (side == uint8(Side.SELL)) {
                 isYes = true;
             } else {
                 isYes = false;
@@ -205,7 +205,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
             price = 1e6 - price;
         }
         
-        ICTFExchange.Order memory order = ICTFExchange.Order({
+        Order memory order = Order({
             salt: 1,
             signer: maker,
             maker: maker,
@@ -216,8 +216,8 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
             nonce: 0,
             feeRateBps: 0,
             questionId: questionIdParam,
-            intent: ICTFExchange.Intent(intent),
-            signatureType: ICTFExchange.SignatureType.EOA,
+            intent: Intent(intent),
+            signatureType: SignatureType.EOA,
             signature: new bytes(0)
         });
         
@@ -240,9 +240,9 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
         
         order.signature = _signMessage(privateKey, ctfExchange.hashOrder(orderForHash));
         
-        return ICTFExchange.OrderIntent({
+        return OrderIntent({
             tokenId: tokenId,
-            side: ICTFExchange.Side(side),
+            side: Side(side),
             makerAmount: makerAmount,
             takerAmount: takerAmount,
             order: order
@@ -261,7 +261,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
       CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
       uint256[] memory takerFillAmounts = new uint256[](1);
         
-      makerOrders[0].orders = new ICTFExchange.OrderIntent[](1);
+      makerOrders[0].orders = new OrderIntent[](1);
       // Yes tokens selling order
       // For sell order: makerAmount = token amount (1e6), takerAmount = USDC amount (0.45e6)
       // price = 0.55$ per token
@@ -292,7 +292,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
       // Taker order - NO tokens selling order
       // For sell order: makerAmount = token amount (1e6), takerAmount = USDC amount (0.55e6)
       // price = 0.45$
-      ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user2, noPositionId, 1, 1e6, 0.55e6, questionId, 0, _user2PK);
+      OrderIntent memory takerOrder = _createAndSignOrder(user2, noPositionId, 1, 1e6, 0.55e6, questionId, 0, _user2PK);
 
       console.log("=== Taker Order ===");
       // Log taker order
@@ -359,7 +359,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
       CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
       uint256[] memory takerFillAmounts = new uint256[](1);
         
-      makerOrders[0].orders = new ICTFExchange.OrderIntent[](1);
+      makerOrders[0].orders = new OrderIntent[](1);
       // NO tokens buying order
       // For buy order: makerAmount = USDC amount (0.55e6), takerAmount = token amount (1e6)
       // price = 0.55$ per token
@@ -383,7 +383,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
       // Taker order - NO tokens selling order
       // For sell order: makerAmount = token amount (1e6), takerAmount = USDC amount (0.55e6)
       // price = 0.45$ per token
-      ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user2, noPositionId, 1, 1e6, 0.55e6, questionId, 0, _user2PK);
+      OrderIntent memory takerOrder = _createAndSignOrder(user2, noPositionId, 1, 1e6, 0.55e6, questionId, 0, _user2PK);
 
       // console.log("=== Taker Order ===");
       // // Log taker order
@@ -446,7 +446,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
       makerOrders[0].makerFillAmounts = new uint256[](1);
       uint256[] memory takerFillAmounts = new uint256[](1);
         
-      makerOrders[0].orders = new ICTFExchange.OrderIntent[](1);
+      makerOrders[0].orders = new OrderIntent[](1);
       // YES tokens buying order
       // For buy order: makerAmount = USDC amount (0.55e6), takerAmount = token amount (1e6)
       // price = 0.55$ per token
@@ -467,7 +467,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
       // Taker order - NO tokens buying order
       // For buy order: makerAmount = USDC amount (0.45e6), takerAmount = token amount (1e6)
       // price = 0.45$ per token
-      ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user2, noPositionId, 0, 0.45e6, 1e6, questionId, 1, _user2PK);
+      OrderIntent memory takerOrder = _createAndSignOrder(user2, noPositionId, 0, 0.45e6, 1e6, questionId, 1, _user2PK);
 
       // Log 0th maker order
       console.log("=== 0th Maker Order ===");
@@ -545,7 +545,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
       uint256[] memory takerFillAmounts = new uint256[](3);
         
       for (uint256 i = 0; i < 3; i++) {
-        makerOrders[i].orders = new ICTFExchange.OrderIntent[](1);
+        makerOrders[i].orders = new OrderIntent[](1);
         _mintTokensToUser(vm.addr(1000 + i), yesPositionId, 1e6);
 
         _setupUser(vm.addr(1000 + i), 1e6);
@@ -577,7 +577,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
       vm.stopPrank();
         
       // Taker order - price 0.45 (minting one NO token)
-      ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user2, noPositionId, 1, 3e6, 0.55e6 * 3, questionId, 0, _user2PK);
+      OrderIntent memory takerOrder = _createAndSignOrder(user2, noPositionId, 1, 3e6, 0.55e6 * 3, questionId, 0, _user2PK);
 
       // Log all maker orders
       console2.log("=== Maker Orders ===");
@@ -693,7 +693,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
       uint256[] memory takerFillAmounts = new uint256[](3);
         
       for (uint256 i = 0; i < 3; i++) {
-        makerOrders[i].orders = new ICTFExchange.OrderIntent[](1);
+        makerOrders[i].orders = new OrderIntent[](1);
         
         _setupUser(vm.addr(1000 + i), 1e6);
         vm.label(vm.addr(1000 + i), string(abi.encodePacked("User random", vm.toString(i))));
@@ -723,7 +723,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
       // Taker order - NO tokens selling order
       // For sell order: makerAmount = token amount (3e6), takerAmount = USDC amount (1.65e6)
       // price = 0.45$ per token (1.65e6 / 3e6 = 0.55, but sell side means price 0.45)
-      ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user2, noPositionId, 1, 3e6, 1.65e6, questionId, 0, _user2PK);
+      OrderIntent memory takerOrder = _createAndSignOrder(user2, noPositionId, 1, 3e6, 1.65e6, questionId, 0, _user2PK);
 
       // Log all maker orders
       console2.log("=== Maker Orders ===");
@@ -836,7 +836,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
       uint256[] memory takerFillAmounts = new uint256[](3);
         
       for (uint256 i = 0; i < 3; i++) {
-        makerOrders[i].orders = new ICTFExchange.OrderIntent[](1);
+        makerOrders[i].orders = new OrderIntent[](1);
         
         _setupUser(vm.addr(1000 + i), 1e6);
         vm.label(vm.addr(1000 + i), string(abi.encodePacked("User random", vm.toString(i))));
@@ -863,7 +863,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
       // Taker order - NO tokens buying order
       // For buy order: makerAmount = USDC amount (1.35e6), takerAmount = token amount (3e6)
       // price = 0.45$ per token (1.35e6 / 3e6 = 0.45)
-      ICTFExchange.OrderIntent memory takerOrder = _createAndSignOrder(user2, noPositionId, 0, 1.35e6, 3e6, questionId, 1, _user2PK);
+      OrderIntent memory takerOrder = _createAndSignOrder(user2, noPositionId, 0, 1.35e6, 3e6, questionId, 1, _user2PK);
 
       // Prepare wrapped collateral for minting (total needed: 3e6 for YES + 3e6 for NO = 6e6)
       MockUSDC(address(usdc)).mint(address(negRiskAdapter.wcol()), 6e6);

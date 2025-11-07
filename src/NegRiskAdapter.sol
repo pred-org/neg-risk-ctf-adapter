@@ -375,6 +375,13 @@ contract NegRiskAdapter is ERC1155TokenReceiver, MarketStateManager, INegRiskAda
         return marketId;
     }
 
+    /// @notice Marks a market as prepared
+    /// @param _marketId - the market id
+    /// @notice OnlyAdmin
+    function setPrepared(bytes32 _marketId) external onlyAdmin {
+        _setPrepared(_marketId);
+    }
+
     /*//////////////////////////////////////////////////////////////
                             PREPARE QUESTION
     //////////////////////////////////////////////////////////////*/
