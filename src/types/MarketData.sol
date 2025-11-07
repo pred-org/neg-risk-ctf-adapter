@@ -8,6 +8,7 @@ type MarketData is bytes32;
 // md[1] = determined
 // md[2] = result
 // md[3:4] = feeBips
+// md[5] = prepared
 // md[12:32] = oracle
 
 using MarketDataLib for MarketData global;
@@ -83,5 +84,19 @@ library MarketDataLib {
     /// @return feeBips - the feeBips
     function feeBips(MarketData _data) internal pure returns (uint256) {
         return uint256(uint16(bytes2(MarketData.unwrap(_data) << 24)));
+    }
+
+    /// @notice extracts the prepared flag from MarketData
+    /// @return prepared - true if the market has been prepared
+    function prepared(MarketData _data) internal pure returns (bool) {
+        return MarketData.unwrap(_data)[5] == 0x00 ? false : true;
+    }
+
+    /// @notice marks the market as prepared
+    /// @return marketData - the modified MarketData
+    function setPrepared(MarketData _data) internal pure returns (MarketData) {
+        bytes32 data = MarketData.unwrap(_data);
+        data |= bytes32(bytes1(0x01)) >> 40;
+        return MarketData.wrap(data);
     }
 }

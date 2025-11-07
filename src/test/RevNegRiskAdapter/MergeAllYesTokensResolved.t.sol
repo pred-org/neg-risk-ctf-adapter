@@ -46,6 +46,8 @@ contract RevNegRiskAdapter_MergeAllYesTokensResolved_Test is RevNegRiskAdapter_S
             unchecked { ++i; }
         }
 
+        nrAdapter.setPrepared(marketId);
+
         // resolve the 0th question to true
         vm.prank(oracle);
         nrAdapter.reportOutcome(marketId, true);
@@ -150,6 +152,8 @@ contract RevNegRiskAdapter_MergeAllYesTokensResolved_Test is RevNegRiskAdapter_S
 
             unchecked { ++i; }
         }
+
+        nrAdapter.setPrepared(newMarketId);
 
         // resolve the 0th question to false
         vm.prank(oracle);

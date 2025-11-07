@@ -223,8 +223,6 @@ contract NegRiskOperatorTest is TestHelper, INegRiskOperatorEE {
         vm.prank(oracle);
         nrOperator.reportPayouts(_requestId, _result ? payoutsTrue : payoutsFalse);
 
-        skip(nrOperator.DELAY_PERIOD());
-
         vm.expectEmit();
         emit QuestionResolved(questionId, _result);
         nrOperator.resolveQuestion(questionId);
@@ -246,31 +244,6 @@ contract NegRiskOperatorTest is TestHelper, INegRiskOperatorEE {
         bytes32 questionId = nrOperator.prepareQuestion(marketId, data, _requestId);
 
         vm.expectRevert(ResultNotAvailable.selector);
-        nrOperator.resolveQuestion(questionId);
-    }
-
-    function test_revert_resolveQuestion_delayPeriodNotOver(bytes32 _requestId, bool _result, uint256 _timestamp)
-        public
-    {
-        bytes memory data = new bytes(0);
-        uint256 feeBips = 0;
-
-        vm.prank(alice);
-        bytes32 marketId = nrOperator.prepareMarket(feeBips, data);
-
-        vm.prank(alice);
-        bytes32 questionId = nrOperator.prepareQuestion(marketId, data, _requestId);
-
-        vm.prank(oracle);
-        nrOperator.reportPayouts(_requestId, _result ? payoutsTrue : payoutsFalse);
-
-        assertEq(nrOperator.reportedAt(questionId), block.timestamp);
-
-        uint256 earliestResolvableTimestamp = block.timestamp + nrOperator.DELAY_PERIOD();
-        _timestamp = bound(_timestamp, 0, earliestResolvableTimestamp - 1);
-        vm.warp(_timestamp);
-
-        vm.expectRevert(DelayPeriodNotOver.selector);
         nrOperator.resolveQuestion(questionId);
     }
 
@@ -343,8 +316,6 @@ contract NegRiskOperatorTest is TestHelper, INegRiskOperatorEE {
         vm.prank(alice);
         nrOperator.flagQuestion(questionId);
 
-        skip(nrOperator.DELAY_PERIOD());
-
         vm.expectEmit();
         emit QuestionEmergencyResolved(questionId, _result);
 
@@ -356,30 +327,6 @@ contract NegRiskOperatorTest is TestHelper, INegRiskOperatorEE {
         vm.prank(alice);
         vm.expectRevert(OnlyFlagged.selector);
         nrOperator.emergencyResolveQuestion(_questionId, _result);
-    }
-
-    function test_revert_emergencyResolveQuestion_delayPeriodNotOver(
-        bytes32 _requestId,
-        bool _result,
-        uint256 _timestamp
-    ) public {
-        vm.prank(alice);
-        bytes32 marketId = nrOperator.prepareMarket(0, "");
-
-        vm.prank(alice);
-        bytes32 questionId = nrOperator.prepareQuestion(marketId, "", _requestId);
-
-        vm.prank(alice);
-        nrOperator.flagQuestion(questionId);
-
-        uint256 earliestResolvableTimestamp = block.timestamp + nrOperator.DELAY_PERIOD();
-        _timestamp = bound(_timestamp, 0, earliestResolvableTimestamp - 1);
-
-        vm.warp(_timestamp);
-
-        vm.prank(alice);
-        vm.expectRevert(DelayPeriodNotOver.selector);
-        nrOperator.emergencyResolveQuestion(questionId, _result);
     }
 
     /*//////////////////////////////////////////////////////////////

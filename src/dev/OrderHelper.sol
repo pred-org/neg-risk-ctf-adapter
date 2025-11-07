@@ -3,7 +3,7 @@ pragma solidity ^0.8.15;
 
 import {Script} from "../../lib/forge-std/src/Script.sol";
 import {stdStorage, StdStorage} from "../../lib/forge-std/src/StdStorage.sol";
-import {Side, SignatureType} from "../../lib/ctf-exchange/src/exchange/libraries/OrderStructs.sol";
+import {Side, Order, SignatureType, Intent} from "../../lib/ctf-exchange/src/exchange/libraries/OrderStructs.sol";
 
 import {vm} from "./libraries/Vm.sol";
 import {ICTFExchange} from "../interfaces/index.sol";
@@ -18,9 +18,9 @@ contract OrderHelper is Script {
         uint256 _makerAmount,
         uint256 _takerAmount,
         Side _side
-    ) internal view returns (ICTFExchange.Order memory) {
+    ) internal view returns (Order memory) {
         address maker = vm.addr(_pk);
-        ICTFExchange.Order memory order = _createOrder(maker, _tokenId, _makerAmount, _takerAmount, _side);
+        Order memory order = _createOrder(maker, _tokenId, _makerAmount, _takerAmount, _side);
         order.signature = _signMessage(_pk, ICTFExchange(_exchange).hashOrder(order));
         return order;
     }
@@ -33,7 +33,7 @@ contract OrderHelper is Script {
     function _createOrder(address _maker, uint256 _tokenId, uint256 _makerAmount, uint256 _takerAmount, Side _side)
         internal
         pure
-        returns (ICTFExchange.Order memory)
+        returns (Order memory)
     {
         // Calculate price: for BUY orders, price = (takerAmount * ONE_SIX) / makerAmount
         // This ensures that makerAmount = (price * fillAmount) / ONE_SIX
@@ -47,7 +47,7 @@ contract OrderHelper is Script {
             quantity = _makerAmount;
         }
         
-        ICTFExchange.Order memory order = ICTFExchange.Order({
+        Order memory order = Order({
             salt: 1,
             signer: _maker,
             maker: _maker,
@@ -57,9 +57,9 @@ contract OrderHelper is Script {
             expiration: 0,
             nonce: 0,
             questionId: bytes32(0),
-            intent: ICTFExchange.Intent.LONG,
+            intent: Intent.LONG,
             feeRateBps: 0,
-            signatureType: ICTFExchange.SignatureType.EOA,
+            signatureType: SignatureType.EOA,
             signature: new bytes(0)
         });
         return order;

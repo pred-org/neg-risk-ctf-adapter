@@ -46,6 +46,8 @@ contract RevNegRiskAdapter_MergeAllYesTokensSimple_Test is RevNegRiskAdapter_Set
             ++i;
         }
 
+        nrAdapter.setPrepared(marketId);
+
         assertEq(nrAdapter.getQuestionCount(marketId), _questionCount);
 
         // Resolve the 0th question as TRUE
@@ -91,6 +93,8 @@ contract RevNegRiskAdapter_MergeAllYesTokensSimple_Test is RevNegRiskAdapter_Set
             }
             ++i;
         }
+
+        nrAdapter.setPrepared(marketId);
 
         // Alice splits position to get YES/NO tokens for ALL questions
         vm.startPrank(alice);
@@ -259,13 +263,15 @@ contract RevNegRiskAdapter_MergeAllYesTokensSimple_Test is RevNegRiskAdapter_Set
     }
 
     function test_revert_mergeAllYesTokens_marketNotPrepared(bytes32 _marketId) public {
-        vm.expectRevert(NoConvertiblePositions.selector);
+        vm.expectRevert(MarketNotPrepared.selector);
         revAdapter.mergeAllYesTokens(_marketId, 0);
     }
 
     function test_revert_mergeAllYesTokens_noConvertiblePositions() public {
         vm.prank(oracle);
         marketId = nrAdapter.prepareMarket(0, "");
+
+        nrAdapter.setPrepared(marketId);
 
         // 0 questions prepared
         vm.expectRevert(NoConvertiblePositions.selector);
@@ -447,6 +453,8 @@ contract RevNegRiskAdapter_MergeAllYesTokensSimple_Test is RevNegRiskAdapter_Set
 
             ++i;
         }
+
+        nrAdapter.setPrepared(testMarketId);
 
         // Resolve the 0th question as FALSE
         vm.prank(oracle);

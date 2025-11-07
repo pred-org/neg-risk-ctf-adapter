@@ -16,7 +16,6 @@ interface INegRiskOperatorEE is IAuthEE {
     error OnlyFlagged();
     error OnlyNotFlagged();
     error NotEligibleForEmergencyResolution();
-    error DelayPeriodNotOver();
     error ResultNotAvailable();
     error QuestionWithRequestIdAlreadyPrepared();
     error InvalidRequestId();
@@ -47,7 +46,6 @@ contract NegRiskOperator is INegRiskOperatorEE, Auth {
 
     NegRiskAdapter public immutable nrAdapter;
     address public oracle;
-    uint256 public constant DELAY_PERIOD = 1 hours;
 
     mapping(bytes32 _requestId => bytes32) public questionIds;
     mapping(bytes32 _questionId => bool) public results;
@@ -180,9 +178,6 @@ contract NegRiskOperator is INegRiskOperatorEE, Auth {
         uint256 reportedAt_ = reportedAt[_questionId];
 
         if (reportedAt_ == 0) revert ResultNotAvailable();
-        if (block.timestamp < reportedAt_ + DELAY_PERIOD) {
-            revert DelayPeriodNotOver();
-        }
 
         bool result = results[_questionId];
         nrAdapter.reportOutcome(_questionId, result);
@@ -218,9 +213,6 @@ contract NegRiskOperator is INegRiskOperatorEE, Auth {
         uint256 flaggedAt_ = flaggedAt[_questionId];
 
         if (flaggedAt_ == 0) revert OnlyFlagged();
-        if (block.timestamp < flaggedAt_ + DELAY_PERIOD) {
-            revert DelayPeriodNotOver();
-        }
 
         nrAdapter.reportOutcome(_questionId, _result);
         emit QuestionEmergencyResolved(_questionId, _result);
