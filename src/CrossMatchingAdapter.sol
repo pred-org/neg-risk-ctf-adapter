@@ -226,42 +226,42 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         uint256[] calldata makerFillAmounts
     ) public allUnresolvedQuestionsPresent(marketId, multiOrderMaker) {
         uint256 fillAmount;
-        uint256 makersLength = multiOrderMaker.length;
-
-        // Validate taker order signature and parameters
-        (uint256 takingAmount, ) = ctfExchange.performOrderChecks(takerOrder, takerFillAmount);
-
-        if (takerOrder.side == Side.BUY) {
-            fillAmount = takingAmount;
-        } else {
-            fillAmount = takerFillAmount;
-        }
-
-        if (fillAmount == 0) {
-            revert InvalidFillAmount();
-        }
-
-        Parsed[] memory parsedOrders = new Parsed[](makersLength + 1);
+        Parsed[] memory parsedOrders;
 
         uint256 totalSellUSDC;
         uint256 totalCombinedPrice;
 
-        Parsed memory takerParsed = _parseOrder(takerOrder, fillAmount, takerFillAmount, takingAmount);
-        parsedOrders[0] = takerParsed;
-        totalCombinedPrice = takerParsed.priceQ6;
-        if (takerParsed.side == Side.SELL) {
-            totalSellUSDC = takerParsed.counterPayAmount;
+        {
+            // Validate taker order signature and parameters
+            (uint256 takingAmount, ) = ctfExchange.performOrderChecks(takerOrder, takerFillAmount);
+
+            if (takerOrder.side == Side.BUY) {
+                fillAmount = takingAmount;
+            } else {
+                fillAmount = takerFillAmount;
+            }
+
+            if (fillAmount == 0) {
+                revert InvalidFillAmount();
+            }
+
+            parsedOrders = new Parsed[](multiOrderMaker.length + 1);
+            parsedOrders[0] = _parseOrder(takerOrder, fillAmount, takerFillAmount, takingAmount);
+        }
+ 
+        totalCombinedPrice = parsedOrders[0].priceQ6;
+        if (parsedOrders[0].side == Side.SELL) {
+            totalSellUSDC = parsedOrders[0].counterPayAmount;
         }
 
         // Validate all maker orders signatures and parameters and update the order status
-        for (uint256 i = 0; i < makersLength; ) {
+        for (uint256 i = 0; i < multiOrderMaker.length; ) {
             (uint256 makerTakingAmount, ) = ctfExchange.performOrderChecks(multiOrderMaker[i], makerFillAmounts[i]);
-            Parsed memory makerParsed = _parseOrder(multiOrderMaker[i], fillAmount, makerFillAmounts[i], makerTakingAmount);
-            parsedOrders[i + 1] = makerParsed;
-            totalCombinedPrice += makerParsed.priceQ6;
-            if (makerParsed.side == Side.SELL) {
+            parsedOrders[i + 1] = _parseOrder(multiOrderMaker[i], fillAmount, makerFillAmounts[i], makerTakingAmount);
+            totalCombinedPrice += parsedOrders[i + 1].priceQ6;
+            if (parsedOrders[i + 1].side == Side.SELL) {
                 // For sell orders, amount that we need for minting
-                totalSellUSDC += makerParsed.counterPayAmount;
+                totalSellUSDC += parsedOrders[i + 1].counterPayAmount;
             }
             unchecked {
                 ++i;
