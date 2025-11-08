@@ -389,7 +389,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         uint256 fillAmount;
         Parsed[] memory parsedOrders;
         {
-            parsedOrders = new Parsed[](multiOrderMaker.length + 1);
             // Validate taker order signature and parameters
             (uint256 takingAmount, ) = ctfExchange.performOrderChecks(takerOrder, takerFillAmount);
 
@@ -399,17 +398,14 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
                 fillAmount = takerFillAmount;
             }
 
-            // Validate all maker orders signatures and parameters
-            parsedOrders[0] = _parseOrder(takerOrder, fillAmount, takerFillAmount, takingAmount);
-
-            for (uint256 i = 0; i < multiOrderMaker.length; i++) {
-                (uint256 makerTakingAmount, ) = ctfExchange.performOrderChecks(multiOrderMaker[i], makerFillAmounts[i]);
-                parsedOrders[i + 1] = _parseOrder(multiOrderMaker[i], fillAmount, makerFillAmounts[i], makerTakingAmount);
+            if (fillAmount == 0) {
+                revert InvalidFillAmount();
             }
-        }
 
-        if (fillAmount == 0) {
-            revert InvalidFillAmount();
+            parsedOrders = new Parsed[](multiOrderMaker.length + 1);
+
+            // Store parsed taker order; maker orders are validated in the aggregation loop below
+            parsedOrders[0] = _parseOrder(takerOrder, fillAmount, takerFillAmount, takingAmount);
         }
 
         // Cross-matching function that handles scenarios including resolved questions:
@@ -442,6 +438,11 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
             totalSellUSDC = 0;
             uint256 totalCombinedPrice = 0;
             
+            // Note: We can have:
+            // 1. All buy orders: 4 users buying different YES tokens (Yes1, Yes2, Yes3, Yes4)
+            // 2. All sell orders: users selling NO tokens (e.g., No Barca, No Arsenal, No Chelsea)
+            // 3. Mixed buy/sell orders: some users buying YES, some selling NO
+            
             // Parse taker order
             if (parsedOrders[0].side == Side.SELL) {
                 totalSellUSDC += parsedOrders[0].payAmount;
@@ -449,34 +450,19 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
             totalCombinedPrice += parsedOrders[0].priceQ6;
             
             // Parse maker orders
-            for (uint256 i = 0; i < multiOrderMaker.length; i++) {
+            for (uint256 i = 0; i < multiOrderMaker.length; ) {
+                (uint256 makerTakingAmount, ) = ctfExchange.performOrderChecks(multiOrderMaker[i], makerFillAmounts[i]);
+                parsedOrders[i + 1] = _parseOrder(multiOrderMaker[i], fillAmount, makerFillAmounts[i], makerTakingAmount);
                 if (parsedOrders[i + 1].side == Side.SELL) {
                     totalSellUSDC += parsedOrders[i + 1].payAmount;
                 }
                 totalCombinedPrice += parsedOrders[i + 1].priceQ6;
+                unchecked {
+                    ++i;
+                }
             }
             
-            // Note: We can have:
-            // 1. All buy orders: 4 users buying different YES tokens (Yes1, Yes2, Yes3, Yes4)
-            // 2. All sell orders: users selling NO tokens (e.g., No Barca, No Arsenal, No Chelsea)
-            // 3. Mixed buy/sell orders: some users buying YES, some selling NO
-            
-            // Validate that the combined price of all orders equals 1
-            // This is required for cross-matching to work properly
-            // 
-            // Why this validation is crucial:
-            // 1. For cross-matching to be self-financing, the total value of all orders must balance
-            // 2. Each YES/NO token pair must sum to 1 (Yi + Ni = 1)
-            // 3. If the combined price is less than one, we cannot create a balanced position
-            // 4. This prevents arbitrage and ensures the mechanism works correctly
-            // 
-            // Examples:
-            // Scenario 1 (all buy): Buy Yes1(0.25) + Buy Yes2(0.25) + Buy Yes3(0.25) + Buy Yes4(0.25) = 1.0
-            // Scenario 2 (mixed): Buy Yes1(0.25) + Sell No2(0.75) + Buy Yes3(0.25) + Sell No4(0.75) = 0.25 + 0.25 + 0.25 + 0.25 = 1.0
-            // 
-            // For sell orders, we use (1 - price) since Yi + Ni = 1
-            
-            // The total combined price must equal or greater than one
+            // Validate that the combined price of all orders equals or exceeds 1
             if (totalCombinedPrice < ONE) {
                 revert InvalidCombinedPrice();
             }
