@@ -505,10 +505,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         // We want to convert NO tokens from the pivot question to get YES tokens for other questions
         // So we need to provide an indexSet that represents the pivot NO position
         uint256 indexSet = 1 << pivotId; // This represents NO position for the pivot question
-        
-        // Approve NegRiskAdapter to handle our tokens
-        ctf.setApprovalForAll(address(neg), true);
-        
+
         // Convert NO tokens to YES tokens for other questions using NegRiskAdapter's convertPositions
         // We can only convert as much as we have NO tokens from the split operation
         neg.convertPositions(marketId, indexSet, fillAmount);
