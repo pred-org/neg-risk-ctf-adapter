@@ -19,7 +19,25 @@ import {Deployer} from "lib/ctf-exchange/src/dev/util/Deployer.sol";
 import {TestHelper} from "lib/ctf-exchange/src/dev/TestHelper.sol";
 import {WrappedCollateral} from "src/WrappedCollateral.sol";
 
-contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper {
+// Events for testing
+interface ICrossMatchingAdapterEvents {
+    event OrderFilled(bytes32 indexed orderHash, address indexed maker, address indexed taker, uint256 makerAssetId, uint256 takerAssetId, uint256 makerAmountFilled, uint256 takerAmountFilled, uint256 fee);
+    event OrdersMatched(bytes32 indexed takerOrderHash, address indexed takerOrderMaker, uint256 makerAssetId, uint256 takerAssetId, uint256 makerAmountFilled, uint256 takerAmountFilled);
+}
+
+contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMatchingAdapterEvents {
+    struct VerificationParams {
+        address[] users;
+        uint256[] yesPositionIds;
+        uint256[] tokenIndices;
+        uint256[] initialUSDC;
+        uint256[] initialYES;
+        uint256 initialVaultBalance;
+        uint256[] takerFillAmount;
+        uint256[] makerFillAmounts;
+        uint256 expectedFillAmount;
+    }
+
     CrossMatchingAdapter public adapter;
     NegRiskAdapter public negRiskAdapter;
     NegRiskOperator public negRiskOperator;
@@ -255,6 +273,127 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper {
         sig = abi.encodePacked(r, s, v);
     }
 
+    /// @notice Helper function to derive asset IDs from an order
+    function _deriveAssetIds(OrderIntent memory order) internal pure returns (uint256 makerAssetId, uint256 takerAssetId) {
+        if (order.side == Side.BUY) return (0, order.tokenId);
+        return (order.tokenId, 0);
+    }
+
+    /// @notice Helper function to get order hash
+    function _getOrderHash(OrderIntent memory order) internal view returns (bytes32) {
+        Order memory orderForHash = Order({
+            salt: order.order.salt,
+            maker: order.order.maker,
+            signer: order.order.signer,
+            taker: order.order.taker,
+            price: order.order.price,
+            quantity: order.order.quantity,
+            expiration: order.order.expiration,
+            nonce: order.order.nonce,
+            feeRateBps: order.order.feeRateBps,
+            questionId: order.order.questionId,
+            intent: Intent(uint8(order.order.intent)),
+            signatureType: SignatureType(uint8(order.order.signatureType)),
+            signature: order.order.signature
+        });
+        return ctfExchange.hashOrder(orderForHash);
+    }
+
+    /// @notice Helper function to set up OrderFilled event expectations for maker orders
+    function _expectMakerOrderFilledEvents(
+        OrderIntent[] memory makerOrders,
+        uint256[] memory makerFillAmounts,
+        uint256 expectedFillAmount,
+        address takerMaker
+    ) internal {
+        for (uint256 i = 0; i < makerOrders.length; i++) {
+            bytes32 makerOrderHash = _getOrderHash(makerOrders[i]);
+            (uint256 makerMakerAssetId, uint256 makerTakerAssetId) = _deriveAssetIds(makerOrders[i]);
+            
+            vm.expectEmit(true, true, true, true, address(adapter));
+            emit OrderFilled(
+                makerOrderHash,
+                makerOrders[i].order.maker,
+                takerMaker,
+                makerMakerAssetId,
+                makerTakerAssetId,
+                makerFillAmounts[i],
+                expectedFillAmount,
+                0
+            );
+        }
+    }
+
+    /// @notice Helper function to set up OrderFilled event expectation for taker order
+    function _expectTakerOrderFilledEvent(
+        OrderIntent memory takerOrder,
+        uint256 takerFillAmount,
+        uint256 expectedFillAmount
+    ) internal {
+        bytes32 takerOrderHash = _getOrderHash(takerOrder);
+        (uint256 takerMakerAssetId, uint256 takerTakerAssetId) = _deriveAssetIds(takerOrder);
+        
+        vm.expectEmit(true, true, true, true, address(adapter));
+        emit OrderFilled(
+            takerOrderHash,
+            takerOrder.order.maker,
+            address(adapter),
+            takerMakerAssetId,
+            takerTakerAssetId,
+            takerFillAmount,
+            expectedFillAmount,
+            0
+        );
+    }
+
+    /// @notice Helper function to set up OrdersMatched event expectation
+    function _expectOrdersMatchedEvent(
+        OrderIntent memory takerOrder,
+        uint256 takerFillAmount,
+        uint256 expectedFillAmount
+    ) internal {
+        bytes32 takerOrderHash = _getOrderHash(takerOrder);
+        (uint256 takerMakerAssetId, uint256 takerTakerAssetId) = _deriveAssetIds(takerOrder);
+        
+        vm.expectEmit(true, true, true, true, address(adapter));
+        emit OrdersMatched(
+            takerOrderHash,
+            takerOrder.order.maker,
+            takerMakerAssetId,
+            takerTakerAssetId,
+            takerFillAmount,
+            expectedFillAmount
+        );
+    }
+
+    /// @notice Helper function to set up OrderFilled event expectations for maker orders (filtered by side)
+    function _expectMakerOrderFilledEventsBySide(
+        OrderIntent[] memory makerOrders,
+        uint256[] memory makerFillAmounts,
+        uint256 expectedFillAmount,
+        address takerMaker,
+        Side side
+    ) internal {
+        for (uint256 i = 0; i < makerOrders.length; i++) {
+            if (makerOrders[i].side == side) {
+                bytes32 makerOrderHash = _getOrderHash(makerOrders[i]);
+                (uint256 makerMakerAssetId, uint256 makerTakerAssetId) = _deriveAssetIds(makerOrders[i]);
+                
+                vm.expectEmit(true, true, true, true, address(adapter));
+                emit OrderFilled(
+                    makerOrderHash,
+                    makerOrders[i].order.maker,
+                    takerMaker,
+                    makerMakerAssetId,
+                    makerTakerAssetId,
+                    makerFillAmounts[i],
+                    expectedFillAmount,
+                    0
+                );
+            }
+        }
+    }
+
     function testHybridMatchCrossOrders() public {
         console.log("=== Testing Hybrid Match Cross Orders ===");
         
@@ -316,11 +455,30 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper {
             initialYES[i] = ctf.balanceOf(users[i], yesPositionIds[tokenIndices[i]]);
         }
         
+        // Calculate expected fill amount (same for all orders in cross-match)
+        uint256 expectedFillAmount = takerFillAmount[0] * takerOrder.takerAmount / takerOrder.makerAmount;
+        
+        // Set up event expectations
+        _expectMakerOrderFilledEvents(makerOrders[0].orders, makerOrders[0].makerFillAmounts, expectedFillAmount, takerOrder.order.maker);
+        _expectTakerOrderFilledEvent(takerOrder, takerFillAmount[0], expectedFillAmount);
+        _expectOrdersMatchedEvent(takerOrder, takerFillAmount[0], expectedFillAmount);
+        
         // Execute hybrid match orders
         adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, 0);
 
         // Verify results using helper function to reduce stack depth
-        _verifyCrossMatchResults(users, yesPositionIds, tokenIndices, initialUSDC, initialYES, initialVaultBalance, takerFillAmount, makerOrders, takerOrder);
+        VerificationParams memory params = VerificationParams({
+            users: users,
+            yesPositionIds: yesPositionIds,
+            tokenIndices: tokenIndices,
+            initialUSDC: initialUSDC,
+            initialYES: initialYES,
+            initialVaultBalance: initialVaultBalance,
+            takerFillAmount: takerFillAmount,
+            makerFillAmounts: makerOrders[0].makerFillAmounts,
+            expectedFillAmount: expectedFillAmount
+        });
+        _verifyCrossMatchResults(params);
         
         console.log("Extreme price distribution test passed!");
     }
@@ -420,6 +578,14 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper {
             }
         }
         
+        // Calculate expected fill amount (same for all orders in cross-match)
+        uint256 expectedFillAmount = takerFillAmount[0] * takerOrder.takerAmount / takerOrder.makerAmount;
+        
+        // Set up event expectations for SHORT cross-match
+        _expectMakerOrderFilledEvents(makerOrders[0].orders, makerOrders[0].makerFillAmounts, 1e5, takerOrder.order.maker);
+        _expectTakerOrderFilledEvent(takerOrder, takerFillAmount[0], expectedFillAmount);
+        _expectOrdersMatchedEvent(takerOrder, takerFillAmount[0], expectedFillAmount);
+        
         // Execute hybrid match orders
         adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, 0);
 
@@ -480,6 +646,14 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper {
         initialBalances[4] = ctf.balanceOf(user2, yesPositionIds[0]);
         initialBalances[5] = ctf.balanceOf(user3, yesPositionIds[1]);
         initialBalances[6] = usdc.balanceOf(vault); // Vault balance
+        
+        // Calculate expected fill amount (same for all orders in cross-match)
+        uint256 expectedFillAmount = takerFillAmount[0] * takerOrder.takerAmount / takerOrder.makerAmount;
+        
+        // Set up event expectations for LONG cross-match
+        _expectMakerOrderFilledEvents(makerOrders[0].orders, makerOrders[0].makerFillAmounts, expectedFillAmount, takerOrder.order.maker);
+        _expectTakerOrderFilledEvent(takerOrder, takerFillAmount[0], expectedFillAmount);
+        _expectOrdersMatchedEvent(takerOrder, takerFillAmount[0], expectedFillAmount);
         
         // Execute hybrid match orders
         adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, 0);
@@ -542,6 +716,15 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper {
         initialBalances[4] = ctf.balanceOf(user2, yesPositionIds[0]);
         initialBalances[5] = ctf.balanceOf(user3, noPosId1);
         initialBalances[6] = usdc.balanceOf(vault); // Vault balance
+        
+        // Calculate expected fill amount (same for all orders in cross-match)
+        uint256 expectedFillAmount = takerFillAmount[0] * takerOrder.takerAmount / takerOrder.makerAmount;
+        
+        // Set up event expectations for LONG cross-match with mixed buy/sell
+        _expectMakerOrderFilledEventsBySide(makerOrders[0].orders, makerOrders[0].makerFillAmounts, expectedFillAmount, takerOrder.order.maker, Side.BUY);
+        _expectMakerOrderFilledEventsBySide(makerOrders[0].orders, makerOrders[0].makerFillAmounts, 0.9e6, takerOrder.order.maker, Side.SELL);
+        _expectTakerOrderFilledEvent(takerOrder, takerFillAmount[0], expectedFillAmount);
+        _expectOrdersMatchedEvent(takerOrder, takerFillAmount[0], expectedFillAmount);
         
         // Execute hybrid match orders
         adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, 0);
@@ -611,6 +794,15 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper {
         initialBalances[5] = ctf.balanceOf(user3, noPosId1);
         initialBalances[6] = usdc.balanceOf(vault); // Vault balance
         
+        // Calculate expected fill amount (same for all orders in cross-match)
+        uint256 expectedFillAmount = takerFillAmount[0] * takerOrder.takerAmount / takerOrder.makerAmount;
+        
+        // Set up event expectations for LONG cross-match with mixed buy/sell
+        _expectMakerOrderFilledEventsBySide(makerOrders[0].orders, makerOrders[0].makerFillAmounts, expectedFillAmount, takerOrder.order.maker, Side.BUY);
+        _expectMakerOrderFilledEventsBySide(makerOrders[0].orders, makerOrders[0].makerFillAmounts, 0.9e6, takerOrder.order.maker, Side.SELL);
+        _expectTakerOrderFilledEvent(takerOrder, takerFillAmount[0], expectedFillAmount);
+        _expectOrdersMatchedEvent(takerOrder, takerFillAmount[0], expectedFillAmount);
+        
         // Execute hybrid match orders
         adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, 0);
 
@@ -671,31 +863,17 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper {
         console.log("Mixed Long cross match test failed!");
     }
     
-    function _verifyCrossMatchResults(
-        address[] memory users,
-        uint256[] memory yesPositionIds,
-        uint256[] memory tokenIndices,
-        uint256[] memory initialUSDC,
-        uint256[] memory initialYES,
-        uint256 initialVaultBalance,
-        uint256[] memory takerFillAmount,
-        CrossMatchingAdapter.MakerOrder[] memory makerOrders,
-        OrderIntent memory takerOrder
-    ) internal {
+    function _verifyCrossMatchResults(VerificationParams memory params) internal {
         // Verify token balances after execution
         console.log("=== Verifying Token Balances After Hybrid Match ===");
         
-        // In cross-match, all orders receive the same fillAmount tokens (calculated from taker order)
-        // For BUY orders: fillAmount = takerFillAmount * takerAmount / makerAmount = 0.6e6 * 1e6 / 0.6e6 = 1e6
-        uint256 expectedFillAmount = takerFillAmount[0] * takerOrder.takerAmount / takerOrder.makerAmount;
-        
         // Verify all users received tokens
         for (uint256 i = 0; i < 5; i++) {
-            uint256 tokenId = yesPositionIds[tokenIndices[i]];
-            uint256 balance = ctf.balanceOf(users[i], tokenId);
+            uint256 tokenId = params.yesPositionIds[params.tokenIndices[i]];
+            uint256 balance = ctf.balanceOf(params.users[i], tokenId);
             assertEq(
                 balance,
-                initialYES[i] + expectedFillAmount,
+                params.initialYES[i] + params.expectedFillAmount,
                 string(abi.encodePacked("User", vm.toString(i + 1), " should receive YES tokens"))
             );
             console.log("User%i YES tokens: %s", i + 1, balance);
@@ -706,34 +884,34 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper {
         
         // Taker (user1) should have paid USDC
         assertEq(
-            usdc.balanceOf(users[0]),
-            initialUSDC[0] - takerFillAmount[0],
+            usdc.balanceOf(params.users[0]),
+            params.initialUSDC[0] - params.takerFillAmount[0],
             "User1 (taker) should pay USDC for buying YES tokens"
         );
-        console.log("User1 USDC: %s", usdc.balanceOf(users[0]));
+        console.log("User1 USDC: %s", usdc.balanceOf(params.users[0]));
         
         // Makers should have paid their respective fill amounts
         for (uint256 i = 1; i < 5; i++) {
             assertEq(
-                usdc.balanceOf(users[i]),
-                initialUSDC[i] - makerOrders[0].makerFillAmounts[i - 1],
+                usdc.balanceOf(params.users[i]),
+                params.initialUSDC[i] - params.makerFillAmounts[i - 1],
                 string(abi.encodePacked("User", vm.toString(i + 1), " (maker) should pay USDC for buying YES tokens"))
             );
-            console.log("User%i USDC: %s", i + 1, usdc.balanceOf(users[i]));
+            console.log("User%i USDC: %s", i + 1, usdc.balanceOf(params.users[i]));
         }
         
         // Verify adapter has no remaining tokens or USDC (self-financing)
         assertEq(usdc.balanceOf(address(adapter)), 0, "Adapter should have no remaining USDC");
         for (uint256 i = 0; i < 5; i++) {
             assertEq(
-                ctf.balanceOf(address(adapter), yesPositionIds[i]),
+                ctf.balanceOf(address(adapter), params.yesPositionIds[i]),
                 0,
                 string(abi.encodePacked("Adapter should have no remaining YES tokens for question ", vm.toString(i)))
             );
         }
         
         // Verify vault balance remains the same (self-financing)
-        assertEq(usdc.balanceOf(vault), initialVaultBalance, "Vault balance should remain the same");
+        assertEq(usdc.balanceOf(vault), params.initialVaultBalance, "Vault balance should remain the same");
         console.log("Vault USDC balance: %s (unchanged)", usdc.balanceOf(vault));
     }
     
