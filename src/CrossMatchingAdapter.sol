@@ -35,6 +35,9 @@ interface ICrossMatchingAdapterEE {
     error SingleOrderCountMismatch(); // provided single order count does not match detected orders
     error MakerFillLengthMismatch(); // taker fill lengths do not match maker orders length
     error InvalidSingleOrderShape(); // single maker order must have exactly one nested order and fill amount
+
+    event OrderFilled(bytes32 indexed orderHash, address indexed maker, address indexed taker, uint256 makerAssetId, uint256 takerAssetId, uint256 makerAmountFilled, uint256 takerAmountFilled, uint256 fee);
+    event OrdersMatched(bytes32 indexed takerOrderHash, address indexed takerOrderMaker, uint256 makerAssetId, uint256 takerAssetId, uint256 makerAmountFilled, uint256 takerAmountFilled);
 }
 
 /*
@@ -92,6 +95,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         uint256 feeAmount;     // fee amount
         uint256 makingAmount; // making amount
         uint256 takingAmount; // taking amount
+        bytes32 orderHash;
     }
 
     struct MakerOrder {
@@ -225,49 +229,10 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         uint256 takerFillAmount,
         uint256[] calldata makerFillAmounts
     ) public allUnresolvedQuestionsPresent(marketId, multiOrderMaker) {
-        uint256 fillAmount;
-        Parsed[] memory parsedOrders;
-
-        uint256 totalSellUSDC;
-        uint256 totalCombinedPrice;
-
-        {
-            // Validate taker order signature and parameters
-            (uint256 takingAmount, ) = ctfExchange.performOrderChecks(takerOrder, takerFillAmount);
-
-            if (takerOrder.side == Side.BUY) {
-                fillAmount = takingAmount;
-            } else {
-                fillAmount = takerFillAmount;
-            }
-
-            if (fillAmount == 0) {
-                revert InvalidFillAmount();
-            }
-
-            parsedOrders = new Parsed[](multiOrderMaker.length + 1);
-            parsedOrders[0] = _parseOrder(takerOrder, fillAmount, takerFillAmount, takingAmount);
-        }
- 
-        totalCombinedPrice = parsedOrders[0].priceQ6;
-        if (parsedOrders[0].side == Side.SELL) {
-            totalSellUSDC = parsedOrders[0].counterPayAmount;
-        }
-
-        // Validate all maker orders signatures and parameters and update the order status
-        for (uint256 i = 0; i < multiOrderMaker.length; ) {
-            (uint256 makerTakingAmount, ) = ctfExchange.performOrderChecks(multiOrderMaker[i], makerFillAmounts[i]);
-            parsedOrders[i + 1] = _parseOrder(multiOrderMaker[i], fillAmount, makerFillAmounts[i], makerTakingAmount);
-            totalCombinedPrice += parsedOrders[i + 1].priceQ6;
-            if (parsedOrders[i + 1].side == Side.SELL) {
-                // For sell orders, amount that we need for minting
-                totalSellUSDC += parsedOrders[i + 1].counterPayAmount;
-            }
-            unchecked {
-                ++i;
-            }
-        }
-
+        (uint256 fillAmount, Parsed[] memory parsedOrders) = _parseTakerOrderShort(takerOrder, takerFillAmount, multiOrderMaker.length);
+        
+        (uint256 totalSellUSDC, uint256 totalCombinedPrice) = _parseMakerOrdersShort(multiOrderMaker, makerFillAmounts, parsedOrders, fillAmount);
+        
         // The total combined price must be greater than or equal to one
         if (totalCombinedPrice < ONE) {
             revert InvalidCombinedPrice();
@@ -278,6 +243,54 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
 
         // Refund any leftover tokens pulled from the taker to the taker order
         _refundLeftoverTokens(takerOrder);
+    }
+
+    function _parseTakerOrderShort(
+        OrderIntent calldata takerOrder,
+        uint256 takerFillAmount,
+        uint256 makerOrderCount
+    ) internal returns (uint256 fillAmount, Parsed[] memory parsedOrders) {
+        // Validate taker order signature and parameters
+        (uint256 takingAmount, bytes32 orderHash) = ctfExchange.performOrderChecks(takerOrder, takerFillAmount);
+
+        if (takerOrder.side == Side.BUY) {
+            fillAmount = takingAmount;
+        } else {
+            fillAmount = takerFillAmount;
+        }
+
+        if (fillAmount == 0) {
+            revert InvalidFillAmount();
+        }
+
+        parsedOrders = new Parsed[](makerOrderCount + 1);
+        parsedOrders[0] = _parseOrder(takerOrder, fillAmount, takerFillAmount, takingAmount, orderHash);
+    }
+
+    function _parseMakerOrdersShort(
+        OrderIntent[] calldata multiOrderMaker,
+        uint256[] calldata makerFillAmounts,
+        Parsed[] memory parsedOrders,
+        uint256 fillAmount
+    ) internal returns (uint256 totalSellUSDC, uint256 totalCombinedPrice) {
+        totalCombinedPrice = parsedOrders[0].priceQ6;
+        if (parsedOrders[0].side == Side.SELL) {
+            totalSellUSDC = parsedOrders[0].counterPayAmount;
+        }
+
+        // Validate all maker orders signatures and parameters and update the order status
+        for (uint256 i = 0; i < multiOrderMaker.length; ) {
+            (uint256 makerTakingAmount, bytes32 orderHash) = ctfExchange.performOrderChecks(multiOrderMaker[i], makerFillAmounts[i]);
+            parsedOrders[i + 1] = _parseOrder(multiOrderMaker[i], fillAmount, makerFillAmounts[i], makerTakingAmount, orderHash);
+            totalCombinedPrice += parsedOrders[i + 1].priceQ6;
+            if (parsedOrders[i + 1].side == Side.SELL) {
+                // For sell orders, amount that we need for minting
+                totalSellUSDC += parsedOrders[i + 1].counterPayAmount;
+            }
+            unchecked {
+                ++i;
+            }
+        }
     }
 
     function _executeShortCrossMatch(
@@ -292,37 +305,60 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         // Add the fillAmount to this amount to get the total WCOL that we need to complete the split
         wcol.mint(fillAmount + totalSellUSDC);
 
-        for (uint256 i = 0; i < parsedOrders.length; ) {
-            Parsed memory order = parsedOrders[i];
-            bytes32 conditionId = neg.getConditionId(order.questionId);
-            _splitPosition(conditionId, fillAmount);
+        Parsed memory takerOrder = parsedOrders[0];
 
-            if (i != 0) { // only process maker orders
-                if (order.side == Side.BUY) {
-                    _distributeNoTokens(order, fillAmount);
-                } else {
-                    _mergeNoTokens(order, fillAmount);
+        {
+            for (uint256 i = 0; i < parsedOrders.length; ) {
+                Parsed memory order = parsedOrders[i];
+                bytes32 conditionId = neg.getConditionId(order.questionId);
+                _splitPosition(conditionId, fillAmount);
+                (uint256 makerAssetId, uint256 takerAssetId) = _deriveAssetIds(order);
+
+                if (i != 0) { // only process maker orders
+                    if (order.side == Side.BUY) {
+                        _distributeNoTokens(order, fillAmount);
+                        emit OrderFilled(order.orderHash, order.maker, takerOrder.maker, makerAssetId, takerAssetId, order.makingAmount, order.takingAmount, order.feeAmount);
+                    } else {
+                        _mergeNoTokens(order, fillAmount);
+                        emit OrderFilled(order.orderHash, order.maker, takerOrder.maker, makerAssetId, takerAssetId, order.makingAmount, order.takingAmount, order.feeAmount);
+                    }
                 }
-            }
 
-            unchecked {
-                ++i;
+                unchecked {
+                    ++i;
+                }
             }
         }
 
-        uint256 takingAmount = _updateTakingWithSurplus(parsedOrders[0].takingAmount, parsedOrders[0].tokenId);
-        if (parsedOrders[0].side == Side.BUY) {
-            uint256 feeAmount = CalculatorHelper.calculateFee(parsedOrders[0].feeRateBps, takingAmount, parsedOrders[0].makingAmount, parsedOrders[0].takingAmount, parsedOrders[0].side,ctfExchange.FEE_RATIO());
+        _processTakerOrderShort(parsedOrders, takerOrder, fillAmount, marketId, totalSellUSDC);
+    }
+
+    function _processTakerOrderShort(
+        Parsed[] memory parsedOrders,
+        Parsed memory takerOrder,
+        uint256 fillAmount,
+        bytes32 marketId,
+        uint256 totalSellUSDC
+    ) internal {
+        Parsed memory takerParsed = parsedOrders[0];
+        (uint256 makerAssetId, uint256 takerAssetId) = _deriveAssetIds(takerOrder);
+        
+        uint256 takingAmount = _updateTakingWithSurplus(takerParsed.takingAmount, takerParsed.tokenId);
+        uint256 feeAmount;
+        if (takerOrder.side == Side.BUY) {
+            feeAmount = CalculatorHelper.calculateFee(takerParsed.feeRateBps, takingAmount, takerParsed.makingAmount, takerParsed.takingAmount, takerParsed.side,ctfExchange.FEE_RATIO());
             parsedOrders[0].feeAmount = feeAmount;
             _distributeNoTokens(parsedOrders[0], fillAmount);
+            emit OrderFilled(takerParsed.orderHash, takerParsed.maker, takerOrder.maker, makerAssetId, takerAssetId, takerParsed.makingAmount, takerParsed.takingAmount, feeAmount);
         } else {
-            uint256 feeAmount = CalculatorHelper.calculateFee(parsedOrders[0].feeRateBps, parsedOrders[0].makingAmount, parsedOrders[0].makingAmount, parsedOrders[0].takingAmount, parsedOrders[0].side,ctfExchange.FEE_RATIO());
+            feeAmount = CalculatorHelper.calculateFee(takerParsed.feeRateBps, takerParsed.makingAmount, takerParsed.makingAmount, takerParsed.takingAmount, takerParsed.side,ctfExchange.FEE_RATIO());
             parsedOrders[0].feeAmount = feeAmount;
             _mergeNoTokens(parsedOrders[0], fillAmount);
+            emit OrderFilled(takerParsed.orderHash, takerParsed.maker, takerOrder.maker, makerAssetId, takerAssetId, takerParsed.makingAmount, takerParsed.takingAmount, feeAmount);
         }
 
         // Merge all the YES tokens to get USDC
-        uint8 pivotIndex = _getQuestionIndexFromPositionId(parsedOrders[0].tokenId, marketId);
+        uint8 pivotIndex = _getQuestionIndexFromPositionId(takerOrder.tokenId, marketId);
         revNeg.mergeAllYesTokens(marketId, fillAmount, pivotIndex);
         // wrap the generated USDC to the adapter
         wcol.wrap(address(this), fillAmount);
@@ -331,6 +367,8 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
 
         // burn the WCOL, since we minted it earlier
         wcol.burn(fillAmount + totalSellUSDC);
+
+        emit OrdersMatched(takerOrder.orderHash, takerOrder.maker, makerAssetId, takerAssetId, takerOrder.makingAmount, takerOrder.takingAmount);
     }
 
     function _distributeNoTokens(
@@ -386,28 +424,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         uint256 takerFillAmount,
         uint256[] calldata makerFillAmounts
     ) public allUnresolvedQuestionsPresent(marketId, multiOrderMaker) {
-        uint256 fillAmount;
-        Parsed[] memory parsedOrders;
-        {
-            // Validate taker order signature and parameters
-            (uint256 takingAmount, ) = ctfExchange.performOrderChecks(takerOrder, takerFillAmount);
-
-            if (takerOrder.side == Side.BUY) {
-                fillAmount = takingAmount;
-            } else {
-                fillAmount = takerFillAmount;
-            }
-
-            if (fillAmount == 0) {
-                revert InvalidFillAmount();
-            }
-
-            parsedOrders = new Parsed[](multiOrderMaker.length + 1);
-
-            // Store parsed taker order; maker orders are validated in the aggregation loop below
-            parsedOrders[0] = _parseOrder(takerOrder, fillAmount, takerFillAmount, takingAmount);
-        }
-
         // Cross-matching function that handles scenarios including resolved questions:
         // 
         // Scenario 1: All buy orders (e.g., 4 users buying Yes1, Yes2, Yes3, Yes4)
@@ -433,46 +449,77 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         // - Use taker's question ID as pivot instead of hardcoded 0
         // - Handle USDC flow correctly for partial market scenarios
         
-        uint256 totalSellUSDC;
-        {
-            totalSellUSDC = 0;
-            uint256 totalCombinedPrice = 0;
-            
-            // Note: We can have:
-            // 1. All buy orders: 4 users buying different YES tokens (Yes1, Yes2, Yes3, Yes4)
-            // 2. All sell orders: users selling NO tokens (e.g., No Barca, No Arsenal, No Chelsea)
-            // 3. Mixed buy/sell orders: some users buying YES, some selling NO
-            
-            // Parse taker order
-            if (parsedOrders[0].side == Side.SELL) {
-                totalSellUSDC += parsedOrders[0].payAmount;
-            }
-            totalCombinedPrice += parsedOrders[0].priceQ6;
-            
-            // Parse maker orders
-            for (uint256 i = 0; i < multiOrderMaker.length; ) {
-                (uint256 makerTakingAmount, ) = ctfExchange.performOrderChecks(multiOrderMaker[i], makerFillAmounts[i]);
-                parsedOrders[i + 1] = _parseOrder(multiOrderMaker[i], fillAmount, makerFillAmounts[i], makerTakingAmount);
-                if (parsedOrders[i + 1].side == Side.SELL) {
-                    totalSellUSDC += parsedOrders[i + 1].payAmount;
-                }
-                totalCombinedPrice += parsedOrders[i + 1].priceQ6;
-                unchecked {
-                    ++i;
-                }
-            }
-            
-            // Validate that the combined price of all orders equals or exceeds 1
-            if (totalCombinedPrice < ONE) {
-                revert InvalidCombinedPrice();
-            }
-        }
+        (uint256 fillAmount, Parsed[] memory parsedOrders) = _parseTakerOrderLong(takerOrder, takerFillAmount, multiOrderMaker.length);
+        
+        uint256 totalSellUSDC = _parseMakerOrdersLong(multiOrderMaker, makerFillAmounts, parsedOrders, fillAmount);
         
         // Execute cross-matching logic
         _executeLongCrossMatch(parsedOrders, marketId, totalSellUSDC, fillAmount);
 
         // Refund any leftover tokens pulled from the taker to the taker order
         _refundLeftoverTokens(takerOrder);
+    }
+
+    function _parseTakerOrderLong(
+        OrderIntent calldata takerOrder,
+        uint256 takerFillAmount,
+        uint256 makerOrderCount
+    ) internal returns (uint256 fillAmount, Parsed[] memory parsedOrders) {
+        // Validate taker order signature and parameters
+        (uint256 takingAmount, bytes32 orderHash) = ctfExchange.performOrderChecks(takerOrder, takerFillAmount);
+
+        if (takerOrder.side == Side.BUY) {
+            fillAmount = takingAmount;
+        } else {
+            fillAmount = takerFillAmount;
+        }
+
+        if (fillAmount == 0) {
+            revert InvalidFillAmount();
+        }
+
+        parsedOrders = new Parsed[](makerOrderCount + 1);
+
+        // Store parsed taker order; maker orders are validated in the aggregation loop below
+        parsedOrders[0] = _parseOrder(takerOrder, fillAmount, takerFillAmount, takingAmount, orderHash);
+    }
+
+    function _parseMakerOrdersLong(
+        OrderIntent[] calldata multiOrderMaker,
+        uint256[] calldata makerFillAmounts,
+        Parsed[] memory parsedOrders,
+        uint256 fillAmount
+    ) internal returns (uint256 totalSellUSDC) {
+        uint256 totalCombinedPrice = 0;
+        
+        // Note: We can have:
+        // 1. All buy orders: 4 users buying different YES tokens (Yes1, Yes2, Yes3, Yes4)
+        // 2. All sell orders: users selling NO tokens (e.g., No Barca, No Arsenal, No Chelsea)
+        // 3. Mixed buy/sell orders: some users buying YES, some selling NO
+        
+        // Parse taker order
+        if (parsedOrders[0].side == Side.SELL) {
+            totalSellUSDC = parsedOrders[0].payAmount;
+        }
+        totalCombinedPrice = parsedOrders[0].priceQ6;
+        
+        // Parse maker orders
+        for (uint256 i = 0; i < multiOrderMaker.length; ) {
+            (uint256 makerTakingAmount, bytes32 orderHash) = ctfExchange.performOrderChecks(multiOrderMaker[i], makerFillAmounts[i]);
+            parsedOrders[i + 1] = _parseOrder(multiOrderMaker[i], fillAmount, makerFillAmounts[i], makerTakingAmount, orderHash);
+            if (parsedOrders[i + 1].side == Side.SELL) {
+                totalSellUSDC += parsedOrders[i + 1].payAmount;
+            }
+            totalCombinedPrice += parsedOrders[i + 1].priceQ6;
+            unchecked {
+                ++i;
+            }
+        }
+        
+        // Validate that the combined price of all orders equals or exceeds 1
+        if (totalCombinedPrice < ONE) {
+            revert InvalidCombinedPrice();
+        }
     }
     
     function _executeLongCrossMatch(
@@ -656,7 +703,8 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         OrderIntent calldata order,
         uint256 fillAmount,
         uint256 makingAmount,
-        uint256 takingAmount
+        uint256 takingAmount,
+        bytes32 orderHash
     ) internal view returns (Parsed memory) {
         uint256 priceQ6 = order.order.price;
         uint256 payUSDC = (priceQ6 * fillAmount) / ONE;
@@ -694,7 +742,8 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
             feeRateBps: order.order.feeRateBps,
             feeAmount: feeAmount,
             makingAmount: makingAmount,
-            takingAmount: takingAmount
+            takingAmount: takingAmount,
+            orderHash: orderHash
         });
     }
     
@@ -761,5 +810,10 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         uint256 actualAmount = _getBalance(tokenId);
         if (actualAmount < minimumAmount) revert ITradingEE.TooLittleTokensReceived();
         return actualAmount;
+    }
+
+    function _deriveAssetIds(Parsed memory order) internal pure returns (uint256 makerAssetId, uint256 takerAssetId) {
+        if (order.side == Side.BUY) return (0, order.tokenId);
+        return (order.tokenId, 0);
     }
 }
