@@ -11,7 +11,7 @@ fs_permissions = [
     { access = "read-write", path = ".forge-snapshots/"}, 
     { access = "read", path = "./artifacts/"}, 
     { access = "read", path = "./out/"}, 
-    { access = "read", path = "./addresses.json"}
+    { access = "read-write", path = "./addresses.json"}
 ]
 
 # Metadata configuration for contract verification
