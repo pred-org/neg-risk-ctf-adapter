@@ -7,13 +7,13 @@ import {NegRiskCtfExchange} from "src/NegRiskCtfExchange.sol";
 
 /// @title DeployNegRiskCtfExchange
 /// @notice Script to deploy the NegRiskCtfExchange contract
-/// @author Polymarket
+/// @author Pred
 contract DeployNegRiskCtfExchange is Script {
     /// @notice Deploys the NegRiskCtfExchange contract
     /// @param _collateral The collateral token address (e.g., USDC)
     /// @param _ctf The ConditionalTokens contract address
     /// @param _negRiskAdapter The NegRiskAdapter contract address
-    /// @param _proxyFactory The Polymarket proxy factory address
+    /// @param _proxyFactory The proxy factory address
     /// @param _safeFactory The Gnosis Safe factory address
     /// @return exchange The deployed NegRiskCtfExchange address
     function deploy(

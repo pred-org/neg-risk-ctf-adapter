@@ -15,7 +15,7 @@ using MarketDataLib for MarketData global;
 
 /// @title MarketDataLib
 /// @notice Library for dealing with the MarketData user-defined bytes32 type
-/// @author Mike Shrieve (mike@polymarket.com)
+/// @author Pred
 library MarketDataLib {
     error DeterminedFlagAlreadySet();
 

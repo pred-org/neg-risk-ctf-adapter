@@ -33,7 +33,7 @@ interface IRevNegRiskAdapterEE is IAuthEE {
 /// @notice Reverse adapter for the CTF enabling the conversion of (n-1) yes positions into 1 no position
 /// @notice This is the reverse operation of NegRiskAdapter's convertPositions
 /// @notice The adapter allows for the conversion of a set of yes positions to a single no position
-/// @author Based on NegRiskAdapter by Mike Shrieve (mike@polymarket.com)
+/// @author Pred
 contract RevNegRiskAdapter is ERC1155TokenReceiver, IRevNegRiskAdapterEE, Auth {
     using SafeTransferLib for ERC20;
 

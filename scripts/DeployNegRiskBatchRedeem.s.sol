@@ -7,7 +7,7 @@ import {NegRiskBatchRedeem} from "src/NegRiskBatchRedeem.sol";
 
 /// @title DeployNegRiskBatchRedeem
 /// @notice Script to deploy the NegRiskBatchRedeem contract
-/// @author Polymarket
+/// @author Pred
 contract DeployNegRiskBatchRedeem is Script {
     /// @notice Deploys the NegRiskBatchRedeem contract
     /// @param _negRiskAdapter The NegRiskAdapter contract address
