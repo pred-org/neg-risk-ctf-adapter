@@ -41,7 +41,7 @@ interface INegRiskBatchRedeemEE {
 /// @title NegRiskBatchRedeem
 /// @notice Contract that provides batch redemption functionality for whitelisted operators
 /// @notice Operators can redeem positions for multiple users who have given token allowance to this contract
-/// @author Generated for Polymarket
+/// @author Pred
 contract NegRiskBatchRedeem is ERC1155TokenReceiver, INegRiskBatchRedeemEE {
     /*//////////////////////////////////////////////////////////////
                                  STATE

@@ -10,7 +10,7 @@ import {ERC20} from "lib/solmate/src/tokens/ERC20.sol";
 
 /// @title DeployNegRiskAdapter
 /// @notice Script to deploy the NegRiskAdapter contract
-/// @author Polymarket
+/// @author Pred
 contract DeployNegRiskAdapter is Script {
     /// @notice Deploys the NegRiskAdapter and related contracts
     /// @param _ctf The ConditionalTokens contract address

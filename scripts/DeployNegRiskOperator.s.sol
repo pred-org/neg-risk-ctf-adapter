@@ -7,7 +7,7 @@ import {NegRiskOperator} from "src/NegRiskOperator.sol";
 
 /// @title DeployNegRiskOperator
 /// @notice Script to deploy the NegRiskOperator contract
-/// @author Polymarket
+/// @author Pred
 contract DeployNegRiskOperator is Script {
     /// @notice Deploys the NegRiskOperator contract
     /// @param _nrAdapter The NegRiskAdapter contract address

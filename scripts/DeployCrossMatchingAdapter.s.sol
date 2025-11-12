@@ -12,7 +12,7 @@ import {NegRiskOperator} from "src/NegRiskOperator.sol";
 
 /// @title DeployCrossMatchingAdapter
 /// @notice Script to deploy the CrossMatchingAdapter contract
-/// @author Polymarket
+/// @author Pred
 contract DeployCrossMatchingAdapter is Script {
     /// @notice Deploys the CrossMatchingAdapter contract
     /// @param _negOperator The NegRiskOperator contract address

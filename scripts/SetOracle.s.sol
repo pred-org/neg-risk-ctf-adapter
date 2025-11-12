@@ -7,7 +7,7 @@ import {NegRiskOperator} from "src/NegRiskOperator.sol";
 
 /// @title SetOracle
 /// @notice Script to set the oracle address in NegRiskOperator
-/// @author Polymarket
+/// @author Pred
 contract SetOracle is Script {
     /// @notice Sets the oracle address in NegRiskOperator
     /// @param _operator The NegRiskOperator contract address
