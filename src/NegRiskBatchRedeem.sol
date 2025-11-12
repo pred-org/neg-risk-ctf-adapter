@@ -171,13 +171,19 @@ contract NegRiskBatchRedeem is ERC1155TokenReceiver, INegRiskBatchRedeemEE {
     ) internal returns (uint256 payout) {
         if (_yesAmount == 0 && _noAmount == 0) return 0;
 
-        uint256[] memory positionIds = new uint256[](2);
-        positionIds[0] = _yesPositionId; // yes tokens
-        positionIds[1] = _noPositionId;  // no tokens
-
-        uint256[] memory userAmounts = new uint256[](2);
-        userAmounts[0] = _yesAmount; // yes tokens
-        userAmounts[1] = _noAmount;  // no tokens
+        uint256 numTokens = (_yesAmount > 0 ? 1 : 0) + (_noAmount > 0 ? 1 : 0);
+        uint256[] memory positionIds = new uint256[](numTokens);
+        uint256[] memory userAmounts = new uint256[](numTokens);
+        uint256 idx = 0;
+        if (_yesAmount > 0) {
+            positionIds[idx] = _yesPositionId;
+            userAmounts[idx] = _yesAmount;
+            idx++;
+        }
+        if (_noAmount > 0) {
+            positionIds[idx] = _noPositionId;
+            userAmounts[idx] = _noAmount;
+        }
 
         // Transfer tokens from user to this contract
         ctf.safeBatchTransferFrom(_user, address(this), positionIds, userAmounts, "");

@@ -394,7 +394,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         }
     }
 
-    function testHybridMatchCrossOrders() public {
+    function testHybridMatchCrossLongOrders() public {
         console.log("=== Testing Hybrid Match Cross Orders ===");
         
         // Create 5 questions with extreme price distributions
