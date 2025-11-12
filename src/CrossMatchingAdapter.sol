@@ -345,12 +345,12 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         uint256 takingAmount = _updateTakingWithSurplus(takerOrder.takingAmount, takerOrder.tokenId);
         uint256 feeAmount;
         if (takerOrder.side == Side.BUY) {
-            feeAmount = CalculatorHelper.calculateFee(takerOrder.feeRateBps, takingAmount, takerOrder.makingAmount, takerOrder.takingAmount, takerOrder.side,ctfExchange.FEE_RATIO());
+            feeAmount = CalculatorHelper.calculateFee(takerOrder.feeRateBps, takingAmount, takerOrder.makingAmount, takerOrder.takingAmount, takerOrder.side, ctfExchange.BPS_DIVISOR());
             parsedOrders[0].feeAmount = feeAmount;
             _distributeNoTokens(parsedOrders[0], fillAmount);
             emit OrderFilled(takerOrder.orderHash, takerOrder.maker, address(this), makerAssetId, takerAssetId, takerOrder.makingAmount, takerOrder.takingAmount, feeAmount);
         } else {
-            feeAmount = CalculatorHelper.calculateFee(takerOrder.feeRateBps, takerOrder.makingAmount, takerOrder.makingAmount, takerOrder.takingAmount, takerOrder.side,ctfExchange.FEE_RATIO());
+            feeAmount = CalculatorHelper.calculateFee(takerOrder.feeRateBps, takerOrder.makingAmount, takerOrder.makingAmount, takerOrder.takingAmount, takerOrder.side, ctfExchange.BPS_DIVISOR());
             parsedOrders[0].feeAmount = feeAmount;
             _mergeNoTokens(parsedOrders[0], fillAmount);
             emit OrderFilled(takerOrder.orderHash, takerOrder.maker, address(this), makerAssetId, takerAssetId, takerOrder.makingAmount, takerOrder.takingAmount, feeAmount);
@@ -567,12 +567,12 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         
         uint256 takingAmount = _updateTakingWithSurplus(takerOrder.takingAmount, takerOrder.tokenId);
         if (takerOrder.side == Side.BUY) {
-            uint256 feeAmount = CalculatorHelper.calculateFee(takerOrder.feeRateBps, takingAmount, takerOrder.makingAmount, takerOrder.takingAmount, takerOrder.side,ctfExchange.FEE_RATIO());
+            uint256 feeAmount = CalculatorHelper.calculateFee(takerOrder.feeRateBps, takingAmount, takerOrder.makingAmount, takerOrder.takingAmount, takerOrder.side,ctfExchange.BPS_DIVISOR());
             takerOrder.feeAmount = feeAmount;
             _processBuyOrder(takerOrder, fillAmount);
             emit OrderFilled(takerOrder.orderHash, takerOrder.maker, address(this), makerAssetId, takerAssetId, takerOrder.makingAmount, takerOrder.takingAmount, feeAmount);
         } else {
-            uint256 feeAmount = CalculatorHelper.calculateFee(takerOrder.feeRateBps, takerOrder.makingAmount, takerOrder.makingAmount, takerOrder.takingAmount, takerOrder.side,ctfExchange.FEE_RATIO());
+            uint256 feeAmount = CalculatorHelper.calculateFee(takerOrder.feeRateBps, takerOrder.makingAmount, takerOrder.makingAmount, takerOrder.takingAmount, takerOrder.side, ctfExchange.BPS_DIVISOR());
             takerOrder.feeAmount = feeAmount;
             totalVaultUSDC += _processSellOrder(takerOrder, fillAmount);
             emit OrderFilled(takerOrder.orderHash, takerOrder.maker, address(this), makerAssetId, takerAssetId, takerOrder.makingAmount, takerOrder.takingAmount, feeAmount);

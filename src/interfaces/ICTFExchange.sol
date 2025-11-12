@@ -37,6 +37,7 @@ interface ICTFExchange {
     event TradingUnpaused(address indexed pauser);
 
     function FEE_RATIO() external view returns (uint256);
+    function BPS_DIVISOR() external view returns (uint256);
 
     function addAdmin(address admin_) external;
     function addOperator(address operator_) external;
