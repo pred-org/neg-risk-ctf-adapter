@@ -482,6 +482,77 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         
         console.log("Extreme price distribution test passed!");
     }
+
+    function testHybridMatchCrossLongOrdersInsufficientBalanceTest() public {
+        console.log("=== Testing Hybrid Match Cross Orders Insufficient Balance Test ===");
+        
+        // Create 5 questions with extreme price distributions
+        bytes32[] memory questionIds = new bytes32[](5);
+        uint256[] memory yesPositionIds = new uint256[](5);
+
+        questionIds[0] = questionId;
+        yesPositionIds[0] = yesPositionId;
+
+        uint256 _userXPK = 0x9999;
+        address userX = vm.addr(_userXPK);
+        vm.label(userX, "User X");
+        
+        for (uint256 i = 1; i < 5; i++) {
+            questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
+            yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
+            uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
+            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
+        }
+        
+        CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
+        makerOrders[0].makerFillAmounts = new uint256[](4);
+        for (uint256 i = 0; i < 4; i++) {
+            makerOrders[0].makerFillAmounts[i] = 0.1e6;
+        }
+        
+        makerOrders[0].orders = new OrderIntent[](4);
+        makerOrders[0].orders[0] = _createAndSignOrder(userX, yesPositionIds[0], 0, 0.1e6, 1e6, questionIds[0], 0, _userXPK);
+        makerOrders[0].orders[1] = _createAndSignOrder(user3, yesPositionIds[1], 0, 0.1e6, 1e6, questionIds[1], 0, _user3PK);
+        makerOrders[0].orders[2] = _createAndSignOrder(user4, yesPositionIds[2], 0, 0.1e6, 1e6, questionIds[2], 0, _user4PK);
+        makerOrders[0].orders[3] = _createAndSignOrder(user5, yesPositionIds[3], 0, 0.1e6, 1e6, questionIds[3], 0, _user5PK);
+        makerOrders[0].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
+        uint256[] memory takerFillAmount = new uint256[](1);
+        takerFillAmount[0] = 0.6e6;
+
+        // Taker order - price 0.6
+        // Total prices: 0.1 + 0.1 + 0.1 + 0.1 + 0.6 = 1.0
+        OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionIds[4], 0, 0.6e6, 1e6, questionIds[4], 0, _user1PK);
+        
+        // Record initial balances using arrays to reduce stack depth
+        address[] memory users = new address[](5);
+        users[0] = user1;
+        users[1] = user2;
+        users[2] = user3;
+        users[3] = user4;
+        users[4] = user5;
+        
+        uint256[] memory initialUSDC = new uint256[](5);
+        uint256[] memory initialYES = new uint256[](5);
+        uint256[] memory tokenIndices = new uint256[](5);
+        tokenIndices[0] = 4; // user1 -> yesPositionIds[4]
+        tokenIndices[1] = 0; // user2 -> yesPositionIds[0]
+        tokenIndices[2] = 1; // user3 -> yesPositionIds[1]
+        tokenIndices[3] = 2; // user4 -> yesPositionIds[2]
+        tokenIndices[4] = 3; // user5 -> yesPositionIds[3]
+        
+        uint256 initialVaultBalance = usdc.balanceOf(vault);
+        
+        for (uint256 i = 0; i < 5; i++) {
+            initialUSDC[i] = usdc.balanceOf(users[i]);
+            initialYES[i] = ctf.balanceOf(users[i], yesPositionIds[tokenIndices[i]]);
+        }
+        
+        vm.expectRevert(bytes("Insufficient balance"));
+        // Execute hybrid match orders
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, 0);
+        
+        console.log("Extreme price distribution test passed!");
+    }
     
     function testHybridMatchCrossOrdersSellers() public {
         console.log("=== Testing Hybrid Match Cross Orders - Makers Selling, Taker Buying ===");
@@ -599,6 +670,231 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
             takerFillAmount,
             makerOrders
         );
+        
+        console.log("Cross match sellers test passed!");
+    }
+
+    function testHybridMatchCrossOrdersSellersInvalidSignaturesTest() public {
+        console.log("=== Testing Hybrid Match Cross Orders - Makers Selling, Taker Buying ===");
+        
+        // Create 5 questions
+        bytes32[] memory questionIds = new bytes32[](5);
+        uint256[] memory yesPositionIds = new uint256[](5);
+
+        questionIds[0] = questionId;
+        yesPositionIds[0] = yesPositionId;
+        
+        for (uint256 i = 1; i < 5; i++) {
+            questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
+            yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
+            uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
+            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
+        }
+        
+        negRiskAdapter.setPrepared(marketId);
+        
+        CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
+        makerOrders[0].makerFillAmounts = new uint256[](4);
+        // For SELL orders, makerFillAmounts is in token amount (1e6 tokens each)
+        for (uint256 i = 0; i < 4; i++) {
+            makerOrders[0].makerFillAmounts[i] = 1e6;
+        }
+        
+        // Maker orders - all selling YES tokens
+        // For SELL orders: side=1, makerAmount=token amount (1e6), takerAmount=USDC amount
+        // SHORT intent (0) + SELL side (1) = selling YES tokens
+        makerOrders[0].orders = new OrderIntent[](4);
+        // Maker 1: selling YES0 at price 0.1 (makerAmount=1e6 tokens, takerAmount=0.1e6 USDC)
+        makerOrders[0].orders[0] = _createAndSignOrder(user2, yesPositionIds[0], 1, 1e6, 0.1e6, questionIds[0], 1, _user3PK);
+        // Maker 2: selling YES1 at price 0.1
+        makerOrders[0].orders[1] = _createAndSignOrder(user3, yesPositionIds[1], 1, 1e6, 0.1e6, questionIds[1], 1, _user4PK);
+        // Maker 3: selling YES2 at price 0.1
+        makerOrders[0].orders[2] = _createAndSignOrder(user4, yesPositionIds[2], 1, 1e6, 0.1e6, questionIds[2], 1, _user4PK);
+        // Maker 4: selling YES3 at price 0.1
+        makerOrders[0].orders[3] = _createAndSignOrder(user5, yesPositionIds[3], 1, 1e6, 0.1e6, questionIds[3], 1, _user5PK);
+        makerOrders[0].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
+        
+        // Taker order - buying NO4 at price 0.6
+        // For BUY orders: side=0, makerAmount=USDC amount (0.6e6), takerAmount=token amount (1e6)
+        // SHORT intent (0) + BUY side (0) = buying NO tokens
+        uint256[] memory takerFillAmount = new uint256[](1);
+        takerFillAmount[0] = 0.4e6; // taker wants to spend 0.4e6 USDC
+        
+        // Get NO position ID for question 4
+        uint256 noPositionId4 = negRiskAdapter.getPositionId(questionIds[4], false);
+        
+        // Taker order - price 0.6, buying NO4 (complementary to selling YES tokens)
+        // Total prices: 0.1 + 0.1 + 0.1 + 0.1 + 0.6 = 1.0
+        OrderIntent memory takerOrder = _createAndSignOrder(user1, noPositionId4, 0, 0.4e6, 1e6, questionIds[4], 1, _user1PK);
+        
+        // Mint YES tokens to makers so they can sell
+        _mintTokensToUser(user2, yesPositionIds[0], 5e6);
+        _mintTokensToUser(user3, yesPositionIds[1], 5e6);
+        _mintTokensToUser(user4, yesPositionIds[2], 5e6);
+        _mintTokensToUser(user5, yesPositionIds[3], 5e6);
+        
+        // Prepare wrapped collateral for minting (needed for cross match)
+        // Total USDC needed: 0.1e6 + 0.1e6 + 0.1e6 + 0.1e6 + 0.6e6 = 1.0e6 (for splitting)
+        MockUSDC(address(usdc)).mint(address(negRiskAdapter.wcol()), 1e6);
+        vm.startPrank(address(negRiskAdapter));
+        WrappedCollateral(address(negRiskAdapter.wcol())).mint(1e6);
+        WrappedCollateral(address(negRiskAdapter.wcol())).transfer(address(ctf), 1e6);
+        vm.stopPrank();
+        
+        // Record initial balances using arrays to reduce stack depth
+        address[] memory users = new address[](5);
+        users[0] = user1; // taker
+        users[1] = user2; // maker 1
+        users[2] = user3; // maker 2
+        users[3] = user4; // maker 3
+        users[4] = user5; // maker 4
+        
+        uint256[] memory tokenIndices = new uint256[](5);
+        tokenIndices[0] = 4; // user1 -> noPositionId4
+        tokenIndices[1] = 0; // user2 -> yesPositionIds[0]
+        tokenIndices[2] = 1; // user3 -> yesPositionIds[1]
+        tokenIndices[3] = 2; // user4 -> yesPositionIds[2]
+        tokenIndices[4] = 3; // user5 -> yesPositionIds[3]
+        
+        // Store all initial balances in arrays to reduce stack depth
+        uint256[] memory initialBalances = new uint256[](11); // 5 USDC + 4 YES + 1 NO + 1 vault
+        initialBalances[10] = usdc.balanceOf(vault); // Vault balance
+        
+        for (uint256 i = 0; i < 5; i++) {
+            initialBalances[i] = usdc.balanceOf(users[i]); // USDC balances
+            if (i == 0) {
+                initialBalances[9] = ctf.balanceOf(users[i], noPositionId4); // NO balance
+            } else {
+                initialBalances[4 + i] = ctf.balanceOf(users[i], yesPositionIds[tokenIndices[i]]); // YES balances
+            }
+        }
+        
+        vm.expectRevert(bytes("InvalidSignature()"));
+        // Execute hybrid match orders
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, 0);
+        
+        console.log("Cross match sellers test passed!");
+    }
+
+    function testHybridMatchCrossOrdersSellersSignatureReuseTest() public {
+        console.log("=== Testing Hybrid Match Cross Orders - Makers Selling, Taker Buying ===");
+        
+        // Create 5 questions
+        bytes32[] memory questionIds = new bytes32[](5);
+        uint256[] memory yesPositionIds = new uint256[](5);
+
+        questionIds[0] = questionId;
+        yesPositionIds[0] = yesPositionId;
+        
+        for (uint256 i = 1; i < 5; i++) {
+            questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
+            yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
+            uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
+            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
+        }
+        
+        negRiskAdapter.setPrepared(marketId);
+        
+        CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
+        makerOrders[0].makerFillAmounts = new uint256[](4);
+        // For SELL orders, makerFillAmounts is in token amount (1e6 tokens each)
+        for (uint256 i = 0; i < 4; i++) {
+            makerOrders[0].makerFillAmounts[i] = 1e6;
+        }
+        
+        // Maker orders - all selling YES tokens
+        // For SELL orders: side=1, makerAmount=token amount (1e6), takerAmount=USDC amount
+        // SHORT intent (0) + SELL side (1) = selling YES tokens
+        makerOrders[0].orders = new OrderIntent[](4);
+        // Maker 1: selling YES0 at price 0.1 (makerAmount=1e6 tokens, takerAmount=0.1e6 USDC)
+        makerOrders[0].orders[0] = _createAndSignOrder(user2, yesPositionIds[0], 1, 1e6, 0.1e6, questionIds[0], 1, _user2PK);
+        // Maker 2: selling YES1 at price 0.1
+        makerOrders[0].orders[1] = _createAndSignOrder(user3, yesPositionIds[1], 1, 1e6, 0.1e6, questionIds[1], 1, _user3PK);
+        // Maker 3: selling YES2 at price 0.1
+        makerOrders[0].orders[2] = _createAndSignOrder(user4, yesPositionIds[2], 1, 1e6, 0.1e6, questionIds[2], 1, _user4PK);
+        // Maker 4: selling YES3 at price 0.1
+        makerOrders[0].orders[3] = _createAndSignOrder(user5, yesPositionIds[3], 1, 1e6, 0.1e6, questionIds[3], 1, _user5PK);
+        makerOrders[0].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
+        
+        // Taker order - buying NO4 at price 0.6
+        // For BUY orders: side=0, makerAmount=USDC amount (0.6e6), takerAmount=token amount (1e6)
+        // SHORT intent (0) + BUY side (0) = buying NO tokens
+        uint256[] memory takerFillAmount = new uint256[](1);
+        takerFillAmount[0] = 0.4e6; // taker wants to spend 0.4e6 USDC
+        
+        // Get NO position ID for question 4
+        uint256 noPositionId4 = negRiskAdapter.getPositionId(questionIds[4], false);
+        
+        // Taker order - price 0.6, buying NO4 (complementary to selling YES tokens)
+        // Total prices: 0.1 + 0.1 + 0.1 + 0.1 + 0.6 = 1.0
+        OrderIntent memory takerOrder = _createAndSignOrder(user1, noPositionId4, 0, 0.4e6, 1e6, questionIds[4], 1, _user1PK);
+        
+        // Mint YES tokens to makers so they can sell
+        _mintTokensToUser(user2, yesPositionIds[0], 5e6);
+        _mintTokensToUser(user3, yesPositionIds[1], 5e6);
+        _mintTokensToUser(user4, yesPositionIds[2], 5e6);
+        _mintTokensToUser(user5, yesPositionIds[3], 5e6);
+        
+        // Prepare wrapped collateral for minting (needed for cross match)
+        // Total USDC needed: 0.1e6 + 0.1e6 + 0.1e6 + 0.1e6 + 0.6e6 = 1.0e6 (for splitting)
+        MockUSDC(address(usdc)).mint(address(negRiskAdapter.wcol()), 1e6);
+        vm.startPrank(address(negRiskAdapter));
+        WrappedCollateral(address(negRiskAdapter.wcol())).mint(1e6);
+        WrappedCollateral(address(negRiskAdapter.wcol())).transfer(address(ctf), 1e6);
+        vm.stopPrank();
+        
+        // Record initial balances using arrays to reduce stack depth
+        address[] memory users = new address[](5);
+        users[0] = user1; // taker
+        users[1] = user2; // maker 1
+        users[2] = user3; // maker 2
+        users[3] = user4; // maker 3
+        users[4] = user5; // maker 4
+        
+        uint256[] memory tokenIndices = new uint256[](5);
+        tokenIndices[0] = 4; // user1 -> noPositionId4
+        tokenIndices[1] = 0; // user2 -> yesPositionIds[0]
+        tokenIndices[2] = 1; // user3 -> yesPositionIds[1]
+        tokenIndices[3] = 2; // user4 -> yesPositionIds[2]
+        tokenIndices[4] = 3; // user5 -> yesPositionIds[3]
+        
+        // Store all initial balances in arrays to reduce stack depth
+        uint256[] memory initialBalances = new uint256[](11); // 5 USDC + 4 YES + 1 NO + 1 vault
+        initialBalances[10] = usdc.balanceOf(vault); // Vault balance
+        
+        for (uint256 i = 0; i < 5; i++) {
+            initialBalances[i] = usdc.balanceOf(users[i]); // USDC balances
+            if (i == 0) {
+                initialBalances[9] = ctf.balanceOf(users[i], noPositionId4); // NO balance
+            } else {
+                initialBalances[4 + i] = ctf.balanceOf(users[i], yesPositionIds[tokenIndices[i]]); // YES balances
+            }
+        }
+        
+        // Execute hybrid match orders
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, 0);
+
+        // order2
+        CrossMatchingAdapter.MakerOrder[] memory makerOrder2 = new CrossMatchingAdapter.MakerOrder[](1);
+        makerOrder2[0].makerFillAmounts = new uint256[](4);
+        // For SELL orders, makerFillAmounts is in token amount (1e6 tokens each)
+        for (uint256 i = 0; i < 4; i++) {
+            makerOrder2[0].makerFillAmounts[i] = 1e6;
+        }
+        
+        // Maker orders - all selling YES tokens
+        // For SELL orders: side=1, makerAmount=token amount (1e6), takerAmount=USDC amount
+        // SHORT intent (0) + SELL side (1) = selling YES tokens
+        makerOrder2[0].orders = new OrderIntent[](4);
+
+        makerOrder2[0].orders[0] = makerOrders[0].orders[0];
+        makerOrder2[0].orders[1] = makerOrders[0].orders[1];
+        makerOrder2[0].orders[2] = makerOrders[0].orders[2];
+        makerOrder2[0].orders[3] = makerOrders[0].orders[3];
+        makerOrder2[0].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
+
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrder2, takerFillAmount, 0);
+
         
         console.log("Cross match sellers test passed!");
     }
