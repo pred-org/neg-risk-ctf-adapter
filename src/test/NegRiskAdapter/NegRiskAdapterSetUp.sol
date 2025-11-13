@@ -28,7 +28,7 @@ contract NegRiskAdapter_SetUp is TestHelper, INegRiskAdapterEE {
         usdc = new USDC();
         nrAdapter = new NegRiskAdapter(address(ctf), address(usdc), vault);
         NegRiskAdapter(nrAdapter).addAdmin(admin);
-        NegRiskAdapter(nrAdapter).renounceAdmin();
+        NegRiskAdapter(nrAdapter).renounceAdminRole();
         wcol = nrAdapter.wcol();
     }
 }

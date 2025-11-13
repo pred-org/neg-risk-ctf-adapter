@@ -11,7 +11,7 @@ import {Helpers} from "src/libraries/Helpers.sol";
 import {NegRiskIdLib} from "src/libraries/NegRiskIdLib.sol";
 import {IConditionalTokens} from "src/interfaces/IConditionalTokens.sol";
 import {Auth} from "lib/ctf-exchange/src/exchange/mixins/Auth.sol";
-import {IAuthEE} from "src/modules/interfaces/IAuth.sol";
+import {IAuthEE} from "lib/ctf-exchange/src/exchange/interfaces/IAuth.sol";
 
 /// @title INegRiskAdapterEE
 /// @notice NegRiskAdapter Errors and Events
