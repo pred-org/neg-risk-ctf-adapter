@@ -10,8 +10,8 @@ import {CTHelpers} from "src/libraries/CTHelpers.sol";
 import {Helpers} from "src/libraries/Helpers.sol";
 import {NegRiskIdLib} from "src/libraries/NegRiskIdLib.sol";
 import {IConditionalTokens} from "src/interfaces/IConditionalTokens.sol";
-import {Auth} from "src/modules/Auth.sol";
-import {IAuthEE} from "src/modules/interfaces/IAuth.sol";
+import {Auth} from "lib/ctf-exchange/src/exchange/mixins/Auth.sol";
+import {IAuthEE} from "lib/ctf-exchange/src/exchange/interfaces/IAuth.sol";
 
 /// @title INegRiskAdapterEE
 /// @notice NegRiskAdapter Errors and Events
@@ -165,6 +165,21 @@ contract NegRiskAdapter is ERC1155TokenReceiver, MarketStateManager, INegRiskAda
         wcol.unwrap(msg.sender, _amount);
 
         emit PositionsMerge(msg.sender, _conditionId, _amount);
+    }
+
+    /// @notice Merges a complete set of conditional tokens for a single question to collateral
+    /// @param _conditionId - the conditionId for the question
+    /// @param _amount      - the amount of collateral to merge
+    /// @param _user        - the user to merge the positions for
+    function mergePositionsOperator(bytes32 _conditionId, uint256 _amount, address _user) public onlyOperator {
+        uint256[] memory positionIds = Helpers.positionIds(address(wcol), _conditionId);
+
+        // get conditional tokens from sender
+        ctf.safeBatchTransferFrom(_user, address(this), positionIds, Helpers.values(2, _amount), "");
+        ctf.mergePositions(address(wcol), bytes32(0), _conditionId, Helpers.partition(), _amount);
+        wcol.unwrap(_user, _amount);
+
+        emit PositionsMerge(_user, _conditionId, _amount);
     }
 
     /*//////////////////////////////////////////////////////////////

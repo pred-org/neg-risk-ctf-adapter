@@ -63,7 +63,7 @@ contract NegRiskCtfExchangeTestHelper is Test, OrderHelper, StorageHelper {
         // allow negRiskCtfExchange to transfer using the NegRiskAdapter
         NegRiskAdapter(negRiskAdapter).addAdmin(negRiskCtfExchange);
         // renounce address(this) as admin
-        NegRiskAdapter(negRiskAdapter).renounceAdmin();
+        NegRiskAdapter(negRiskAdapter).renounceAdminRole();
 
         // set operator
         ICTFExchange(negRiskCtfExchange).addOperator(operator.addr);

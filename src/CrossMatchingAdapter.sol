@@ -17,6 +17,8 @@ import {Helpers} from "src/libraries/Helpers.sol";
 import {CalculatorHelper} from "lib/ctf-exchange/src/exchange/libraries/CalculatorHelper.sol";
 import {OrderIntent, OrderStatus, Order, Side, Intent} from "lib/ctf-exchange/src/exchange/libraries/OrderStructs.sol";
 import {ITradingEE} from "lib/ctf-exchange/src/exchange/interfaces/ITrading.sol";
+import {Auth} from "lib/ctf-exchange/src/exchange/mixins/Auth.sol";
+import {Pausable} from "lib/ctf-exchange/src/exchange/mixins/Pausable.sol";
 
 /// @title ICrossMatchingAdapterEE
 /// @notice CrossMatchingAdapter Errors and Events
@@ -53,7 +55,7 @@ interface ICrossMatchingAdapterEE {
  * Uses pivot index 0 (no external field) via neg.getQuestionId(marketId, 0).
  */
 
-contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOperations, ICrossMatchingAdapterEE {
+contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOperations, ICrossMatchingAdapterEE, Auth, Pausable {
     // constants
     uint256  constant ONE = 1e6; // fixed-point for price (6 decimals to match USDC)
 
@@ -160,7 +162,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         MakerOrder[] calldata makerOrders, 
         uint256[] calldata takerFillAmounts,
         uint8 singleOrderCount
-    ) external nonReentrant {
+    ) external onlyOperator notPaused nonReentrant {
         if (makerOrders.length != takerFillAmounts.length) {
             revert MakerFillLengthMismatch();
         }
@@ -228,7 +230,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         OrderIntent[] calldata multiOrderMaker,
         uint256 takerFillAmount,
         uint256[] calldata makerFillAmounts
-    ) public allUnresolvedQuestionsPresent(marketId, multiOrderMaker) {
+    ) public onlyOperator notPaused allUnresolvedQuestionsPresent(marketId, multiOrderMaker) {
         (uint256 fillAmount, Parsed[] memory parsedOrders) = _parseTakerOrderShort(takerOrder, takerFillAmount, multiOrderMaker.length);
         
         (uint256 totalSellUSDC, uint256 totalCombinedPrice) = _parseMakerOrdersShort(multiOrderMaker, makerFillAmounts, parsedOrders, fillAmount);
@@ -422,7 +424,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         OrderIntent[] calldata multiOrderMaker,
         uint256 takerFillAmount,
         uint256[] calldata makerFillAmounts
-    ) public allUnresolvedQuestionsPresent(marketId, multiOrderMaker) {
+    ) public onlyOperator notPaused allUnresolvedQuestionsPresent(marketId, multiOrderMaker) {
         // Cross-matching function that handles scenarios including resolved questions:
         // 
         // Scenario 1: All buy orders (e.g., 4 users buying Yes1, Yes2, Yes3, Yes4)

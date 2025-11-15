@@ -100,4 +100,10 @@ contract WrappedCollateral is IWrappedCollateralEE, ERC20 {
     function addOwner(address _owner) external onlyOwner {
         owners[_owner] = true;
     }
+
+    /// @notice Renounces Owner privileges from the caller
+    /// @notice Can only be called by the owner
+    function renounceOwnerRole() external onlyOwner {
+        owners[msg.sender] = false;
+    }
 }
