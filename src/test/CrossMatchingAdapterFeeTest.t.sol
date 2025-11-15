@@ -284,7 +284,6 @@ contract CrossMatchingAdapterFeeTest is Test, TestHelper {
         }
 
         // Execute cross-matching
-        vm.prank(user1);
         adapter.crossMatchShortOrders(marketId, takerOrder, makerOrders, takerFillAmount, makerFillAmounts);
 
         // Verify fees
@@ -424,7 +423,6 @@ contract CrossMatchingAdapterFeeTest is Test, TestHelper {
             initialBalances[3] = ctf.balanceOf(feeRecipient, noPositionId4);
 
             // Execute cross-matching
-            vm.prank(user1);
             adapter.crossMatchShortOrders(marketId, takerOrder, makerOrders, takerFillAmount, makerFillAmounts);
 
             // Calculate expected fees (fillAmount is the takingAmount = 1e6)
@@ -531,13 +529,18 @@ contract CrossMatchingAdapterFeeTest is Test, TestHelper {
 
         uint256 takerFillAmount = takerOrder.makerAmount;
 
+        // Mint USDC to WCOL contract to provide backing for minted WCOL from merging
+        // Each SELL order will merge fillAmount (1e6) tokens, returning 1e6 WCOL
+        // We need enough USDC to back all the WCOL that will be returned
+        uint256 totalWCOLNeeded = makerFillAmounts[0] + makerFillAmounts[1] + makerFillAmounts[2]; // 3e6
+        MockUSDC(address(usdc)).mint(address(negRiskAdapter.wcol()), totalWCOLNeeded);
+
         // Record initial balances
         address feeRecipient = negRiskAdapter.vault();
         uint256 initialVaultNO1 = ctf.balanceOf(feeRecipient, noPositionId1);
         uint256 initialVaultUSDC = usdc.balanceOf(feeRecipient);
 
         // Execute cross-matching
-        vm.prank(user1);
         adapter.crossMatchShortOrders(marketId, takerOrder, makerOrders, takerFillAmount, makerFillAmounts);
 
         // Calculate expected fees (fillAmount is the takingAmount = 1e6 for BUY, makingAmount = 1e6 for SELL)
@@ -618,7 +621,6 @@ contract CrossMatchingAdapterFeeTest is Test, TestHelper {
         uint256 expectedMakerFee = _calculateExpectedFee(makerOrders[0], tokenFillAmount, false);
 
         // Execute cross-matching
-        vm.prank(user1);
         adapter.crossMatchShortOrders(marketId, takerOrder, makerOrders, takerFillAmount, makerFillAmounts);
 
         // Verify vault received fees in NO tokens

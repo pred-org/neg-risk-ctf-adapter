@@ -398,13 +398,14 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         // transfer the YES tokens to the adapter that the maker is selling
         ctf.safeTransferFrom(order.maker, address(this), order.tokenId, fillAmount, "");
         
-        // Merge NO tokens with user's YES tokens to get USDC for the sellers
+        // Merge NO tokens with user's YES tokens to get WCOL for the sellers
         // The NO tokens are already in the adapter from the split operation
+        // ctf.mergePositions with WCOL as collateral returns WCOL to the adapter
         bytes32 conditionId = neg.getConditionId(order.questionId);
         _mergePositions(conditionId, fillAmount);
         
         // Calculate fee for this order
-        uint256 feeAmount = (fillAmount * order.feeRateBps) / 10000;
+        uint256 feeAmount = order.feeAmount;
         uint256 amountOut = order.payAmount - feeAmount;
         
         // Collect fee in USDC if any
