@@ -893,6 +893,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         makerOrder2[0].orders[3] = makerOrders[0].orders[3];
         makerOrder2[0].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
 
+        vm.expectRevert(bytes("OrderFilledOrCancelled()"));
         adapter.hybridMatchOrders(marketId, takerOrder, makerOrder2, takerFillAmount, 0);
 
         

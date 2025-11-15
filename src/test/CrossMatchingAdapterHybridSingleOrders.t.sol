@@ -433,19 +433,6 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
       // price = 0.45$ per token
       OrderIntent memory takerOrder = _createAndSignOrder(user2, noPositionId, 1, 1e6, 0.55e6, questionId, 0, _user2PK);
 
-      // console.log("=== Taker Order ===");
-      // // Log taker order
-      // console2.log("=== Taker Order ===");
-      // console2.log("TokenId:", takerOrder.tokenId);
-      // console2.log("Side:", uint8(takerOrder.side));
-      // console2.log("MakerAmount:", takerOrder.makerAmount);
-      // console2.log("TakerAmount:", takerOrder.takerAmount);
-      // console2.log("Price:", takerOrder.order.price);
-      // console2.log("Quantity:", takerOrder.order.quantity);
-      // console2.log("Maker:", takerOrder.order.maker);
-      // console2.log("QuestionId:", uint256(takerOrder.order.questionId));
-      // console2.log("Intent:", uint8(takerOrder.order.intent));
-
       // Store initial balances
       uint256 initialUser1USDC = usdc.balanceOf(user1);
       uint256 initialUser2USDC = usdc.balanceOf(user2);
@@ -484,6 +471,46 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
       assertEq(ctf.balanceOf(address(adapter), noPositionId), 0, "Adapter should have no remaining NO tokens");
         
       console.log("Single orders complementary one test passed!");
+    }
+
+    function testSingleOrdersComplementaryOneFillAmountMismatchTest() public {
+      console.log("=== Testing Single Orders Complementary One Fill Amount Mismatch Test ===");
+        
+      // Create 1 single order
+      CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
+      uint256[] memory takerFillAmounts = new uint256[](1);
+        
+      makerOrders[0].orders = new OrderIntent[](1);
+      // NO tokens buying order
+      // For buy order: makerAmount = USDC amount (0.55e6), takerAmount = token amount (1e6)
+      // price = 0.55$ per token
+      makerOrders[0].orders[0] = _createAndSignOrder(
+          user1, 
+          noPositionId, 
+          0, 
+          0.55e6, 
+          1e6, 
+          questionId, 
+          1, 
+          _user1PK
+        );
+      makerOrders[0].orderType = CrossMatchingAdapter.OrderType.SINGLE;
+      makerOrders[0].makerFillAmounts = new uint256[](1);
+      makerOrders[0].makerFillAmounts[0] = 0.55e6;
+      takerFillAmounts[0] = 2e6;
+
+      _mintTokensToUser(user2, noPositionId, 5e6);
+        
+      // Taker order - NO tokens selling order
+      // For sell order: makerAmount = token amount (1e6), takerAmount = USDC amount (0.55e6)
+      // price = 0.45$ per token
+      OrderIntent memory takerOrder = _createAndSignOrder(user2, noPositionId, 1, 1e6, 0.55e6, questionId, 0, _user2PK);
+
+      // Execute hybrid match orders (1 single order)
+      vm.expectRevert(bytes("MakingGtRemaining()"));
+      adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmounts, 1);
+
+      console.log("Single orders complementary one fill amount mismatch test passed!");
     }
 
     function testSingleOrdersMintOneTest() public {
