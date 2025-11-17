@@ -913,6 +913,15 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         // Verify vault balance remains the same (self-financing)
         assertEq(usdc.balanceOf(vault), params.initialVaultBalance, "Vault balance should remain the same");
         console.log("Vault USDC balance: %s (unchanged)", usdc.balanceOf(vault));
+        
+        // Verify burn address balance (for LONG orders, no YES tokens should be burned)
+        address burnAddress = revNegRiskAdapter.getYesTokenBurnAddress();
+        console.log("=== Verifying Burn Address Balance ===");
+        for (uint256 i = 0; i < 5; i++) {
+            uint256 burnBalance = ctf.balanceOf(burnAddress, params.yesPositionIds[i]);
+            assertEq(burnBalance, 0, string(abi.encodePacked("Burn address should have no YES tokens for question ", vm.toString(i), " in LONG cross-match")));
+            console.log("Burn address YES%i tokens: %s (should be 0)", i, burnBalance);
+        }
     }
     
     function _verifyCrossMatchSellersResults(
@@ -992,6 +1001,22 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         // Verify vault balance remains the same (self-financing)
         assertEq(usdc.balanceOf(vault), initialBalances[10], "Vault balance should remain the same");
         console.log("Vault USDC balance: %s (unchanged)", usdc.balanceOf(vault));
+        
+        // Verify burn address balance
+        // In SHORT cross-match, mergeAllYesTokens is called which burns YES tokens for all questions
+        // For non-pivot questions (0, 1, 2, 3): user's YES tokens are burned
+        // For pivot question (4): YES tokens created from split are burned (user's YES tokens are used for merging)
+        address burnAddress = revNegRiskAdapter.getYesTokenBurnAddress();
+        // fillAmount is already calculated above (1e6 tokens)
+        // YES tokens for questions 0, 1, 2, 3 should be burned (user's tokens)
+        for (uint256 i = 0; i < 4; i++) {
+            uint256 burnBalance = ctf.balanceOf(burnAddress, yesPositionIds[i]);
+            // Each YES token should be burned with amount = fillAmount (1e6)
+            assertEq(burnBalance, fillAmount, string(abi.encodePacked("Burn address should have ", vm.toString(fillAmount), " YES tokens for question ", vm.toString(i))));
+        }
+        // Question 4 (pivot): YES tokens created from split are burned (not user's tokens, which are used for merging)
+        uint256 burnBalance4 = ctf.balanceOf(burnAddress, yesPositionIds[4]);
+        assertEq(burnBalance4, fillAmount, string(abi.encodePacked("Burn address should have ", vm.toString(fillAmount), " YES tokens for pivot question 4 (from split)")));
     }
     
     function _verifyCrossMatchMixedLongResults(
@@ -1086,6 +1111,19 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         // Verify vault balance remains the same (self-financing)
         assertEq(usdc.balanceOf(vault), initialBalances[6], "Vault balance should remain the same");
         console.log("Vault USDC balance: %s (unchanged)", usdc.balanceOf(vault));
+        
+        // Verify burn address balance
+        // In mixed LONG cross-match, mergeAllYesTokens may be called for SHORT orders
+        // For this test, user3 is selling NO tokens, which might trigger burning
+        // But since this is a LONG cross-match, no YES tokens should be burned
+        address burnAddress = revNegRiskAdapter.getYesTokenBurnAddress();
+        console.log("=== Verifying Burn Address Balance ===");
+        for (uint256 i = 0; i < 3; i++) {
+            uint256 burnBalance = ctf.balanceOf(burnAddress, yesPositionIds[i]);
+            // In mixed LONG, no YES tokens should be burned (only NO tokens are involved in the sell)
+            assertEq(burnBalance, 0, string(abi.encodePacked("Burn address should have no YES tokens for question ", vm.toString(i), " in mixed LONG cross-match")));
+            console.log("Burn address YES%i tokens: %s (should be 0)", i, burnBalance);
+        }
     }
     
     function _verifyCrossMatchRefundResults(
@@ -1178,6 +1216,15 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         // Verify vault balance remains the same (self-financing)
         assertEq(usdc.balanceOf(vault), initialBalances[6], "Vault balance should remain the same");
         console.log("Vault USDC balance: %s (unchanged)", usdc.balanceOf(vault));
+        
+        // Verify burn address balance (for LONG orders, no YES tokens should be burned)
+        address burnAddress = revNegRiskAdapter.getYesTokenBurnAddress();
+        console.log("=== Verifying Burn Address Balance ===");
+        for (uint256 i = 0; i < 3; i++) {
+            uint256 burnBalance = ctf.balanceOf(burnAddress, yesPositionIds[i]);
+            assertEq(burnBalance, 0, string(abi.encodePacked("Burn address should have no YES tokens for question ", vm.toString(i), " in LONG cross-match")));
+            console.log("Burn address YES%i tokens: %s (should be 0)", i, burnBalance);
+        }
     }
     
     function _checkVaultBalanceUnchanged(uint256 initialBalance) internal {

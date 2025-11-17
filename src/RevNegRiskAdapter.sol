@@ -152,6 +152,10 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, IRevNegRiskAdapterEE, Auth {
         // **Seed:** adapter mints **+A WCOL** once.
         wcol.mint(_amount);
 
+        // Collect all yesPositionIds that need to be burned (skip resolved questions and target index)
+        uint256[] memory yesPositionIds = new uint256[](questionCount - 1);
+        uint256 positionCount = 0;
+        
         // **For each j ≠ i (loop):**
         for (uint256 j = 0; j < questionCount;) {
             if (j != _targetIndex) {
@@ -166,11 +170,21 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, IRevNegRiskAdapterEE, Auth {
                 }
                 
                 uint256 yesPositionId = neg.getPositionId(questionId, true);
-
-                // Verify user has the required YES(j) tokens and burn them directly
-                ctf.safeTransferFrom(msg.sender, YES_TOKEN_BURN_ADDRESS, yesPositionId, _amount, "");
+                yesPositionIds[positionCount] = yesPositionId;
+                unchecked { ++positionCount; }
             }
             unchecked { ++j; }
+        }
+
+        // Batch transfer all YES tokens to burn address in a single call (gas optimization)
+        if (positionCount > 0) {
+            // Resize array to actual size if needed
+            if (positionCount < yesPositionIds.length) {
+                assembly {
+                    mstore(yesPositionIds, positionCount)
+                }
+            }
+            ctf.safeBatchTransferFrom(msg.sender, YES_TOKEN_BURN_ADDRESS, yesPositionIds, Helpers.values(positionCount, _amount), "");
         }
 
         // Process target question - use the collected USDC to get WCOL for the split
