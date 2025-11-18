@@ -17,10 +17,12 @@ contract OrderHelper is Script {
         uint256 _tokenId,
         uint256 _makerAmount,
         uint256 _takerAmount,
-        Side _side
+        Side _side,
+        Intent _intent,
+        bytes32 _questionId
     ) internal view returns (Order memory) {
         address maker = vm.addr(_pk);
-        Order memory order = _createOrder(maker, _tokenId, _makerAmount, _takerAmount, _side);
+        Order memory order = _createOrder(maker, _tokenId, _makerAmount, _takerAmount, _side, _intent, _questionId);
         order.signature = _signMessage(_pk, ICTFExchange(_exchange).hashOrder(order));
         return order;
     }
@@ -30,7 +32,7 @@ contract OrderHelper is Script {
         return abi.encodePacked(r, s, v);
     }
 
-    function _createOrder(address _maker, uint256 _tokenId, uint256 _makerAmount, uint256 _takerAmount, Side _side)
+    function _createOrder(address _maker, uint256 _tokenId, uint256 _makerAmount, uint256 _takerAmount, Side _side, Intent _intent, bytes32 _questionId)
         internal
         pure
         returns (Order memory)
@@ -56,8 +58,8 @@ contract OrderHelper is Script {
             quantity: quantity, // This should be the amount of tokens to receive
             expiration: 0,
             nonce: 0,
-            questionId: bytes32(0),
-            intent: Intent.LONG,
+            questionId: _questionId,
+            intent: _intent,
             feeRateBps: 0,
             signatureType: SignatureType.EOA,
             signature: new bytes(0)

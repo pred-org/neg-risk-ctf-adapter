@@ -353,6 +353,51 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
       console.log("Single orders merge one test passed!");
     }
 
+    function testSingleOrdersMergeOneIntentMismatchTest() public {
+      console.log("=== Testing Single Orders Merge One Test ===");
+        
+      // Create 1 single order
+      CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
+      uint256[] memory takerFillAmounts = new uint256[](1);
+        
+      makerOrders[0].orders = new OrderIntent[](1);
+      // Yes tokens selling order
+      // For sell order: makerAmount = token amount (1e6), takerAmount = USDC amount (0.45e6)
+      // price = 0.55$ per token
+      makerOrders[0].orders[0] = _createAndSignOrder(
+          user1, 
+          yesPositionId, 
+          1, 
+          1e6, 
+          0.45e6, 
+          questionId, 
+          0, 
+          _user1PK
+        );
+      makerOrders[0].orderType = CrossMatchingAdapter.OrderType.SINGLE;
+      makerOrders[0].makerFillAmounts = new uint256[](1);
+      makerOrders[0].makerFillAmounts[0] = 1e6;
+      takerFillAmounts[0] = 1e6;
+
+      _mintTokensToUser(user1, yesPositionId, 5e6);
+      _mintTokensToUser(user2, noPositionId, 5e6);
+
+      MockUSDC(address(usdc)).mint(address(negRiskAdapter.wcol()), 1e6);
+      vm.startPrank(address(negRiskAdapter));
+      WrappedCollateral(address(negRiskAdapter.wcol())).mint(1e6);
+      WrappedCollateral(address(negRiskAdapter.wcol())).transfer(address(ctf), 1e6);
+      vm.stopPrank();
+        
+      // Taker order - NO tokens selling order
+      // For sell order: makerAmount = token amount (1e6), takerAmount = USDC amount (0.55e6)
+      // price = 0.45$
+      OrderIntent memory takerOrder = _createAndSignOrder(user2, noPositionId, 1, 1e6, 0.55e6, questionId, 1, _user2PK);
+
+      vm.expectRevert(abi.encodeWithSelector(ITradingEE.InvalidIntent.selector));
+      // Execute hybrid match orders (1 single order)
+      adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmounts, 1);
+    }
+
     function testSingleOrdersMergeOnePriceMismatchTest() public {
       console.log("=== Testing Single Orders Merge One Price Mismatch Test ===");
         

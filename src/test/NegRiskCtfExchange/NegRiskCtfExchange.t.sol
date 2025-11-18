@@ -2,7 +2,7 @@
 pragma solidity ^0.8.15;
 
 import {console, Test} from "../../../lib/forge-std/src/Test.sol";
-import {Side, OrderIntent, Order} from "../../../lib/ctf-exchange/src/exchange/libraries/OrderStructs.sol";
+import {Side, Intent, OrderIntent, Order} from "../../../lib/ctf-exchange/src/exchange/libraries/OrderStructs.sol";
 import {IConditionalTokens, ICTFExchange, IERC20, INegRiskAdapter} from "../../interfaces/index.sol";
 import {AddressLib} from "../../dev/libraries/AddressLib.sol";
 import {NegRiskCtfExchangeTestHelper} from "./NegRiskCtfExchangeTestHelper.sol";
@@ -82,7 +82,9 @@ contract NegRiskCtfExchange_Test is NegRiskCtfExchangeTestHelper {
             _tokenId: yesPositionId,
             _makerAmount: USDC_AMOUNT,
             _takerAmount: TOKEN_AMOUNT,
-            _side: Side.BUY
+            _side: Side.BUY,
+            _intent: Intent.LONG,
+            _questionId: questionId
         });
 
         // before
@@ -142,7 +144,9 @@ contract NegRiskCtfExchange_Test is NegRiskCtfExchangeTestHelper {
             _tokenId: yesPositionId,
             _makerAmount: TOKEN_AMOUNT,
             _takerAmount: USDC_AMOUNT,
-            _side: Side.SELL
+            _side: Side.SELL,
+            _intent: Intent.SHORT,
+            _questionId: questionId
         });
 
         // before
@@ -196,7 +200,9 @@ contract NegRiskCtfExchange_Test is NegRiskCtfExchangeTestHelper {
             _tokenId: yesPositionId,
             _makerAmount: USDC_AMOUNT,
             _takerAmount: TOKEN_AMOUNT,
-            _side: Side.BUY
+            _side: Side.BUY,
+            _intent: Intent.LONG,
+            _questionId: questionId
         });
 
         // sign brian order
@@ -206,7 +212,9 @@ contract NegRiskCtfExchange_Test is NegRiskCtfExchangeTestHelper {
             _tokenId: yesPositionId,
             _makerAmount: TOKEN_AMOUNT,
             _takerAmount: USDC_AMOUNT,
-            _side: Side.SELL
+            _side: Side.SELL,
+            _intent: Intent.SHORT,
+            _questionId: questionId
         });
 
         // takerOrder + takerFillAmount
@@ -270,7 +278,9 @@ contract NegRiskCtfExchange_Test is NegRiskCtfExchangeTestHelper {
             _tokenId: yesPositionId,
             _makerAmount: USDC_AMOUNT,
             _takerAmount: TOKEN_AMOUNT,
-            _side: Side.BUY
+            _side: Side.BUY,
+            _intent: Intent.LONG,
+            _questionId: questionId
         });
 
         // sign brian order
@@ -280,7 +290,9 @@ contract NegRiskCtfExchange_Test is NegRiskCtfExchangeTestHelper {
             _tokenId: yesPositionId,
             _makerAmount: TOKEN_AMOUNT,
             _takerAmount: USDC_AMOUNT,
-            _side: Side.SELL
+            _side: Side.SELL,
+            _intent: Intent.SHORT,
+            _questionId: questionId
         });
 
         // takerOrder + takerFillAmount
@@ -334,7 +346,9 @@ contract NegRiskCtfExchange_Test is NegRiskCtfExchangeTestHelper {
             _tokenId: yesPositionId,
             _makerAmount: USDC_AMOUNT,
             _takerAmount: TOKEN_AMOUNT,
-            _side: Side.BUY
+            _side: Side.BUY,
+            _intent: Intent.LONG,
+            _questionId: questionId
         });
 
         Order memory brianOrder = _createAndSignOrder({
@@ -343,7 +357,9 @@ contract NegRiskCtfExchange_Test is NegRiskCtfExchangeTestHelper {
             _tokenId: noPositionId,
             _makerAmount: USDC_AMOUNT,
             _takerAmount: TOKEN_AMOUNT,
-            _side: Side.BUY
+            _side: Side.BUY,
+            _intent: Intent.SHORT,
+            _questionId: questionId
         });
 
         OrderIntent memory takerOrder = _convertOrderToOrderIntent(aliceOrder, yesPositionId, uint8(Side.BUY), USDC_AMOUNT);
@@ -409,7 +425,9 @@ contract NegRiskCtfExchange_Test is NegRiskCtfExchangeTestHelper {
             _tokenId: yesPositionId,
             _makerAmount: TOKEN_AMOUNT,
             _takerAmount: USDC_AMOUNT,
-            _side: Side.SELL
+            _side: Side.SELL,
+            _intent: Intent.SHORT,
+            _questionId: questionId
         });
 
         // sign brian order
@@ -419,7 +437,9 @@ contract NegRiskCtfExchange_Test is NegRiskCtfExchangeTestHelper {
             _tokenId: noPositionId,
             _makerAmount: TOKEN_AMOUNT,
             _takerAmount: USDC_AMOUNT,
-            _side: Side.SELL
+            _side: Side.SELL,
+            _intent: Intent.LONG,
+            _questionId: questionId
         });
 
         // takerOrder + takerFillAmount
