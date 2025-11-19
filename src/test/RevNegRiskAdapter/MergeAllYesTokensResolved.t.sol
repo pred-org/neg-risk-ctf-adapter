@@ -107,15 +107,19 @@ contract RevNegRiskAdapter_MergeAllYesTokensResolved_Test is RevNegRiskAdapter_S
         assertEq(finalWcolBalance, 0, "WCOL balance should be 0");
 
         // Verify all YES tokens are consumed after merge
+        address burnAddress = revAdapter.getYesTokenBurnAddress();
+        
         // Check that all YES tokens from questions 1 to n-1 are burned
         for (uint256 j = 1; j < questionCount; j++) {
             bytes32 questionId = NegRiskIdLib.getQuestionId(marketId, uint8(j));
             uint256 yesPositionId = nrAdapter.getPositionId(questionId, true);
             assertEq(ctf.balanceOf(brian, yesPositionId), 0, "All YES tokens from non-target questions should be consumed");
+            assertEq(ctf.balanceOf(burnAddress, yesPositionId), amount, string(abi.encodePacked("YES tokens for question ", vm.toString(j), " should be at burn address")));
         }
 
-        // Check that the 0th question YES tokens are also consumed
+        // Check that the 0th question YES tokens are also consumed and burned
         assertEq(ctf.balanceOf(brian, positionIdTrue0), 0, "0th question YES tokens should be consumed");
+        assertEq(ctf.balanceOf(burnAddress, positionIdTrue0), amount, "0th question YES tokens should be at burn address");
     }
 
     function test_mergeAllYesTokens_resolvedQuestionFalse() public {
@@ -200,14 +204,18 @@ contract RevNegRiskAdapter_MergeAllYesTokensResolved_Test is RevNegRiskAdapter_S
         assertEq(finalWcolBalance, 0, "WCOL balance should be 0");
 
         // Verify all YES tokens are consumed after merge
+        address burnAddress = revAdapter.getYesTokenBurnAddress();
+        
         // Check that all YES tokens from questions 1 to n-1 are burned
         for (uint256 j = 1; j < questionCount; j++) {
             bytes32 questionId = NegRiskIdLib.getQuestionId(newMarketId, uint8(j));
             uint256 yesPositionId = nrAdapter.getPositionId(questionId, true);
             assertEq(ctf.balanceOf(brian, yesPositionId), 0, "All YES tokens from non-target questions should be consumed");
+            assertEq(ctf.balanceOf(burnAddress, yesPositionId), amount, string(abi.encodePacked("YES tokens for question ", vm.toString(j), " should be at burn address")));
         }
 
-        // Check that the 0th question YES tokens are also consumed
+        // Check that the 0th question YES tokens are also consumed and burned
         assertEq(ctf.balanceOf(brian, positionIdTrue0), 0, "0th question YES tokens should be consumed");
+        assertEq(ctf.balanceOf(burnAddress, positionIdTrue0), amount, "0th question YES tokens should be at burn address");
     }
 }
