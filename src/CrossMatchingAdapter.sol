@@ -537,26 +537,13 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
             // mint wcol here
             wcol.mint(totalSellUSDC);
         }
-        
+
         // STEP 1: Split position for pivot question (use taker's question ID) to create YES + NO
         // Use the taker's question ID as the pivot since we know it's active (unresolved)
         uint8 pivotId = _getQuestionIndexFromPositionId(parsedOrders[0].tokenId, marketId);
         bytes32 pivotConditionId = neg.getConditionId(parsedOrders[0].questionId);
         
-        // We need to split enough USDC to cover the CTF operation
-        
-        // Split the available WCOL on pivot question to get YES + NO
-        _splitPosition(pivotConditionId, fillAmount);
-        
-        // STEP 2: Use convertPositions to convert NO tokens to other YES tokens
-        // The indexSet for convertPositions represents which NO positions we want to convert
-        // We want to convert NO tokens from the pivot question to get YES tokens for other questions
-        // So we need to provide an indexSet that represents the pivot NO position
-        uint256 indexSet = 1 << pivotId; // This represents NO position for the pivot question
-
-        // Convert NO tokens to YES tokens for other questions using NegRiskAdapter's convertPositions
-        // We can only convert as much as we have NO tokens from the split operation
-        neg.convertPositions(marketId, indexSet, fillAmount);
+        _splitAllYesTokens(pivotConditionId, pivotId, fillAmount, marketId);
         
         // STEP 3: Distribute YES tokens to buyers
         _handleBuyOrders(parsedOrders, fillAmount);
@@ -589,6 +576,40 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         }
 
         emit OrdersMatched(takerOrder.orderHash, takerOrder.maker, makerAssetId, takerAssetId, takerOrder.makingAmount, takerOrder.takingAmount);
+    }
+
+    // function splitAllYesTokens(
+    //     bytes32 marketId,
+    //     uint256 fillAmount
+    // ) public notPaused {
+    //     Parsed[] memory parsedOrders = new Parsed[](multiOrderMaker.length + 1);
+    //     for (uint256 i = 0; i < parsedOrders.length; i++) {
+    //         // (uint256 makerTakingAmount, bytes32 orderHash) = ctfExchange.performOrderChecks(takerOrder, fillAmount);
+    //         parsedOrders[i] = _parseOrder(makerOrder, fillAmount, fillAmount, makerTakingAmount, orderHash);
+    //     }
+    //     _splitAllYesTokens(parsedOrders, fillAmount, marketId);
+    // }
+
+    function _splitAllYesTokens(
+        bytes32 pivotConditionId,
+        uint8 pivotId,
+        uint256 fillAmount,
+        bytes32 marketId
+    ) internal {
+        // We need to split enough USDC to cover the CTF operation
+        
+        // Split the available WCOL on pivot question to get YES + NO
+        _splitPosition(pivotConditionId, fillAmount);
+        
+        // STEP 2: Use convertPositions to convert NO tokens to other YES tokens
+        // The indexSet for convertPositions represents which NO positions we want to convert
+        // We want to convert NO tokens from the pivot question to get YES tokens for other questions
+        // So we need to provide an indexSet that represents the pivot NO position
+        uint256 indexSet = 1 << pivotId; // This represents NO position for the pivot question
+
+        // Convert NO tokens to YES tokens for other questions using NegRiskAdapter's convertPositions
+        // We can only convert as much as we have NO tokens from the split operation
+        neg.convertPositions(marketId, indexSet, fillAmount);
     }
     
     function _handleSellOrders(
