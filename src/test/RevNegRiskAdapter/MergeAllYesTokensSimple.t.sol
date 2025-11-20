@@ -169,6 +169,11 @@ contract RevNegRiskAdapter_MergeAllYesTokensSimple_Test is RevNegRiskAdapter_Set
                     assertEq(ctf.balanceOf(address(revAdapter), targetYesPositionId), expectedRemainingYesTokens, "Yes tokens should remain equal to fee amount");
                     // rev adapter should have no NO tokens (they were used for merging)
                     assertEq(ctf.balanceOf(address(revAdapter), targetNoPositionId), 0, "Rev adapter should have no NO tokens");
+                    
+                    // Verify that the YES tokens for the resolved question are also burned
+                    // The YES tokens created from split are burned, but the fee amount remains in the adapter
+                    address burnAddress = revAdapter.getYesTokenBurnAddress();
+                    assertEq(ctf.balanceOf(burnAddress, targetYesPositionId), _amount, "Resolved question YES tokens should be at burn address");
                 }
                 ++i;
             }
@@ -353,6 +358,15 @@ contract RevNegRiskAdapter_MergeAllYesTokensSimple_Test is RevNegRiskAdapter_Set
         // WCOL balance should always be 0 after execution
         uint256 wcolBalanceAfter = wcol.balanceOf(address(revAdapter));
         assertEq(wcolBalanceAfter, 0, "WCOL balance must be 0 after mergeAllYesTokens");
+        
+        // Verify burn address balance
+        address burnAddress = revAdapter.getYesTokenBurnAddress();
+        for (uint256 i = 0; i < _questionCount; i++) {
+            uint256 yesPositionId = nrAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, uint8(i)), true);
+            // For non-resolved questions (i != 0), YES tokens should be burned
+            // For resolved question (i == 0), YES tokens should also be burned
+            assertEq(ctf.balanceOf(burnAddress, yesPositionId), _amount, string(abi.encodePacked("YES tokens for question ", vm.toString(i), " should be burned")));
+        }
     }
 
     function test_mergeAllYesTokens_eventEmission(uint256 _questionCount, uint128 _amount) public {
@@ -494,5 +508,13 @@ contract RevNegRiskAdapter_MergeAllYesTokensSimple_Test is RevNegRiskAdapter_Set
         
         // WCOL balance should be 0
         assertEq(wcol.balanceOf(address(revAdapter)), 0, "WCOL balance should be 0");
+        
+        // Verify all YES tokens are burned
+        address burnAddress = revAdapter.getYesTokenBurnAddress();
+        for (uint256 i = 0; i < questionCount; i++) {
+            uint256 yesPositionId = nrAdapter.getPositionId(NegRiskIdLib.getQuestionId(testMarketId, uint8(i)), true);
+            assertEq(ctf.balanceOf(brian, yesPositionId), 0, "Brian should have no YES tokens");
+            assertEq(ctf.balanceOf(burnAddress, yesPositionId), amount, "YES tokens should be burned");
+        }
     }
 }

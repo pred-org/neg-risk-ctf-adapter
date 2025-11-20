@@ -3,7 +3,8 @@ pragma solidity ^0.8.19;
 
 import {Test, console} from "forge-std/Test.sol";
 import {console2} from "forge-std/console2.sol";
-import {CrossMatchingAdapter, ICrossMatchingAdapterEE} from "src/CrossMatchingAdapter.sol";
+import {CrossMatchingAdapter} from "src/CrossMatchingAdapter.sol";
+import {ICrossMatchingAdapter} from "src/interfaces/ICrossMatchingAdapter.sol";
 import {NegRiskAdapter} from "src/NegRiskAdapter.sol";
 import {NegRiskOperator} from "src/NegRiskOperator.sol";
 import {RevNegRiskAdapter} from "src/RevNegRiskAdapter.sol";
@@ -412,7 +413,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
             _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
         }
         
-        CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
+        ICrossMatchingAdapter.MakerOrder[] memory makerOrders = new ICrossMatchingAdapter.MakerOrder[](1);
         makerOrders[0].makerFillAmounts = new uint256[](4);
         for (uint256 i = 0; i < 4; i++) {
             makerOrders[0].makerFillAmounts[i] = 0.1e6;
@@ -423,7 +424,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         makerOrders[0].orders[1] = _createAndSignOrder(user3, yesPositionIds[1], 0, 0.1e6, 1e6, questionIds[1], 0, _user3PK);
         makerOrders[0].orders[2] = _createAndSignOrder(user4, yesPositionIds[2], 0, 0.1e6, 1e6, questionIds[2], 0, _user4PK);
         makerOrders[0].orders[3] = _createAndSignOrder(user5, yesPositionIds[3], 0, 0.1e6, 1e6, questionIds[3], 0, _user5PK);
-        makerOrders[0].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
+        makerOrders[0].orderType = ICrossMatchingAdapter.OrderType.CROSS_MATCH;
         uint256[] memory takerFillAmount = new uint256[](1);
         takerFillAmount[0] = 0.6e6;
 
@@ -573,7 +574,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         
         negRiskAdapter.setPrepared(marketId);
         
-        CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
+        ICrossMatchingAdapter.MakerOrder[] memory makerOrders = new ICrossMatchingAdapter.MakerOrder[](1);
         makerOrders[0].makerFillAmounts = new uint256[](4);
         // For SELL orders, makerFillAmounts is in token amount (1e6 tokens each)
         for (uint256 i = 0; i < 4; i++) {
@@ -592,7 +593,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         makerOrders[0].orders[2] = _createAndSignOrder(user4, yesPositionIds[2], 1, 1e6, 0.1e6, questionIds[2], 1, _user4PK);
         // Maker 4: selling YES3 at price 0.1
         makerOrders[0].orders[3] = _createAndSignOrder(user5, yesPositionIds[3], 1, 1e6, 0.1e6, questionIds[3], 1, _user5PK);
-        makerOrders[0].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
+        makerOrders[0].orderType = ICrossMatchingAdapter.OrderType.CROSS_MATCH;
         
         // Taker order - buying NO4 at price 0.6
         // For BUY orders: side=0, makerAmount=USDC amount (0.6e6), takerAmount=token amount (1e6)
@@ -918,7 +919,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
             _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
         }
         
-        CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
+        ICrossMatchingAdapter.MakerOrder[] memory makerOrders = new ICrossMatchingAdapter.MakerOrder[](1);
         makerOrders[0].makerFillAmounts = new uint256[](2);
         makerOrders[0].makerFillAmounts[0] = 0.3e6;
         makerOrders[0].makerFillAmounts[1] = 0.2e6;
@@ -926,7 +927,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         makerOrders[0].orders = new OrderIntent[](2);
         makerOrders[0].orders[0] = _createAndSignOrder(user2, yesPositionIds[0], 0, 0.3e6, 1e6, questionIds[0], 0, _user2PK);
         makerOrders[0].orders[1] = _createAndSignOrder(user3, yesPositionIds[1], 0, 0.2e6, 1e6, questionIds[1], 0, _user3PK);
-        makerOrders[0].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
+        makerOrders[0].orderType = ICrossMatchingAdapter.OrderType.CROSS_MATCH;
         uint256[] memory takerFillAmount = new uint256[](1);
         takerFillAmount[0] = 0.6e6;
 
@@ -986,7 +987,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
 
         uint256 noPosId1 = negRiskAdapter.getPositionId(questionIds[1], false);
         
-        CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
+        ICrossMatchingAdapter.MakerOrder[] memory makerOrders = new ICrossMatchingAdapter.MakerOrder[](1);
         makerOrders[0].makerFillAmounts = new uint256[](2);
         makerOrders[0].makerFillAmounts[0] = 0.3e6;
         makerOrders[0].makerFillAmounts[1] = 1e6;
@@ -996,7 +997,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         makerOrders[0].orders = new OrderIntent[](2);
         makerOrders[0].orders[0] = _createAndSignOrder(user2, yesPositionIds[0], 0, 0.3e6, 1e6, questionIds[0], 0, _user2PK);
         makerOrders[0].orders[1] = _createAndSignOrder(user3, noPosId1, 1, 1e6, 0.9e6, questionIds[1], 0, _user3PK);
-        makerOrders[0].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
+        makerOrders[0].orderType = ICrossMatchingAdapter.OrderType.CROSS_MATCH;
         uint256[] memory takerFillAmount = new uint256[](1);
         takerFillAmount[0] = 0.6e6;
 
@@ -1105,7 +1106,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
 
         uint256 noPosId1 = negRiskAdapter.getPositionId(questionIds[1], false);
         
-        CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
+        ICrossMatchingAdapter.MakerOrder[] memory makerOrders = new ICrossMatchingAdapter.MakerOrder[](1);
         makerOrders[0].makerFillAmounts = new uint256[](2);
         makerOrders[0].makerFillAmounts[0] = 0.3e6;
         makerOrders[0].makerFillAmounts[1] = 1e6;
@@ -1115,7 +1116,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         makerOrders[0].orders = new OrderIntent[](2);
         makerOrders[0].orders[0] = _createAndSignOrder(user2, yesPositionIds[0], 0, 0.3e6, 1e6, questionIds[0], 0, _user2PK);
         makerOrders[0].orders[1] = _createAndSignOrder(user3, noPosId1, 1, 1e6, 0.9e6, questionIds[1], 0, _user3PK);
-        makerOrders[0].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
+        makerOrders[0].orderType = ICrossMatchingAdapter.OrderType.CROSS_MATCH;
         uint256[] memory takerFillAmount = new uint256[](1);
         takerFillAmount[0] = 0.6e6;
 
@@ -1177,7 +1178,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
 
         uint256 noPosId1 = negRiskAdapter.getPositionId(questionIds[1], false);
         
-        CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
+        ICrossMatchingAdapter.MakerOrder[] memory makerOrders = new ICrossMatchingAdapter.MakerOrder[](1);
         makerOrders[0].makerFillAmounts = new uint256[](2);
         makerOrders[0].makerFillAmounts[0] = 0.3e6;
         makerOrders[0].makerFillAmounts[1] = 1e6;
@@ -1187,7 +1188,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         makerOrders[0].orders = new OrderIntent[](2);
         makerOrders[0].orders[0] = _createAndSignOrder(user2, yesPositionIds[0], 0, 0.3e6, 1e6, questionIds[0], 0, _user2PK);
         makerOrders[0].orders[1] = _createAndSignOrder(user3, noPosId1, 1, 1e6, 0.9e6, questionIds[1], 0, _user3PK);
-        makerOrders[0].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
+        makerOrders[0].orderType = ICrossMatchingAdapter.OrderType.CROSS_MATCH;
         uint256[] memory takerFillAmount = new uint256[](1);
         takerFillAmount[0] = 0.6e6;
 
@@ -1196,7 +1197,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         OrderIntent memory takerOrder = _createAndSignOrder(user1, yesPositionIds[2], 0, 0.6e6, 1e6, questionIds[2], 0, _user1PK);
         
         // Execute hybrid match orders
-        vm.expectRevert(abi.encodeWithSelector(ICrossMatchingAdapterEE.MissingUnresolvedQuestion.selector, questionIds[3]));
+        vm.expectRevert(abi.encodeWithSelector(ICrossMatchingAdapter.MissingUnresolvedQuestion.selector, questionIds[3]));
         adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, 0);
         
         console.log("Mixed Long cross match test failed!");
@@ -1252,6 +1253,15 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         // Verify vault balance remains the same (self-financing)
         assertEq(usdc.balanceOf(vault), params.initialVaultBalance, "Vault balance should remain the same");
         console.log("Vault USDC balance: %s (unchanged)", usdc.balanceOf(vault));
+        
+        // Verify burn address balance (for LONG orders, no YES tokens should be burned)
+        address burnAddress = revNegRiskAdapter.getYesTokenBurnAddress();
+        console.log("=== Verifying Burn Address Balance ===");
+        for (uint256 i = 0; i < 5; i++) {
+            uint256 burnBalance = ctf.balanceOf(burnAddress, params.yesPositionIds[i]);
+            assertEq(burnBalance, 0, string(abi.encodePacked("Burn address should have no YES tokens for question ", vm.toString(i), " in LONG cross-match")));
+            console.log("Burn address YES%i tokens: %s (should be 0)", i, burnBalance);
+        }
     }
     
     function _verifyCrossMatchSellersResults(
@@ -1261,7 +1271,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         uint256 noPositionId4,
         uint256[] memory initialBalances,
         uint256[] memory takerFillAmount,
-        CrossMatchingAdapter.MakerOrder[] memory makerOrders
+        ICrossMatchingAdapter.MakerOrder[] memory makerOrders
     ) internal {
         // initialBalances array indices:
         // [0-4] = initialUSDC for users 0-4
@@ -1331,6 +1341,22 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         // Verify vault balance remains the same (self-financing)
         assertEq(usdc.balanceOf(vault), initialBalances[10], "Vault balance should remain the same");
         console.log("Vault USDC balance: %s (unchanged)", usdc.balanceOf(vault));
+        
+        // Verify burn address balance
+        // In SHORT cross-match, mergeAllYesTokens is called which burns YES tokens for all questions
+        // For non-pivot questions (0, 1, 2, 3): user's YES tokens are burned
+        // For pivot question (4): YES tokens created from split are burned (user's YES tokens are used for merging)
+        address burnAddress = revNegRiskAdapter.getYesTokenBurnAddress();
+        // fillAmount is already calculated above (1e6 tokens)
+        // YES tokens for questions 0, 1, 2, 3 should be burned (user's tokens)
+        for (uint256 i = 0; i < 4; i++) {
+            uint256 burnBalance = ctf.balanceOf(burnAddress, yesPositionIds[i]);
+            // Each YES token should be burned with amount = fillAmount (1e6)
+            assertEq(burnBalance, fillAmount, string(abi.encodePacked("Burn address should have ", vm.toString(fillAmount), " YES tokens for question ", vm.toString(i))));
+        }
+        // Question 4 (pivot): YES tokens created from split are burned (not user's tokens, which are used for merging)
+        uint256 burnBalance4 = ctf.balanceOf(burnAddress, yesPositionIds[4]);
+        assertEq(burnBalance4, fillAmount, string(abi.encodePacked("Burn address should have ", vm.toString(fillAmount), " YES tokens for pivot question 4 (from split)")));
     }
     
     function _verifyCrossMatchMixedLongResults(
@@ -1338,7 +1364,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         uint256 noPosId1,
         uint256[] memory initialBalances,
         uint256[] memory takerFillAmount,
-        CrossMatchingAdapter.MakerOrder[] memory makerOrders,
+        ICrossMatchingAdapter.MakerOrder[] memory makerOrders,
         OrderIntent memory takerOrder
     ) internal {
         // initialBalances array indices:
@@ -1425,13 +1451,26 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         // Verify vault balance remains the same (self-financing)
         assertEq(usdc.balanceOf(vault), initialBalances[6], "Vault balance should remain the same");
         console.log("Vault USDC balance: %s (unchanged)", usdc.balanceOf(vault));
+        
+        // Verify burn address balance
+        // In mixed LONG cross-match, mergeAllYesTokens may be called for SHORT orders
+        // For this test, user3 is selling NO tokens, which might trigger burning
+        // But since this is a LONG cross-match, no YES tokens should be burned
+        address burnAddress = revNegRiskAdapter.getYesTokenBurnAddress();
+        console.log("=== Verifying Burn Address Balance ===");
+        for (uint256 i = 0; i < 3; i++) {
+            uint256 burnBalance = ctf.balanceOf(burnAddress, yesPositionIds[i]);
+            // In mixed LONG, no YES tokens should be burned (only NO tokens are involved in the sell)
+            assertEq(burnBalance, 0, string(abi.encodePacked("Burn address should have no YES tokens for question ", vm.toString(i), " in mixed LONG cross-match")));
+            console.log("Burn address YES%i tokens: %s (should be 0)", i, burnBalance);
+        }
     }
     
     function _verifyCrossMatchRefundResults(
         uint256[] memory yesPositionIds,
         uint256[] memory initialBalances,
         uint256[] memory takerFillAmount,
-        CrossMatchingAdapter.MakerOrder[] memory makerOrders,
+        ICrossMatchingAdapter.MakerOrder[] memory makerOrders,
         OrderIntent memory takerOrder
     ) internal {
         // initialBalances array indices:
@@ -1517,6 +1556,15 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         // Verify vault balance remains the same (self-financing)
         assertEq(usdc.balanceOf(vault), initialBalances[6], "Vault balance should remain the same");
         console.log("Vault USDC balance: %s (unchanged)", usdc.balanceOf(vault));
+        
+        // Verify burn address balance (for LONG orders, no YES tokens should be burned)
+        address burnAddress = revNegRiskAdapter.getYesTokenBurnAddress();
+        console.log("=== Verifying Burn Address Balance ===");
+        for (uint256 i = 0; i < 3; i++) {
+            uint256 burnBalance = ctf.balanceOf(burnAddress, yesPositionIds[i]);
+            assertEq(burnBalance, 0, string(abi.encodePacked("Burn address should have no YES tokens for question ", vm.toString(i), " in LONG cross-match")));
+            console.log("Burn address YES%i tokens: %s (should be 0)", i, burnBalance);
+        }
     }
     
     function _checkVaultBalanceUnchanged(uint256 initialBalance) internal {

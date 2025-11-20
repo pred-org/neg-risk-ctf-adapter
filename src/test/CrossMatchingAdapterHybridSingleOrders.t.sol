@@ -3,7 +3,8 @@ pragma solidity ^0.8.19;
 
 import {Test, console} from "forge-std/Test.sol";
 import {console2} from "forge-std/console2.sol";
-import {CrossMatchingAdapter, ICrossMatchingAdapterEE} from "src/CrossMatchingAdapter.sol";
+import {CrossMatchingAdapter} from "src/CrossMatchingAdapter.sol";
+import {ICrossMatchingAdapter} from "src/interfaces/ICrossMatchingAdapter.sol";
 import {NegRiskAdapter} from "src/NegRiskAdapter.sol";
 import {NegRiskOperator} from "src/NegRiskOperator.sol";
 import {RevNegRiskAdapter} from "src/RevNegRiskAdapter.sol";
@@ -259,7 +260,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
       console.log("=== Testing Single Orders Merge One Test ===");
         
       // Create 1 single order
-      CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
+      ICrossMatchingAdapter.MakerOrder[] memory makerOrders = new ICrossMatchingAdapter.MakerOrder[](1);
       uint256[] memory takerFillAmounts = new uint256[](1);
         
       makerOrders[0].orders = new OrderIntent[](1);
@@ -276,7 +277,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
           1, 
           _user1PK
         );
-      makerOrders[0].orderType = CrossMatchingAdapter.OrderType.SINGLE;
+      makerOrders[0].orderType = ICrossMatchingAdapter.OrderType.SINGLE;
       makerOrders[0].makerFillAmounts = new uint256[](1);
       makerOrders[0].makerFillAmounts[0] = 1e6;
       takerFillAmounts[0] = 1e6;
@@ -449,7 +450,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
       console.log("=== Testing Single Orders Complementary One Test ===");
         
       // Create 1 single order
-      CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
+      ICrossMatchingAdapter.MakerOrder[] memory makerOrders = new ICrossMatchingAdapter.MakerOrder[](1);
       uint256[] memory takerFillAmounts = new uint256[](1);
         
       makerOrders[0].orders = new OrderIntent[](1);
@@ -466,7 +467,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
           1, 
           _user1PK
         );
-      makerOrders[0].orderType = CrossMatchingAdapter.OrderType.SINGLE;
+      makerOrders[0].orderType = ICrossMatchingAdapter.OrderType.SINGLE;
       makerOrders[0].makerFillAmounts = new uint256[](1);
       makerOrders[0].makerFillAmounts[0] = 0.55e6;
       takerFillAmounts[0] = 1e6;
@@ -562,7 +563,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
       console.log("=== Testing Single Orders Mint One Test ===");
         
       // Create 1 single order
-      CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
+      ICrossMatchingAdapter.MakerOrder[] memory makerOrders = new ICrossMatchingAdapter.MakerOrder[](1);
       makerOrders[0].makerFillAmounts = new uint256[](1);
       uint256[] memory takerFillAmounts = new uint256[](1);
         
@@ -580,7 +581,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
           0, 
           _user1PK
         );
-      makerOrders[0].orderType = CrossMatchingAdapter.OrderType.SINGLE;
+      makerOrders[0].orderType = ICrossMatchingAdapter.OrderType.SINGLE;
       makerOrders[0].makerFillAmounts[0] = 0.55e6;
       takerFillAmounts[0] = 0.45e6;
         
@@ -674,7 +675,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
       console.log("=== Testing Single Orders Merge Multiple Test ===");
         
       // Create 3 single orders
-      CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](3);
+      ICrossMatchingAdapter.MakerOrder[] memory makerOrders = new ICrossMatchingAdapter.MakerOrder[](3);
       uint256[] memory takerFillAmounts = new uint256[](3);
         
       for (uint256 i = 0; i < 3; i++) {
@@ -694,7 +695,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
           1, 
           1000 + i
         );
-        makerOrders[i].orderType = CrossMatchingAdapter.OrderType.SINGLE;
+        makerOrders[i].orderType = ICrossMatchingAdapter.OrderType.SINGLE;
         makerOrders[i].makerFillAmounts = new uint256[](1);
         makerOrders[i].makerFillAmounts[0] = 1e6;
         takerFillAmounts[i] = 1e6;
@@ -822,7 +823,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
       console.log("=== Testing Single Orders Complementary Multiple Test ===");
         
       // Create 3 single orders
-      CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](3);
+      ICrossMatchingAdapter.MakerOrder[] memory makerOrders = new ICrossMatchingAdapter.MakerOrder[](3);
       uint256[] memory takerFillAmounts = new uint256[](3);
         
       for (uint256 i = 0; i < 3; i++) {
@@ -844,7 +845,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
           1, 
           1000 + i
         );
-        makerOrders[i].orderType = CrossMatchingAdapter.OrderType.SINGLE;
+        makerOrders[i].orderType = ICrossMatchingAdapter.OrderType.SINGLE;
         makerOrders[i].makerFillAmounts = new uint256[](1);
         makerOrders[i].makerFillAmounts[0] = 0.55e6;
         takerFillAmounts[i] = 1e6;
@@ -965,7 +966,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
       console.log("=== Testing Single Orders Mint Multiple Test ===");
         
       // Create 3 single orders
-      CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](3);
+      ICrossMatchingAdapter.MakerOrder[] memory makerOrders = new ICrossMatchingAdapter.MakerOrder[](3);
       uint256[] memory takerFillAmounts = new uint256[](3);
         
       for (uint256 i = 0; i < 3; i++) {
@@ -987,7 +988,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
           0, 
           1000 + i
         );
-        makerOrders[i].orderType = CrossMatchingAdapter.OrderType.SINGLE;
+        makerOrders[i].orderType = ICrossMatchingAdapter.OrderType.SINGLE;
         makerOrders[i].makerFillAmounts = new uint256[](1);
         makerOrders[i].makerFillAmounts[0] = 0.55e6;
         takerFillAmounts[i] = 0.45e6;
