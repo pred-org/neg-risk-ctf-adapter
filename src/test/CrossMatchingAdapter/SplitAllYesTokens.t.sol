@@ -134,10 +134,10 @@ contract SplitAllYesTokensTest is Test, TestHelper {
     function _setupUser(address user, uint256 usdcBalance) internal {
         vm.startPrank(user);
         deal(address(usdc), user, usdcBalance);
-        usdc.approve(address(adapter), type(uint256).max);
+        usdc.approve(address(revNegRiskAdapter), type(uint256).max);
         usdc.approve(address(ctfExchange), type(uint256).max);
         ctf.setApprovalForAll(address(ctfExchange), true);
-        ctf.setApprovalForAll(address(adapter), true);
+        ctf.setApprovalForAll(address(revNegRiskAdapter), true);
         vm.stopPrank();
     }
 
