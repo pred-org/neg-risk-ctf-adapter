@@ -263,6 +263,52 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, IRevNegRiskAdapterEE, Auth {
                                 INTERNAL
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Split USDC to get YES tokens for all questions in a market
+    /// @param _marketId - the marketId
+    /// @param _amount - the amount of USDC to split
+    function splitAllYesTokens(bytes32 _marketId, uint256 _amount) public {
+        col.transferFrom(msg.sender, address(this), _amount);
+        splitAllYesTokens(_marketId, _amount, msg.sender);
+    }
+
+    /// @notice Split USDC to get YES tokens for all questions in a market
+    /// @param _marketId - the marketId
+    /// @param _amount - the amount of USDC to split
+    /// @param _recipient - the address to receive the YES tokens
+    function splitAllYesTokens(bytes32 _marketId, uint256 _amount, address _recipient) internal {
+        uint256 questionCount = neg.getQuestionCount(_marketId);
+        if (neg.getOracle(_marketId) == address(0)) revert MarketNotPrepared();
+        if (questionCount <= 1) revert NoConvertiblePositions();
+
+        uint256[] memory yesPositionIds = new uint256[](questionCount);
+        for (uint256 i = 0; i < questionCount;) {
+            bytes32 questionId = NegRiskIdLib.getQuestionId(_marketId, uint8(i));
+            yesPositionIds[i] = neg.getPositionId(questionId, true);
+            unchecked { ++i; }
+        }
+
+        if (col.balanceOf(address(this)) < _amount) {
+            col.transferFrom(_recipient, address(this), _amount);
+        }
+        wcol.wrap(address(this), _amount);
+
+        uint8 pivotId = 0;
+        bytes32 pivotConditionId = neg.getConditionId(NegRiskIdLib.getQuestionId(_marketId, pivotId));
+        _splitAllYesTokens(pivotConditionId, pivotId, _amount, _marketId);
+        ctf.safeBatchTransferFrom(address(this), _recipient, yesPositionIds, Helpers.values(yesPositionIds.length, _amount), "");
+    }
+
+    function _splitAllYesTokens(
+        bytes32 pivotConditionId,
+        uint8 pivotId,
+        uint256 fillAmount,
+        bytes32 marketId
+    ) internal {
+        _splitPosition(pivotConditionId, fillAmount);
+        uint256 indexSet = 1 << pivotId;
+        neg.convertPositions(marketId, indexSet, fillAmount);
+    }
+
     /// @dev internal function to avoid stack too deep in convertPositions
     function _splitPosition(bytes32 _conditionId, uint256 _amount) internal {
         ctf.splitPosition(address(wcol), bytes32(0), _conditionId, Helpers.partition(), _amount);
