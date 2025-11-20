@@ -3,7 +3,8 @@ pragma solidity ^0.8.19;
 
 import {Test, console} from "forge-std/Test.sol";
 import {console2} from "forge-std/console2.sol";
-import {CrossMatchingAdapter, ICrossMatchingAdapterEE} from "src/CrossMatchingAdapter.sol";
+import {CrossMatchingAdapter} from "src/CrossMatchingAdapter.sol";
+import {ICrossMatchingAdapter} from "src/interfaces/ICrossMatchingAdapter.sol";
 import {NegRiskAdapter} from "src/NegRiskAdapter.sol";
 import {NegRiskOperator} from "src/NegRiskOperator.sol";
 import {RevNegRiskAdapter} from "src/RevNegRiskAdapter.sol";
@@ -160,7 +161,7 @@ contract SplitAllYesTokensTest is Test, TestHelper {
         
         // Execute splitAllYesTokens
         vm.prank(user1);
-        adapter.splitAllYesTokens(marketId, fillAmount);
+        revNegRiskAdapter.splitAllYesTokens(marketId, fillAmount);
         
         // Verify USDC was transferred from user1
         uint256 finalUSDC = usdc.balanceOf(user1);

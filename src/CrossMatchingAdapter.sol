@@ -3,7 +3,6 @@ pragma solidity 0.8.19;
 
 import {ReentrancyGuard} from "openzeppelin-contracts/security/ReentrancyGuard.sol";
 import {IERC20} from "openzeppelin-contracts/token/ERC20/IERC20.sol";
-import {IERC1155} from "openzeppelin-contracts/token/ERC1155/IERC1155.sol";
 import {ERC1155TokenReceiver} from "lib/solmate/src/tokens/ERC1155.sol";
 import {IConditionalTokens} from "./interfaces/IConditionalTokens.sol";
 import {INegRiskAdapter} from "./interfaces/INegRiskAdapter.sol";
@@ -12,38 +11,15 @@ import {IRevNegRiskAdapter} from "./interfaces/IRevNegRiskAdapter.sol";
 import {WrappedCollateral} from "src/WrappedCollateral.sol";
 import {NegRiskIdLib} from "./libraries/NegRiskIdLib.sol";
 import {AssetOperations} from "lib/ctf-exchange/src/exchange/mixins/AssetOperations.sol";
+import {IAssets} from "lib/ctf-exchange/src/exchange/interfaces/IAssets.sol";
 import {ICTFExchange} from "src/interfaces/ICTFExchange.sol";
+import {ICrossMatchingAdapter} from "./interfaces/ICrossMatchingAdapter.sol";
 import {Helpers} from "src/libraries/Helpers.sol";
 import {CalculatorHelper} from "lib/ctf-exchange/src/exchange/libraries/CalculatorHelper.sol";
-import {OrderIntent, OrderStatus, Order, Side, Intent} from "lib/ctf-exchange/src/exchange/libraries/OrderStructs.sol";
+import {OrderIntent, Order, Side, Intent} from "lib/ctf-exchange/src/exchange/libraries/OrderStructs.sol";
 import {ITradingEE} from "lib/ctf-exchange/src/exchange/interfaces/ITrading.sol";
 import {Auth} from "lib/ctf-exchange/src/exchange/mixins/Auth.sol";
 import {Pausable} from "lib/ctf-exchange/src/exchange/mixins/Pausable.sol";
-import {MarketData, MarketDataLib} from "src/types/MarketData.sol";
-
-/// @title ICrossMatchingAdapterEE
-/// @notice CrossMatchingAdapter Errors and Events
-interface ICrossMatchingAdapterEE {
-    error UnsupportedToken();      // order.tokenId not recognized as YES (buy) or NO (sell)
-    error SideNotSupported();      // only BUY-YES and SELL-NO supported in this adapter
-    error PriceOutOfRange();       // price must be ≤ 1
-    error BootstrapShortfall();    // not enough buyer USDC to bootstrap pivot split
-    error SupplyInvariant();       // insufficient YES supply computed
-    error NotSelfFinancing();      // net WCOL minted (!= 0) after operations
-    error InvalidFillAmount();     // fill amount is invalid (zero or exceeds order quantity)
-    error InvalidCombinedPrice();  // combined price of all orders must equal total shares
-    error InsufficientUSDCBalance(); // insufficient USDC balance for WCOL minting
-    error InvalidUSDCBalance(); // invalid USDC balance for WCOL minting
-    error MissingUnresolvedQuestion(); // some unresolved questions are missing from orders
-    error SingleOrderCountMismatch(); // provided single order count does not match detected orders
-    error MakerFillLengthMismatch(); // taker fill lengths do not match maker orders length
-    error InvalidSingleOrderShape(); // single maker order must have exactly one nested order and fill amount
-    error NoConvertiblePositions();
-    error MarketNotPrepared();
-
-    event OrderFilled(bytes32 indexed orderHash, address indexed maker, address indexed taker, uint256 makerAssetId, uint256 takerAssetId, uint256 makerAmountFilled, uint256 takerAmountFilled, uint256 fee);
-    event OrdersMatched(bytes32 indexed takerOrderHash, address indexed takerOrderMaker, uint256 makerAssetId, uint256 takerAssetId, uint256 makerAmountFilled, uint256 takerAmountFilled);
-}
 
 /*
  * Cross-matching adapter for NegRisk events.
@@ -58,7 +34,7 @@ interface ICrossMatchingAdapterEE {
  * Uses pivot index 0 (no external field) via neg.getQuestionId(marketId, 0).
  */
 
-contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOperations, ICrossMatchingAdapterEE, Auth, Pausable {
+contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOperations, ICrossMatchingAdapter, Auth, Pausable {
     // constants
     uint256  constant ONE = 1e6; // fixed-point for price (6 decimals to match USDC)
 
@@ -101,17 +77,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         uint256 makingAmount; // making amount
         uint256 takingAmount; // taking amount
         bytes32 orderHash;
-    }
-
-    struct MakerOrder {
-        OrderIntent[] orders;
-        OrderType orderType;
-        uint256[] makerFillAmounts;
-    }
-
-    enum OrderType {
-        SINGLE,
-        CROSS_MATCH
     }
 
     /// @notice Modifier to check that all unresolved questions are present in the orders
@@ -162,7 +127,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
     function hybridMatchOrders(
         bytes32 marketId,
         OrderIntent calldata takerOrder, 
-        MakerOrder[] calldata makerOrders, 
+        ICrossMatchingAdapter.MakerOrder[] calldata makerOrders, 
         uint256[] calldata takerFillAmounts,
         uint8 singleOrderCount
     ) external onlyOperator notPaused nonReentrant {
@@ -181,8 +146,8 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         bool isLong = takerOrder.order.intent == Intent.LONG;
 
         for (uint256 i = 0; i < makerOrders.length;) {
-            MakerOrder calldata makerOrder = makerOrders[i];
-            if (makerOrder.orderType == OrderType.SINGLE) {
+            ICrossMatchingAdapter.MakerOrder calldata makerOrder = makerOrders[i];
+            if (makerOrder.orderType == ICrossMatchingAdapter.OrderType.SINGLE) {
                 if (makerOrder.orders.length != 1 || makerOrder.makerFillAmounts.length != 1) {
                     revert InvalidSingleOrderShape();
                 }
@@ -541,11 +506,8 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
             wcol.mint(totalSellUSDC);
         }
 
-        // STEP 1: Split position for pivot question (use taker's question ID) to create YES + NO
-        // Use the taker's question ID as the pivot since we know it's active (unresolved)
         uint8 pivotId = _getQuestionIndexFromPositionId(parsedOrders[0].tokenId, marketId);
         bytes32 pivotConditionId = neg.getConditionId(parsedOrders[0].questionId);
-        
         _splitAllYesTokens(pivotConditionId, pivotId, fillAmount, marketId);
         
         // STEP 3: Distribute YES tokens to buyers
@@ -581,62 +543,14 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         emit OrdersMatched(takerOrder.orderHash, takerOrder.maker, makerAssetId, takerAssetId, takerOrder.makingAmount, takerOrder.takingAmount);
     }
 
-    function splitAllYesTokens(
-        bytes32 marketId,
-        uint256 fillAmount
-    ) public notPaused {
-
-        uint256 questionCount = neg.getQuestionCount(marketId);
-
-        if (neg.getOracle(marketId) == address(0)) revert MarketNotPrepared();
-        if (questionCount <= 1) revert NoConvertiblePositions();
-
-        uint256[] memory yesPositionIds = new uint256[](questionCount);
-
-        // populate noPositionIds and yesPositionIds
-        // split yes positions
-        {
-            uint256 index = 0;
-
-            while (index < questionCount) {
-                bytes32 questionId = NegRiskIdLib.getQuestionId(marketId, uint8(index));
-
-                yesPositionIds[index] = neg.getPositionId(questionId, true);
-                unchecked {
-                    ++index;
-                }
-            }
-        }
-
-        usdc.transferFrom(msg.sender, address(this), fillAmount);
-        wcol.wrap(address(this), fillAmount);
-
-        uint8 pivotId = _getQuestionIndexFromPositionId(yesPositionIds[0], marketId);
-        bytes32 pivotConditionId = neg.getConditionId(NegRiskIdLib.getQuestionId(marketId, pivotId));
-        _splitAllYesTokens(pivotConditionId, pivotId, fillAmount, marketId);
-        // transfer all the yes tokens to the user(msg.sender)
-        ctf.safeBatchTransferFrom(address(this), msg.sender, yesPositionIds, Helpers.values(yesPositionIds.length, fillAmount), "");
-    }
-
     function _splitAllYesTokens(
         bytes32 pivotConditionId,
         uint8 pivotId,
         uint256 fillAmount,
         bytes32 marketId
     ) internal {
-        // We need to split enough USDC to cover the CTF operation
-        
-        // Split the available WCOL on pivot question to get YES + NO
         _splitPosition(pivotConditionId, fillAmount);
-        
-        // STEP 2: Use convertPositions to convert NO tokens to other YES tokens
-        // The indexSet for convertPositions represents which NO positions we want to convert
-        // We want to convert NO tokens from the pivot question to get YES tokens for other questions
-        // So we need to provide an indexSet that represents the pivot NO position
-        uint256 indexSet = 1 << pivotId; // This represents NO position for the pivot question
-
-        // Convert NO tokens to YES tokens for other questions using NegRiskAdapter's convertPositions
-        // We can only convert as much as we have NO tokens from the split operation
+        uint256 indexSet = 1 << pivotId;
         neg.convertPositions(marketId, indexSet, fillAmount);
     }
     
@@ -834,11 +748,11 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         revert UnsupportedToken();
     }
 
-    function getCollateral() public view override returns (address) {
+    function getCollateral() public view override(IAssets, ICrossMatchingAdapter) returns (address) {
         return address(wcol);
     }
 
-    function getCtf() public view override returns (address) {
+    function getCtf() public view override(IAssets, ICrossMatchingAdapter) returns (address) {
         return address(ctf);
     }
 
