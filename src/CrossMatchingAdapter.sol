@@ -19,6 +19,7 @@ import {OrderIntent, OrderStatus, Order, Side, Intent} from "lib/ctf-exchange/sr
 import {ITradingEE} from "lib/ctf-exchange/src/exchange/interfaces/ITrading.sol";
 import {Auth} from "lib/ctf-exchange/src/exchange/mixins/Auth.sol";
 import {Pausable} from "lib/ctf-exchange/src/exchange/mixins/Pausable.sol";
+import {MarketData, MarketDataLib} from "src/types/MarketData.sol";
 
 /// @title ICrossMatchingAdapterEE
 /// @notice CrossMatchingAdapter Errors and Events
@@ -37,6 +38,8 @@ interface ICrossMatchingAdapterEE {
     error SingleOrderCountMismatch(); // provided single order count does not match detected orders
     error MakerFillLengthMismatch(); // taker fill lengths do not match maker orders length
     error InvalidSingleOrderShape(); // single maker order must have exactly one nested order and fill amount
+    error NoConvertiblePositions();
+    error MarketNotPrepared();
 
     event OrderFilled(bytes32 indexed orderHash, address indexed maker, address indexed taker, uint256 makerAssetId, uint256 takerAssetId, uint256 makerAmountFilled, uint256 takerAmountFilled, uint256 fee);
     event OrdersMatched(bytes32 indexed takerOrderHash, address indexed takerOrderMaker, uint256 makerAssetId, uint256 takerAssetId, uint256 makerAmountFilled, uint256 takerAmountFilled);
@@ -578,17 +581,42 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         emit OrdersMatched(takerOrder.orderHash, takerOrder.maker, makerAssetId, takerAssetId, takerOrder.makingAmount, takerOrder.takingAmount);
     }
 
-    // function splitAllYesTokens(
-    //     bytes32 marketId,
-    //     uint256 fillAmount
-    // ) public notPaused {
-    //     Parsed[] memory parsedOrders = new Parsed[](multiOrderMaker.length + 1);
-    //     for (uint256 i = 0; i < parsedOrders.length; i++) {
-    //         // (uint256 makerTakingAmount, bytes32 orderHash) = ctfExchange.performOrderChecks(takerOrder, fillAmount);
-    //         parsedOrders[i] = _parseOrder(makerOrder, fillAmount, fillAmount, makerTakingAmount, orderHash);
-    //     }
-    //     _splitAllYesTokens(parsedOrders, fillAmount, marketId);
-    // }
+    function splitAllYesTokens(
+        bytes32 marketId,
+        uint256 fillAmount
+    ) public notPaused {
+
+        uint256 questionCount = neg.getQuestionCount(marketId);
+
+        if (neg.getOracle(marketId) == address(0)) revert MarketNotPrepared();
+        if (questionCount <= 1) revert NoConvertiblePositions();
+
+        uint256[] memory yesPositionIds = new uint256[](questionCount);
+
+        // populate noPositionIds and yesPositionIds
+        // split yes positions
+        {
+            uint256 index = 0;
+
+            while (index < questionCount) {
+                bytes32 questionId = NegRiskIdLib.getQuestionId(marketId, uint8(index));
+
+                yesPositionIds[index] = neg.getPositionId(questionId, true);
+                unchecked {
+                    ++index;
+                }
+            }
+        }
+
+        usdc.transferFrom(msg.sender, address(this), fillAmount);
+        wcol.wrap(address(this), fillAmount);
+
+        uint8 pivotId = _getQuestionIndexFromPositionId(yesPositionIds[0], marketId);
+        bytes32 pivotConditionId = neg.getConditionId(NegRiskIdLib.getQuestionId(marketId, pivotId));
+        _splitAllYesTokens(pivotConditionId, pivotId, fillAmount, marketId);
+        // transfer all the yes tokens to the user(msg.sender)
+        ctf.safeBatchTransferFrom(address(this), msg.sender, yesPositionIds, Helpers.values(yesPositionIds.length, fillAmount), "");
+    }
 
     function _splitAllYesTokens(
         bytes32 pivotConditionId,
