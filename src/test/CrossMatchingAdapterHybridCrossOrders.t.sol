@@ -505,7 +505,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
             _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
         }
         
-        CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
+        ICrossMatchingAdapter.MakerOrder[] memory makerOrders = new ICrossMatchingAdapter.MakerOrder[](1);
         makerOrders[0].makerFillAmounts = new uint256[](4);
         for (uint256 i = 0; i < 4; i++) {
             makerOrders[0].makerFillAmounts[i] = 0.1e6;
@@ -516,7 +516,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         makerOrders[0].orders[1] = _createAndSignOrder(user3, yesPositionIds[1], 0, 0.1e6, 1e6, questionIds[1], 0, _user3PK);
         makerOrders[0].orders[2] = _createAndSignOrder(user4, yesPositionIds[2], 0, 0.1e6, 1e6, questionIds[2], 0, _user4PK);
         makerOrders[0].orders[3] = _createAndSignOrder(user5, yesPositionIds[3], 0, 0.1e6, 1e6, questionIds[3], 0, _user5PK);
-        makerOrders[0].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
+        makerOrders[0].orderType = ICrossMatchingAdapter.OrderType.CROSS_MATCH;
         uint256[] memory takerFillAmount = new uint256[](1);
         takerFillAmount[0] = 0.6e6;
 
@@ -694,7 +694,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         
         negRiskAdapter.setPrepared(marketId);
         
-        CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
+        ICrossMatchingAdapter.MakerOrder[] memory makerOrders = new ICrossMatchingAdapter.MakerOrder[](1);
         makerOrders[0].makerFillAmounts = new uint256[](4);
         // For SELL orders, makerFillAmounts is in token amount (1e6 tokens each)
         for (uint256 i = 0; i < 4; i++) {
@@ -713,7 +713,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         makerOrders[0].orders[2] = _createAndSignOrder(user4, yesPositionIds[2], 1, 1e6, 0.1e6, questionIds[2], 1, _user4PK);
         // Maker 4: selling YES3 at price 0.1
         makerOrders[0].orders[3] = _createAndSignOrder(user5, yesPositionIds[3], 1, 1e6, 0.1e6, questionIds[3], 1, _user5PK);
-        makerOrders[0].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
+        makerOrders[0].orderType = ICrossMatchingAdapter.OrderType.CROSS_MATCH;
         
         // Taker order - buying NO4 at price 0.6
         // For BUY orders: side=0, makerAmount=USDC amount (0.6e6), takerAmount=token amount (1e6)
@@ -796,7 +796,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         
         negRiskAdapter.setPrepared(marketId);
         
-        CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
+        ICrossMatchingAdapter.MakerOrder[] memory makerOrders = new ICrossMatchingAdapter.MakerOrder[](1);
         makerOrders[0].makerFillAmounts = new uint256[](4);
         // For SELL orders, makerFillAmounts is in token amount (1e6 tokens each)
         for (uint256 i = 0; i < 4; i++) {
@@ -815,7 +815,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         makerOrders[0].orders[2] = _createAndSignOrder(user4, yesPositionIds[2], 1, 1e6, 0.1e6, questionIds[2], 1, _user4PK);
         // Maker 4: selling YES3 at price 0.1
         makerOrders[0].orders[3] = _createAndSignOrder(user5, yesPositionIds[3], 1, 1e6, 0.1e6, questionIds[3], 1, _user5PK);
-        makerOrders[0].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
+        makerOrders[0].orderType = ICrossMatchingAdapter.OrderType.CROSS_MATCH;
         
         // Taker order - buying NO4 at price 0.6
         // For BUY orders: side=0, makerAmount=USDC amount (0.6e6), takerAmount=token amount (1e6)
@@ -876,7 +876,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, 0);
 
         // order2
-        CrossMatchingAdapter.MakerOrder[] memory makerOrder2 = new CrossMatchingAdapter.MakerOrder[](1);
+        ICrossMatchingAdapter.MakerOrder[] memory makerOrder2 = new ICrossMatchingAdapter.MakerOrder[](1);
         makerOrder2[0].makerFillAmounts = new uint256[](4);
         // For SELL orders, makerFillAmounts is in token amount (1e6 tokens each)
         for (uint256 i = 0; i < 4; i++) {
@@ -892,7 +892,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         makerOrder2[0].orders[1] = makerOrders[0].orders[1];
         makerOrder2[0].orders[2] = makerOrders[0].orders[2];
         makerOrder2[0].orders[3] = makerOrders[0].orders[3];
-        makerOrder2[0].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
+        makerOrder2[0].orderType = ICrossMatchingAdapter.OrderType.CROSS_MATCH;
 
         vm.expectRevert(bytes("OrderFilledOrCancelled()"));
         adapter.hybridMatchOrders(marketId, takerOrder, makerOrder2, takerFillAmount, 0);
@@ -1059,7 +1059,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
 
         uint256 noPosId1 = negRiskAdapter.getPositionId(questionIds[1], false);
         
-        CrossMatchingAdapter.MakerOrder[] memory makerOrders = new CrossMatchingAdapter.MakerOrder[](1);
+        ICrossMatchingAdapter.MakerOrder[] memory makerOrders = new ICrossMatchingAdapter.MakerOrder[](1);
         makerOrders[0].makerFillAmounts = new uint256[](2);
         makerOrders[0].makerFillAmounts[0] = 0.3e6;
         makerOrders[0].makerFillAmounts[1] = 1e6;
@@ -1069,7 +1069,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         makerOrders[0].orders = new OrderIntent[](2);
         makerOrders[0].orders[0] = _createAndSignOrder(user2, yesPositionIds[0], 0, 0.3e6, 1e6, questionIds[0], 1, _user2PK);
         makerOrders[0].orders[1] = _createAndSignOrder(user3, noPosId1, 1, 1e6, 0.9e6, questionIds[1], 1, _user3PK);
-        makerOrders[0].orderType = CrossMatchingAdapter.OrderType.CROSS_MATCH;
+        makerOrders[0].orderType = ICrossMatchingAdapter.OrderType.CROSS_MATCH;
         uint256[] memory takerFillAmount = new uint256[](1);
         takerFillAmount[0] = 0.6e6;
 

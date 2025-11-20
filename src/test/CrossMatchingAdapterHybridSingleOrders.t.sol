@@ -375,7 +375,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
           0, 
           _user1PK
         );
-      makerOrders[0].orderType = CrossMatchingAdapter.OrderType.SINGLE;
+      makerOrders[0].orderType = ICrossMatchingAdapter.OrderType.SINGLE;
       makerOrders[0].makerFillAmounts = new uint256[](1);
       makerOrders[0].makerFillAmounts[0] = 1e6;
       takerFillAmounts[0] = 1e6;
@@ -394,7 +394,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
       // price = 0.45$
       OrderIntent memory takerOrder = _createAndSignOrder(user2, noPositionId, 1, 1e6, 0.55e6, questionId, 1, _user2PK);
 
-      vm.expectRevert(abi.encodeWithSelector(ITradingEE.InvalidIntent.selector));
+      vm.expectRevert(bytes("InvalidIntent()"));
       // Execute hybrid match orders (1 single order)
       adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmounts, 1);
     }
@@ -420,7 +420,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
           1, 
           _user1PK
         );
-      makerOrders[0].orderType = CrossMatchingAdapter.OrderType.SINGLE;
+      makerOrders[0].orderType = ICrossMatchingAdapter.OrderType.SINGLE;
       makerOrders[0].makerFillAmounts = new uint256[](1);
       makerOrders[0].makerFillAmounts[0] = 1e6;
       takerFillAmounts[0] = 1e6;
@@ -540,7 +540,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
           1, 
           _user1PK
         );
-      makerOrders[0].orderType = CrossMatchingAdapter.OrderType.SINGLE;
+      makerOrders[0].orderType = ICrossMatchingAdapter.OrderType.SINGLE;
       makerOrders[0].makerFillAmounts = new uint256[](1);
       makerOrders[0].makerFillAmounts[0] = 0.55e6;
       takerFillAmounts[0] = 2e6;
@@ -655,7 +655,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
           0, 
           _userXPK
         );
-      makerOrders[0].orderType = CrossMatchingAdapter.OrderType.SINGLE;
+      makerOrders[0].orderType = ICrossMatchingAdapter.OrderType.SINGLE;
       makerOrders[0].makerFillAmounts[0] = 0.55e6;
       takerFillAmounts[0] = 0.45e6;
         
