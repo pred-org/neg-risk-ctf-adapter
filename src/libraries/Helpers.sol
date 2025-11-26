@@ -62,4 +62,15 @@ library Helpers {
         payouts_[1] = _outcome ? 0 : 1;
         return payouts_;
     }
+
+    /// @notice returns the payouts for a tie case
+    /// @notice payouts are [1,1] representing a 50/50 split
+    /// @return payouts - the payouts [1,1]
+    function payoutsTie() internal pure returns (uint256[] memory) {
+        uint256[] memory payouts_ = new uint256[](2);
+        // YES and NO both get 1 (50% each)
+        payouts_[0] = 1;
+        payouts_[1] = 1;
+        return payouts_;
+    }
 }

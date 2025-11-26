@@ -24,7 +24,7 @@ interface INegRiskAdapterEE is IMarketStateManagerEE, IAuthEE {
 
     event MarketPrepared(bytes32 indexed marketId, address indexed oracle, uint256 feeBips, bytes data);
     event QuestionPrepared(bytes32 indexed marketId, bytes32 indexed questionId, uint256 index, bytes data);
-    event OutcomeReported(bytes32 indexed marketId, bytes32 indexed questionId, bool outcome);
+    event OutcomeReported(bytes32 indexed marketId, bytes32 indexed questionId, bool outcome, bool isTie);
     event PositionSplit(address indexed stakeholder, bytes32 indexed conditionId, uint256 amount);
     event PositionsMerge(address indexed stakeholder, bytes32 indexed conditionId, uint256 amount);
     event PositionsConverted(
@@ -431,7 +431,27 @@ contract NegRiskAdapter is ERC1155TokenReceiver, MarketStateManager, INegRiskAda
 
         ctf.reportPayouts(_questionId, Helpers.payouts(_outcome));
 
-        emit OutcomeReported(NegRiskIdLib.getMarketId(_questionId), _questionId, _outcome);
+        emit OutcomeReported(NegRiskIdLib.getMarketId(_questionId), _questionId, _outcome, false);
+    }
+
+    /// @notice Report a tie outcome for a question (50/50 split)
+    /// @param _questionId - the questionId to report
+    function reportOutcomeTie(bytes32 _questionId) external {
+        bytes32 marketId = NegRiskIdLib.getMarketId(_questionId);
+        uint256 questionIndex = NegRiskIdLib.getQuestionIndex(_questionId);
+
+        MarketData data = marketData[marketId];
+        address oracle = data.oracle();
+
+        if (oracle == address(0)) revert MarketNotPrepared();
+        if (oracle != msg.sender) revert OnlyOracle();
+        if (questionIndex >= data.questionCount()) revert IndexOutOfBounds();
+
+        // For tie cases, we don't determine the market (no winner)
+        // Just report the payouts to CTF
+        ctf.reportPayouts(_questionId, Helpers.payoutsTie());
+
+        emit OutcomeReported(marketId, _questionId, false, true);
     }
 
     /*//////////////////////////////////////////////////////////////

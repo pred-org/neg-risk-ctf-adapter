@@ -22,6 +22,7 @@ contract NegRiskOperatorTest is TestHelper, INegRiskOperatorEE {
 
     uint256[] payoutsTrue = [1, 0];
     uint256[] payoutsFalse = [0, 1];
+    uint256[] payoutsTie = [1, 1];
 
     function setUp() public {
         vault = vm.createWallet("vault").addr;
@@ -141,6 +142,7 @@ contract NegRiskOperatorTest is TestHelper, INegRiskOperatorEE {
         nrOperator.reportPayouts(_requestId, _result ? payoutsTrue : payoutsFalse);
 
         assertEq(nrOperator.results(questionId), _result);
+        assertEq(nrOperator.isTie(questionId), false);
         assertEq(nrOperator.reportedAt(questionId), block.timestamp);
     }
 
@@ -163,7 +165,11 @@ contract NegRiskOperatorTest is TestHelper, INegRiskOperatorEE {
     function test_revert_reportPayouts_invalidPayoutsValues(bytes32 _requestId, uint8 _payout0, uint8 _payout1)
         public
     {
-        vm.assume(uint256(_payout0) + uint256(_payout1) != 1);
+        // Exclude valid payouts: [1,0], [0,1], and [1,1]
+        bool isValidPayout = (_payout0 == 1 && _payout1 == 0) || 
+                            (_payout0 == 0 && _payout1 == 1) || 
+                            (_payout0 == 1 && _payout1 == 1);
+        vm.assume(!isValidPayout);
 
         uint256[] memory payouts = new uint256[](2);
         payouts[0] = _payout0;
@@ -206,6 +212,27 @@ contract NegRiskOperatorTest is TestHelper, INegRiskOperatorEE {
         nrOperator.reportPayouts(_requestId, _result ? payoutsTrue : payoutsFalse);
     }
 
+    function test_reportPayouts_tie(bytes32 _requestId) public {
+        bytes memory data = new bytes(0);
+        uint256 feeBips = 0;
+
+        vm.prank(alice);
+        bytes32 marketId = nrOperator.prepareMarket(feeBips, data);
+
+        vm.prank(alice);
+        bytes32 questionId = nrOperator.prepareQuestion(marketId, data, _requestId);
+
+        vm.expectEmit();
+        emit QuestionReported(questionId, _requestId, false, true);
+
+        vm.prank(oracle);
+        nrOperator.reportPayouts(_requestId, payoutsTie);
+
+        assertEq(nrOperator.results(questionId), false);
+        assertEq(nrOperator.isTie(questionId), true);
+        assertEq(nrOperator.reportedAt(questionId), block.timestamp);
+    }
+
     /*//////////////////////////////////////////////////////////////
                             RESOLVE QUESTION
     //////////////////////////////////////////////////////////////*/
@@ -224,13 +251,41 @@ contract NegRiskOperatorTest is TestHelper, INegRiskOperatorEE {
         nrOperator.reportPayouts(_requestId, _result ? payoutsTrue : payoutsFalse);
 
         vm.expectEmit();
-        emit QuestionResolved(questionId, _result);
+        emit QuestionResolved(questionId, _result, false);
         nrOperator.resolveQuestion(questionId);
 
         bytes32 conditionId = nrAdapter.getConditionId(questionId);
         assertEq(ctf.payoutDenominator(conditionId), 1);
         assertEq(ctf.payoutNumerators(conditionId, 0), _result ? 1 : 0);
         assertEq(ctf.payoutNumerators(conditionId, 1), _result ? 0 : 1);
+    }
+
+    function test_resolveQuestion_tie(bytes32 _requestId) public {
+        bytes memory data = new bytes(0);
+        uint256 feeBips = 0;
+
+        vm.prank(alice);
+        bytes32 marketId = nrOperator.prepareMarket(feeBips, data);
+
+        vm.prank(alice);
+        bytes32 questionId = nrOperator.prepareQuestion(marketId, data, _requestId);
+
+        vm.prank(oracle);
+        nrOperator.reportPayouts(_requestId, payoutsTie);
+
+        vm.expectEmit();
+        emit QuestionResolved(questionId, false, true);
+        nrOperator.resolveQuestion(questionId);
+
+        bytes32 conditionId = nrAdapter.getConditionId(questionId);
+        // For tie case, payoutDenominator should be 2 (1+1=2)
+        assertEq(ctf.payoutDenominator(conditionId), 2);
+        // Both outcomes get 1 (50% each)
+        assertEq(ctf.payoutNumerators(conditionId, 0), 1);
+        assertEq(ctf.payoutNumerators(conditionId, 1), 1);
+        
+        // Tie cases should not determine the market (no winner)
+        assertEq(nrAdapter.getDetermined(marketId), false);
     }
 
     function test_revert_resolveQuestion_resultNotAvailable(bytes32 _requestId) public {

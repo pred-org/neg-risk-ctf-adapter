@@ -31,8 +31,8 @@ interface INegRiskOperatorEE is IAuthEE {
     );
     event QuestionFlagged(bytes32 indexed questionId);
     event QuestionUnflagged(bytes32 indexed questionId);
-    event QuestionReported(bytes32 indexed questionId, bytes32 requestId, bool result);
-    event QuestionResolved(bytes32 indexed questionId, bool result);
+    event QuestionReported(bytes32 indexed questionId, bytes32 requestId, bool result, bool isTie);
+    event QuestionResolved(bytes32 indexed questionId, bool result, bool isTie);
     event QuestionEmergencyResolved(bytes32 indexed questionId, bool result);
 }
 
@@ -49,6 +49,7 @@ contract NegRiskOperator is INegRiskOperatorEE, Auth {
 
     mapping(bytes32 _requestId => bytes32) public questionIds;
     mapping(bytes32 _questionId => bool) public results;
+    mapping(bytes32 _questionId => bool) public isTie;
     mapping(bytes32 _questionId => uint256) public flaggedAt;
     mapping(bytes32 _questionId => uint256) public reportedAt;
 
@@ -135,7 +136,7 @@ contract NegRiskOperator is INegRiskOperatorEE, Auth {
     /// @notice Only one report can be made per question
     /// @notice Sets the boolean result and reportedAt timestamp for the question
     /// @param _requestId - the question's oracle request id
-    /// @param _payouts   - the payouts to be reported, [1,0] if true, [0,1] if false, any other payouts are invalid
+    /// @param _payouts   - the payouts to be reported, [1,0] if true, [0,1] if false, [1,1] if tie
     function reportPayouts(bytes32 _requestId, uint256[] calldata _payouts) external onlyOracle {
         if (_payouts.length != 2) {
             revert InvalidPayouts();
@@ -144,7 +145,12 @@ contract NegRiskOperator is INegRiskOperatorEE, Auth {
         uint256 payout0 = _payouts[0];
         uint256 payout1 = _payouts[1];
 
-        if (payout0 + payout1 != 1) {
+        // Accept [1,0], [0,1], or [1,1] (tie case)
+        bool isValidPayout = (payout0 == 1 && payout1 == 0) || 
+                           (payout0 == 0 && payout1 == 1) || 
+                           (payout0 == 1 && payout1 == 1);
+        
+        if (!isValidPayout) {
             revert InvalidPayouts();
         }
 
@@ -158,12 +164,14 @@ contract NegRiskOperator is INegRiskOperatorEE, Auth {
             revert QuestionAlreadyReported();
         }
 
-        bool result = payout0 == 1 ? true : false;
+        bool tieCase = (payout0 == 1 && payout1 == 1);
+        bool result = payout0 == 1 && !tieCase ? true : false;
 
         results[questionId] = result;
+        isTie[questionId] = tieCase;
         reportedAt[questionId] = block.timestamp;
 
-        emit QuestionReported(questionId, _requestId, result);
+        emit QuestionReported(questionId, _requestId, result, tieCase);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -180,9 +188,15 @@ contract NegRiskOperator is INegRiskOperatorEE, Auth {
         if (reportedAt_ == 0) revert ResultNotAvailable();
 
         bool result = results[_questionId];
-        nrAdapter.reportOutcome(_questionId, result);
+        bool tieCase = isTie[_questionId];
+        
+        if (tieCase) {
+            nrAdapter.reportOutcomeTie(_questionId);
+        } else {
+            nrAdapter.reportOutcome(_questionId, result);
+        }
 
-        emit QuestionResolved(_questionId, result);
+        emit QuestionResolved(_questionId, result, tieCase);
     }
 
     /*//////////////////////////////////////////////////////////////
