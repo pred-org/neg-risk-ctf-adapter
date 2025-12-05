@@ -269,7 +269,8 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         uint256 totalSellUSDC,
         uint256 fillAmount
     ) internal {
-        _collectBuyerUSDC(parsedOrders, true);
+        // Collect all funds upfront: USDC from buyers and YES tokens from sellers
+        _collectAllFunds(parsedOrders, fillAmount, true);
 
         // TotalBuyUSDC + TotalSellUSDC = (length of parsedOrders - 1) * fillAmount
         // Add the fillAmount to this amount to get the total WCOL that we need to complete the split
@@ -363,9 +364,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         Parsed memory order,
         uint256 fillAmount
     ) internal {
-        // transfer the YES tokens to the adapter that the maker is selling
-        ctf.safeTransferFrom(order.maker, address(this), order.tokenId, fillAmount, "");
-        
         // Merge NO tokens with user's YES tokens to get WCOL for the sellers
         // The NO tokens are already in the adapter from the split operation
         // ctf.mergePositions with WCOL as collateral returns WCOL to the adapter
@@ -498,8 +496,8 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         uint256 totalSellUSDC,
         uint256 fillAmount
     ) internal {
-        // Collect USDC from buyers before we can use it
-        _collectBuyerUSDC(parsedOrders, false);
+        // Collect all funds upfront: USDC from buyers and NO tokens from sellers
+        _collectAllFunds(parsedOrders, fillAmount, false);
 
         
         if (totalSellUSDC > 0) {
@@ -582,15 +580,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         require(order.side == Side.SELL, "Order must be a sell order");
         uint256 noPositionId = order.tokenId;
         
-        // Transfer NO tokens from user to adapter
-        ctf.safeTransferFrom(
-            order.maker,
-            address(this),
-            noPositionId,
-            fillAmount,
-            ""
-        );
-        
         // Get the condition ID for this question from the NegRiskAdapter
         bytes32 conditionId = neg.getConditionId(order.questionId);
         
@@ -662,8 +651,8 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         }
     }
     
-    /// @dev internal function to collect USDC from buyers and wrap it to WCOL
-    function _collectBuyerUSDC(Parsed[] memory parsedOrders, bool isShort) internal {
+    /// @dev internal function to collect all funds from users: USDC from buyers and tokens from sellers
+    function _collectAllFunds(Parsed[] memory parsedOrders, uint256 fillAmount, bool isShort) internal {
         for (uint256 i = 0; i < parsedOrders.length; i++) {
             if (parsedOrders[i].side == Side.BUY) {
                 // For buy orders, we need to collect USDC from the buyer
@@ -673,6 +662,16 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
                 usdc.transferFrom(parsedOrders[i].maker, address(this), usdcAmount);
                 // wrap the USDC to WCOL
                 wcol.wrap(address(this), usdcAmount);
+            } else {
+                // For sell orders, collect tokens from the seller
+                // LONG SELL = NO tokens, SHORT SELL = YES tokens
+                ctf.safeTransferFrom(
+                    parsedOrders[i].maker,
+                    address(this),
+                    parsedOrders[i].tokenId,
+                    fillAmount,
+                    ""
+                );
             }
         }
     }
