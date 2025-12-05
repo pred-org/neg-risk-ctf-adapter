@@ -484,7 +484,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
             }
         }
         
-        // Validate that the combined price of all orders equals or exceeds 1
+        // Validate that the combined price of all orders equals or less than 1
         if (totalCombinedPrice < ONE) {
             revert InvalidCombinedPrice();
         }
