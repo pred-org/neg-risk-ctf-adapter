@@ -203,7 +203,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         
         (uint256 totalSellUSDC, uint256 totalCombinedPrice) = _parseMakerOrdersShort(multiOrderMaker, makerFillAmounts, parsedOrders, fillAmount);
         
-        // The total combined price must be greater than or equal to one
+        // The total combined price must be less than or equal to one
         if (totalCombinedPrice > ONE) {
             revert InvalidCombinedPrice();
         }
@@ -484,7 +484,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
             }
         }
         
-        // Validate that the combined price of all orders equals or less than 1
+        // Validate that the combined price of all orders equals or exceeds 1
         if (totalCombinedPrice < ONE) {
             revert InvalidCombinedPrice();
         }
