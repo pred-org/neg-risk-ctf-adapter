@@ -189,7 +189,11 @@ contract NegRiskBatchRedeem is ERC1155TokenReceiver, INegRiskBatchRedeemEE {
         ctf.safeBatchTransferFrom(_user, address(this), positionIds, userAmounts, "");
 
         // Redeem the positions using the adapter's redeemPositions function
-        negRiskAdapter.redeemPositions(_conditionId, userAmounts);
+        // redeemPositions expects length 2 array: [yesAmount, noAmount]
+        uint256[] memory redeemAmounts = new uint256[](2);
+        redeemAmounts[0] = _yesAmount;
+        redeemAmounts[1] = _noAmount;
+        negRiskAdapter.redeemPositions(_conditionId, redeemAmounts);
 
         payout = col.balanceOf(address(this));
         if (payout > 0) {
