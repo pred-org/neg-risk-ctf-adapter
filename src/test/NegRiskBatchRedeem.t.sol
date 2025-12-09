@@ -332,6 +332,123 @@ contract NegRiskBatchRedeemTest is TestHelper {
         console.log("Multiple questions batch redemption completed successfully!");
     }
 
+    function test_batchRedeemOneUserYesOnlyOneUserNoOnly() public {
+        console.log("=== Testing Batch Redemption: User1 YES only, User2 NO only ===");
+        
+        // Create a new market and question for this test
+        bytes32 testMarketId = adapter.prepareMarket(0, "Test Market for Split Token Redemption");
+        bytes32 testQuestionId = adapter.prepareQuestion(testMarketId, "Will Ethereum reach $5000?");
+        
+        // Get position IDs
+        uint256 yesPositionId = adapter.getPositionId(testQuestionId, true);
+        uint256 noPositionId = adapter.getPositionId(testQuestionId, false);
+        
+        // Mint tokens for user1 (will get YES + NO)
+        uint256 tokenAmount = 1e6;
+        _mintConditionalTokens(user1, testQuestionId, tokenAmount);
+        
+        // Mint tokens for user2 (will get YES + NO)
+        _mintConditionalTokens(user2, testQuestionId, tokenAmount);
+        
+        // Transfer all NO tokens from user1 to user2
+        vm.prank(user1);
+        ctf.safeTransferFrom(user1, user2, noPositionId, tokenAmount, "");
+        
+        // Transfer all YES tokens from user2 to user1
+        vm.prank(user2);
+        ctf.safeTransferFrom(user2, user1, yesPositionId, tokenAmount, "");
+        
+        // Now transfer excess tokens away to get exact amounts:
+        // User1 should have exactly 1e6 YES (transfer 1e6 YES to a burn address)
+        // User2 should have exactly 1e6 NO (transfer 1e6 NO to a burn address)
+        address burnAddress = address(0xDead);
+        vm.prank(user1);
+        ctf.safeTransferFrom(user1, burnAddress, yesPositionId, tokenAmount, "");
+        
+        vm.prank(user2);
+        ctf.safeTransferFrom(user2, burnAddress, noPositionId, tokenAmount, "");
+        
+        // Give approval to batch redeem contract
+        vm.prank(user1);
+        ctf.setApprovalForAll(address(batchRedeem), true);
+        
+        vm.prank(user2);
+        ctf.setApprovalForAll(address(batchRedeem), true);
+        
+        // Verify initial token distribution
+        assertEq(ctf.balanceOf(user1, yesPositionId), tokenAmount, "User1 should have exactly 1e6 YES tokens");
+        assertEq(ctf.balanceOf(user1, noPositionId), 0, "User1 should have 0 NO tokens");
+        assertEq(ctf.balanceOf(user2, yesPositionId), 0, "User2 should have 0 YES tokens");
+        assertEq(ctf.balanceOf(user2, noPositionId), tokenAmount, "User2 should have exactly 1e6 NO tokens");
+        
+        console.log("Initial token distribution:");
+        console.log("User1 YES tokens:", ctf.balanceOf(user1, yesPositionId));
+        console.log("User1 NO tokens:", ctf.balanceOf(user1, noPositionId));
+        console.log("User2 YES tokens:", ctf.balanceOf(user2, yesPositionId));
+        console.log("User2 NO tokens:", ctf.balanceOf(user2, noPositionId));
+        
+        // Record initial USDC balances (after token minting and transfers)
+        uint256 user1InitialUSDC = usdc.balanceOf(user1);
+        uint256 user2InitialUSDC = usdc.balanceOf(user2);
+        
+        console.log("Initial USDC balances:");
+        console.log("User1 USDC:", user1InitialUSDC);
+        console.log("User2 USDC:", user2InitialUSDC);
+        
+        // Resolve the question (YES wins)
+        adapter.reportOutcome(testQuestionId, true);
+        
+        // Prepare batch redemption data
+        // User1: redeem 1e6 YES tokens, 0 NO tokens
+        // User2: redeem 0 YES tokens, 1e6 NO tokens
+        address[] memory users = new address[](2);
+        users[0] = user1;
+        users[1] = user2;
+        uint256[] memory yesAmounts = new uint256[](2);
+        yesAmounts[0] = 1e6; // User1 redeems 1e6 YES tokens
+        yesAmounts[1] = 0;   // User2 redeems 0 YES tokens
+        uint256[] memory noAmounts = new uint256[](2);
+        noAmounts[0] = 0;    // User1 redeems 0 NO tokens
+        noAmounts[1] = 1e6;  // User2 redeems 1e6 NO tokens
+        
+        // Execute batch redemption
+        vm.prank(operator);
+        batchRedeem.batchRedeemQuestionCustom(testQuestionId, users, yesAmounts, noAmounts);
+        
+        // Verify token balances after redemption (all tokens should be redeemed)
+        assertEq(ctf.balanceOf(user1, yesPositionId), 0, "User1 should have 0 YES tokens remaining (all redeemed)");
+        assertEq(ctf.balanceOf(user1, noPositionId), 0, "User1 should still have 0 NO tokens");
+        assertEq(ctf.balanceOf(user2, yesPositionId), 0, "User2 should still have 0 YES tokens");
+        assertEq(ctf.balanceOf(user2, noPositionId), 0, "User2 should have 0 NO tokens remaining (all redeemed)");
+        
+        // Verify USDC balances
+        uint256 user1FinalUSDC = usdc.balanceOf(user1);
+        uint256 user2FinalUSDC = usdc.balanceOf(user2);
+        
+        console.log("Final token balances:");
+        console.log("User1 YES tokens:", ctf.balanceOf(user1, yesPositionId));
+        console.log("User1 NO tokens:", ctf.balanceOf(user1, noPositionId));
+        console.log("User2 YES tokens:", ctf.balanceOf(user2, yesPositionId));
+        console.log("User2 NO tokens:", ctf.balanceOf(user2, noPositionId));
+        console.log("Final USDC balances:");
+        console.log("User1 USDC:", user1FinalUSDC);
+        console.log("User2 USDC:", user2FinalUSDC);
+        
+        // User1 should have received USDC (YES tokens are worth 1e6 USDC since YES won)
+        assertTrue(user1FinalUSDC > user1InitialUSDC, "User1 should have received USDC from YES token redemption");
+        assertEq(user1FinalUSDC - user1InitialUSDC, 1e6, "User1 should have received exactly 1e6 USDC");
+        
+        // User2 should NOT have received USDC (NO tokens are worthless since YES won)
+        // User2's balance should remain unchanged after redeeming worthless NO tokens
+        assertEq(user2FinalUSDC, user2InitialUSDC, "User2 should not receive USDC for worthless NO tokens");
+        
+        // Check that batch redeem contract has no leftover tokens
+        assertEq(ctf.balanceOf(address(batchRedeem), yesPositionId), 0, "Batch redeem contract should have no YES tokens");
+        assertEq(ctf.balanceOf(address(batchRedeem), noPositionId), 0, "Batch redeem contract should have no NO tokens");
+        
+        console.log("Batch redemption with split tokens completed successfully!");
+    }
+
     /*//////////////////////////////////////////////////////////////
                             HELPER FUNCTIONS
     //////////////////////////////////////////////////////////////*/
