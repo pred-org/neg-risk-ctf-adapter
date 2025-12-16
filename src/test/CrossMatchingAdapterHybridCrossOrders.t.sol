@@ -159,7 +159,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         _setupUser(user6, 100000000e6);
         
         // Register tokens with CTFExchange
-        _registerTokensWithCTFExchange(yesPositionId, noPositionId, negRiskAdapter.getConditionId(questionId));
+        _registerTokensWithCTFExchange(yesPositionId, noPositionId, negRiskAdapter.getConditionId(questionId), questionId);
         
         // Set the CrossMatchingAdapter as an operator for CTFExchange
         vm.prank(address(this));
@@ -169,8 +169,8 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         ctf.setApprovalForAll(address(ctfExchange), true);
     }
     
-    function _registerTokensWithCTFExchange(uint256 yesTokenId, uint256 noTokenId, bytes32 conditionId) internal {
-        ctfExchange.registerToken(yesTokenId, noTokenId, conditionId);
+    function _registerTokensWithCTFExchange(uint256 yesTokenId, uint256 noTokenId, bytes32 conditionId, bytes32 questionId) internal {
+        ctfExchange.registerToken(yesTokenId, noTokenId, conditionId, questionId);
     }
     
     function _setupUser(address user, uint256 usdcBalance) internal {
@@ -410,7 +410,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
             questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
             yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
             uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
-            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
+            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]), questionIds[i]);
         }
         
         ICrossMatchingAdapter.MakerOrder[] memory makerOrders = new ICrossMatchingAdapter.MakerOrder[](1);
@@ -502,7 +502,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
             questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
             yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
             uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
-            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
+            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]), questionIds[i]);
         }
         
         ICrossMatchingAdapter.MakerOrder[] memory makerOrders = new ICrossMatchingAdapter.MakerOrder[](1);
@@ -569,7 +569,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
             questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
             yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
             uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
-            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
+            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]), questionIds[i]);
         }
         
         negRiskAdapter.setPrepared(marketId);
@@ -689,7 +689,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
             questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
             yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
             uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
-            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
+            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]), questionIds[i]);
         }
         
         negRiskAdapter.setPrepared(marketId);
@@ -757,7 +757,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
             questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
             yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
             uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
-            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
+            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]), questionIds[i]);
         }
         
         negRiskAdapter.setPrepared(marketId);
@@ -831,7 +831,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
             questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
             yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
             uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
-            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
+            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]), questionIds[i]);
         }
         
         negRiskAdapter.setPrepared(marketId);
@@ -933,7 +933,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
             questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
             yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
             uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
-            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
+            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]), questionIds[i]);
         }
         
         negRiskAdapter.setPrepared(marketId);
@@ -1035,7 +1035,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
             questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
             yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
             uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
-            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
+            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]), questionIds[i]);
         }
         
         negRiskAdapter.setPrepared(marketId);
@@ -1160,7 +1160,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
             questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
             yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
             uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
-            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
+            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]), questionIds[i]);
         }
         
         ICrossMatchingAdapter.MakerOrder[] memory makerOrders = new ICrossMatchingAdapter.MakerOrder[](1);
@@ -1226,7 +1226,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
             questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
             yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
             uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
-            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
+            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]), questionIds[i]);
         }
 
         uint256 noPosId1 = negRiskAdapter.getPositionId(questionIds[1], false);
@@ -1298,7 +1298,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
             questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
             yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
             uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
-            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
+            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]), questionIds[i]);
         }
 
         uint256 noPosId1 = negRiskAdapter.getPositionId(questionIds[1], false);
@@ -1340,7 +1340,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
             questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
             yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
             uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
-            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
+            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]), questionIds[i]);
         }
 
         vm.prank(oracle);
@@ -1417,7 +1417,7 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
             questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
             yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
             uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
-            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]));
+            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]), questionIds[i]);
         }
 
         uint256 noPosId1 = negRiskAdapter.getPositionId(questionIds[1], false);

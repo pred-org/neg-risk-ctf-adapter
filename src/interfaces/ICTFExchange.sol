@@ -82,7 +82,7 @@ interface ICTFExchange {
     function pauseTrading() external;
     function paused() external view returns (bool);
     function proxyFactory() external view returns (address);
-    function registerToken(uint256 token, uint256 complement, bytes32 conditionId) external;
+    function registerToken(uint256 token, uint256 complement, bytes32 conditionId, bytes32 questionId) external;
     function registry(uint256) external view returns (uint256 complement, bytes32 conditionId);
     function removeAdmin(address admin) external;
     function removeOperator(address operator) external;

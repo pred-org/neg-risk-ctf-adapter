@@ -140,7 +140,7 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
         _setupUser(user6, 100000000e6);
         
         // Register tokens with CTFExchange
-        _registerTokensWithCTFExchange(yesPositionId, noPositionId, negRiskAdapter.getConditionId(questionId));
+        _registerTokensWithCTFExchange(yesPositionId, noPositionId, negRiskAdapter.getConditionId(questionId), questionId);
         
         // Set the CrossMatchingAdapter as an operator for CTFExchange
         vm.prank(address(this));
@@ -150,8 +150,8 @@ contract CrossMatchingAdapterHybridSingleOrdersTest is Test, TestHelper {
         ctf.setApprovalForAll(address(ctfExchange), true);
     }
     
-    function _registerTokensWithCTFExchange(uint256 yesTokenId, uint256 noTokenId, bytes32 conditionId) internal {
-        ctfExchange.registerToken(yesTokenId, noTokenId, conditionId);
+    function _registerTokensWithCTFExchange(uint256 yesTokenId, uint256 noTokenId, bytes32 conditionId, bytes32 questionId) internal {
+        ctfExchange.registerToken(yesTokenId, noTokenId, conditionId, questionId);
     }
     
     function _setupUser(address user, uint256 usdcBalance) internal {

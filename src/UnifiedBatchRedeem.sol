@@ -207,52 +207,41 @@ contract UnifiedBatchRedeem is ERC1155TokenReceiver, IUnifiedBatchRedeemEE {
                             BATCH REDEMPTION
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Internal helper to redeem positions for a single user (NegRisk path)
+    /// @notice Internal helper to execute redemption based on market type
     /// @param _conditionId - the conditionId to redeem positions for
-    /// @param _user - the user address
-    /// @param _yesPositionId - positionId for yes tokens
-    /// @param _noPositionId - positionId for no tokens
-    /// @param _yesAmount - amount of yes tokens to redeem
-    /// @param _noAmount - amount of no tokens to redeem
-    /// @return payout - the payout amount for this user
-    function _redeemUserPositionsNegRisk(
-        bytes32 _conditionId,
-        address _user,
-        uint256 _yesPositionId,
-        uint256 _noPositionId,
-        uint256 _yesAmount,
-        uint256 _noAmount
-    ) internal returns (uint256 payout) {
-        if (_yesAmount == 0 && _noAmount == 0) return 0;
-
-        uint256 numTokens = (_yesAmount > 0 ? 1 : 0) + (_noAmount > 0 ? 1 : 0);
-        uint256[] memory positionIds = new uint256[](numTokens);
-        uint256[] memory userAmounts = new uint256[](numTokens);
-        uint256 idx = 0;
-        if (_yesAmount > 0) {
-            positionIds[idx] = _yesPositionId;
-            userAmounts[idx] = _yesAmount;
-            idx++;
-        }
-        if (_noAmount > 0) {
-            positionIds[idx] = _noPositionId;
-            userAmounts[idx] = _noAmount;
-        }
-
-        // Transfer tokens from user to this contract
-        ctf.safeBatchTransferFrom(_user, address(this), positionIds, userAmounts, "");
-
-        // Redeem the positions using the adapter's redeemPositions function
-        negRiskAdapter.redeemPositions(_conditionId, userAmounts);
-
-        // NegRiskAdapter returns WCOL, need to unwrap it
-        payout = wcol.balanceOf(address(this));
-        if (payout > 0) {
-            wcol.unwrap(_user, payout);
+    /// @param _userAmounts - array of token amounts to redeem
+    function _executeRedemption(bytes32 _conditionId, uint256[] memory _userAmounts) internal {
+        if (marketType == MarketType.NEG_RISK) {
+            // Redeem the positions using the adapter's redeemPositions function
+            negRiskAdapter.redeemPositions(_conditionId, _userAmounts);
+        } else {
+            // Redeem the positions directly using ConditionalTokens
+            // For binary markets, we need to redeem both index sets [1, 2]
+            uint256[] memory indexSets = Helpers.partition(); // [1, 2]
+            ctf.redeemPositions(address(col), bytes32(0), _conditionId, indexSets);
         }
     }
 
-    /// @notice Internal helper to redeem positions for a single user (CTF Exchange path)
+    /// @notice Internal helper to handle payout based on market type
+    /// @param _user - the user address to receive payout
+    /// @return payout - the payout amount for this user
+    function _handlePayout(address _user) internal returns (uint256 payout) {
+        if (marketType == MarketType.NEG_RISK) {
+            // NegRiskAdapter returns WCOL, need to unwrap it
+            payout = wcol.balanceOf(address(this));
+            if (payout > 0) {
+                wcol.unwrap(_user, payout);
+            }
+        } else {
+            // CTF Exchange returns direct collateral
+            payout = col.balanceOf(address(this));
+            if (payout > 0) {
+                col.transfer(_user, payout);
+            }
+        }
+    }
+
+    /// @notice Unified internal helper to redeem positions for a single user
     /// @param _conditionId - the conditionId to redeem positions for
     /// @param _user - the user address
     /// @param _yesPositionId - positionId for yes tokens
@@ -260,7 +249,7 @@ contract UnifiedBatchRedeem is ERC1155TokenReceiver, IUnifiedBatchRedeemEE {
     /// @param _yesAmount - amount of yes tokens to redeem
     /// @param _noAmount - amount of no tokens to redeem
     /// @return payout - the payout amount for this user
-    function _redeemUserPositionsCtfExchange(
+    function _redeemUserPositions(
         bytes32 _conditionId,
         address _user,
         uint256 _yesPositionId,
@@ -287,16 +276,11 @@ contract UnifiedBatchRedeem is ERC1155TokenReceiver, IUnifiedBatchRedeemEE {
         // Transfer tokens from user to this contract
         ctf.safeBatchTransferFrom(_user, address(this), positionIds, userAmounts, "");
 
-        // Redeem the positions directly using ConditionalTokens
-        // For binary markets, we need to redeem both index sets [1, 2]
-        uint256[] memory indexSets = Helpers.partition(); // [1, 2]
-        ctf.redeemPositions(address(col), bytes32(0), _conditionId, indexSets);
+        // Execute redemption based on market type
+        _executeRedemption(_conditionId, userAmounts);
 
-        // CTF Exchange returns direct collateral
-        payout = col.balanceOf(address(this));
-        if (payout > 0) {
-            col.transfer(_user, payout);
-        }
+        // Handle payout based on market type
+        payout = _handlePayout(_user);
     }
 
     /// @notice Batch redeem positions for NegRisk markets (uses questionId)
@@ -330,7 +314,7 @@ contract UnifiedBatchRedeem is ERC1155TokenReceiver, IUnifiedBatchRedeemEE {
             uint256 noAmount = _noAmounts[i];
 
             // Redeem positions for this user with custom amounts
-            uint256 userPayout = _redeemUserPositionsNegRisk(
+            uint256 userPayout = _redeemUserPositions(
                 conditionId,
                 user,
                 yesPositionId,
@@ -383,7 +367,7 @@ contract UnifiedBatchRedeem is ERC1155TokenReceiver, IUnifiedBatchRedeemEE {
             uint256 noAmount = _noAmounts[i];
 
             // Redeem positions for this user with custom amounts
-            uint256 userPayout = _redeemUserPositionsCtfExchange(
+            uint256 userPayout = _redeemUserPositions(
                 _conditionId,
                 user,
                 yesPositionId,

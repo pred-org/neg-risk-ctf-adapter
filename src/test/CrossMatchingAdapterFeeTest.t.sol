@@ -194,10 +194,10 @@ contract CrossMatchingAdapterFeeTest is Test, TestHelper {
     function _registerTokensWithCTFExchange() internal {
         // Register all token pairs with CTFExchange
         vm.startPrank(address(this));
-        ctfExchange.registerToken(yesPositionId1, noPositionId1, negRiskAdapter.getConditionId(questionId1));
-        ctfExchange.registerToken(yesPositionId2, noPositionId2, negRiskAdapter.getConditionId(questionId2));
-        ctfExchange.registerToken(yesPositionId3, noPositionId3, negRiskAdapter.getConditionId(questionId3));
-        ctfExchange.registerToken(yesPositionId4, noPositionId4, negRiskAdapter.getConditionId(questionId4));
+        ctfExchange.registerToken(yesPositionId1, noPositionId1, negRiskAdapter.getConditionId(questionId1), questionId1);
+        ctfExchange.registerToken(yesPositionId2, noPositionId2, negRiskAdapter.getConditionId(questionId2), questionId2);
+        ctfExchange.registerToken(yesPositionId3, noPositionId3, negRiskAdapter.getConditionId(questionId3), questionId3);
+        ctfExchange.registerToken(yesPositionId4, noPositionId4, negRiskAdapter.getConditionId(questionId4), questionId4);
         vm.stopPrank();
     }
 

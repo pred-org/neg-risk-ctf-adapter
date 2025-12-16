@@ -18,7 +18,7 @@ contract NegRiskCtfExchange_Test is NegRiskCtfExchangeTestHelper {
         noPositionId = INegRiskAdapter(negRiskAdapter).getPositionId(questionId, false);
 
         vm.prank(admin.addr);
-        ICTFExchange(negRiskCtfExchange).registerToken(yesPositionId, noPositionId, conditionId);
+        ICTFExchange(negRiskCtfExchange).registerToken(yesPositionId, noPositionId, conditionId, questionId);
     }
 
     function _convertOrderToOrderIntent(Order memory order, uint256 tokenId, uint8 side, uint256 fillAmount) 
