@@ -154,15 +154,7 @@ contract CtfExchangeBatchRedeemTest is TestHelper {
         uint256 user2InitialYes = ctf.balanceOf(user2, yesPositionId);
         uint256 user2InitialNo = ctf.balanceOf(user2, noPositionId);
         
-        console.log("Initial balances:");
-        console.log("User1 USDC:", user1InitialUSDC);
-        console.log("User2 USDC:", user2InitialUSDC);
-        console.log("User1 YES tokens:", user1InitialYes);
-        console.log("User1 NO tokens:", user1InitialNo);
-        console.log("User2 YES tokens:", user2InitialYes);
-        console.log("User2 NO tokens:", user2InitialNo);
-        
-        // Resolve the condition (YES wins: [1, 0])
+        // Resolve the condition (YES wins: payoutNumerators [0, 1])
         _resolveCondition(questionId, true);
         
         // Prepare batch redemption data
@@ -170,29 +162,28 @@ contract CtfExchangeBatchRedeemTest is TestHelper {
         users[0] = user1;
         users[1] = user2;
         uint256[] memory yesAmounts = new uint256[](2);
-        yesAmounts[0] = 50e6; // User1 redeems 50 YES tokens
-        yesAmounts[1] = 30e6; // User2 redeems 30 YES tokens
+        yesAmounts[0] = 50e6;
+        yesAmounts[1] = 30e6;
         uint256[] memory noAmounts = new uint256[](2);
-        noAmounts[0] = 0; // User1 redeems 0 NO tokens
-        noAmounts[1] = 0; // User2 redeems 0 NO tokens
+        noAmounts[0] = 0;
+        noAmounts[1] = 0;
         
         // Execute batch redemption
         vm.prank(operator);
         batchRedeem.batchRedeemConditionCustom(conditionId, users, yesAmounts, noAmounts);
         
-        // Verify results
-        _verifyBatchRedemptionResults(
-            conditionId,
-            users,
-            yesAmounts,
-            noAmounts,
-            user1InitialUSDC,
-            user2InitialUSDC,
-            user1InitialYes,
-            user1InitialNo,
-            user2InitialYes,
-            user2InitialNo
-        );
+        // Verify results - inline verification to avoid stack too deep
+        assertEq(ctf.balanceOf(user1, yesPositionId), user1InitialYes - yesAmounts[0], "User1 YES tokens should be reduced");
+        assertEq(ctf.balanceOf(user1, noPositionId), user1InitialNo - noAmounts[0], "User1 NO tokens should be reduced");
+        assertEq(ctf.balanceOf(user2, yesPositionId), user2InitialYes - yesAmounts[1], "User2 YES tokens should be reduced");
+        assertEq(ctf.balanceOf(user2, noPositionId), user2InitialNo - noAmounts[1], "User2 NO tokens should be reduced");
+        
+        // Calculate expected and verify USDC balances
+        assertEq(usdc.balanceOf(user1), user1InitialUSDC + _calculateExpectedPayout(conditionId, yesAmounts[0], noAmounts[0]), "User1 final USDC should match expected balance");
+        assertEq(usdc.balanceOf(user2), user2InitialUSDC + _calculateExpectedPayout(conditionId, yesAmounts[1], noAmounts[1]), "User2 final USDC should match expected balance");
+        
+        assertEq(ctf.balanceOf(address(batchRedeem), yesPositionId), 0, "Batch redeem contract should have no YES tokens");
+        assertEq(ctf.balanceOf(address(batchRedeem), noPositionId), 0, "Batch redeem contract should have no NO tokens");
         
         console.log("Batch redemption with resolved condition completed successfully!");
     }
@@ -277,15 +268,27 @@ contract CtfExchangeBatchRedeemTest is TestHelper {
         vm.prank(operator);
         batchRedeem.batchRedeemConditionCustom(conditionId, users, yesAmounts, noAmounts);
         
-        // Verify results
-        _verifyCustomBatchRedemptionResults(
-            conditionId,
-            users,
-            yesAmounts,
-            noAmounts,
-            user1InitialUSDC,
-            user2InitialUSDC
+        // Verify results - inline verification to avoid stack too deep
+        uint256 customYesPositionId = CTHelpers.getPositionId(
+            address(usdc),
+            CTHelpers.getCollectionId(bytes32(0), conditionId, 2)
         );
+        uint256 customNoPositionId = CTHelpers.getPositionId(
+            address(usdc),
+            CTHelpers.getCollectionId(bytes32(0), conditionId, 1)
+        );
+        
+        assertEq(ctf.balanceOf(user1, customYesPositionId), 100e6 - yesAmounts[0], "User1 YES tokens should be reduced");
+        assertEq(ctf.balanceOf(user1, customNoPositionId), 100e6 - noAmounts[0], "User1 NO tokens should be reduced");
+        assertEq(ctf.balanceOf(user2, customYesPositionId), 100e6 - yesAmounts[1], "User2 YES tokens should be reduced");
+        assertEq(ctf.balanceOf(user2, customNoPositionId), 100e6 - noAmounts[1], "User2 NO tokens should be reduced");
+        
+        // Calculate expected and verify USDC balances
+        assertEq(usdc.balanceOf(user1), user1InitialUSDC + _calculateExpectedPayout(conditionId, yesAmounts[0], noAmounts[0]), "User1 final USDC should match expected balance");
+        assertEq(usdc.balanceOf(user2), user2InitialUSDC + _calculateExpectedPayout(conditionId, yesAmounts[1], noAmounts[1]), "User2 final USDC should match expected balance");
+        
+        assertEq(ctf.balanceOf(address(batchRedeem), customYesPositionId), 0, "Batch redeem contract should have no YES tokens");
+        assertEq(ctf.balanceOf(address(batchRedeem), customNoPositionId), 0, "Batch redeem contract should have no NO tokens");
         
         console.log("Custom batch redemption completed successfully!");
     }
@@ -323,17 +326,28 @@ contract CtfExchangeBatchRedeemTest is TestHelper {
         vm.prank(operator);
         batchRedeem.batchRedeemConditionCustom(conditionId, users, yesAmounts, noAmounts);
         
-        // With 50-50 resolution, users should get partial payout
+        // Calculate expected USDC balances
+        // 50-50 resolution: payoutNumerators [1, 1] means both get partial payout
+        // payoutNumerators[0] = 1 (NO), payoutNumerators[1] = 1 (YES)
+        // payoutDenominator = 2 (1 + 1)
+        // User1: 50 YES tokens * (1/2) + 0 NO tokens * (1/2) = 25 USDC
+        // User2: 30 YES tokens * (1/2) + 0 NO tokens * (1/2) = 15 USDC
+        uint256 user1ExpectedUSDC = user1InitialUSDC + _calculateExpectedPayout(conditionId, yesAmounts[0], noAmounts[0]);
+        uint256 user2ExpectedUSDC = user2InitialUSDC + _calculateExpectedPayout(conditionId, yesAmounts[1], noAmounts[1]);
+        
+        // Verify final balances match expected
         uint256 user1FinalUSDC = usdc.balanceOf(user1);
         uint256 user2FinalUSDC = usdc.balanceOf(user2);
         
         console.log("Final USDC balances (50-50 resolution):");
         console.log("User1 USDC:", user1FinalUSDC);
         console.log("User2 USDC:", user2FinalUSDC);
+        console.log("User1 Expected USDC:", user1ExpectedUSDC);
+        console.log("User2 Expected USDC:", user2ExpectedUSDC);
         
-        // Users should have received some USDC (partial payout from 50-50)
-        assertTrue(user1FinalUSDC > user1InitialUSDC, "User1 should have received USDC from 50-50 redemption");
-        assertTrue(user2FinalUSDC > user2InitialUSDC, "User2 should have received USDC from 50-50 redemption");
+        // Verify exact expected balances
+        assertEq(user1FinalUSDC, user1ExpectedUSDC, "User1 final USDC should match expected balance");
+        assertEq(user2FinalUSDC, user2ExpectedUSDC, "User2 final USDC should match expected balance");
         
         console.log("50-50 resolution batch redemption completed successfully!");
     }
@@ -342,6 +356,18 @@ contract CtfExchangeBatchRedeemTest is TestHelper {
     /*//////////////////////////////////////////////////////////////
                             HELPER FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /// @notice Calculate expected payout for a user based on redemption amounts and condition resolution
+    function _calculateExpectedPayout(
+        bytes32 conditionId,
+        uint256 yesAmount,
+        uint256 noAmount
+    ) internal view returns (uint256) {
+        uint256 denom = ctf.payoutDenominator(conditionId);
+        uint256 yesNum = ctf.payoutNumerators(conditionId, 1);
+        uint256 noNum = ctf.payoutNumerators(conditionId, 0);
+        return (yesAmount * yesNum / denom) + (noAmount * noNum / denom);
+    }
 
     function _prepareCondition(bytes32 questionId) internal returns (bytes32 conditionId) {
         conditionId = CTHelpers.getConditionId(oracle, questionId, 2);
@@ -355,12 +381,15 @@ contract CtfExchangeBatchRedeemTest is TestHelper {
 
     function _resolveCondition(bytes32 questionId, bool outcome) internal {
         uint256[] memory payouts = new uint256[](2);
+        // CTF payout array indices map to outcome slots:
+        // payoutNumerators[0] = outcome slot 0 → index set 1 (NO in CTFExchange)
+        // payoutNumerators[1] = outcome slot 1 → index set 2 (YES in CTFExchange)
         if (outcome) {
-            payouts[0] = 1; // YES wins
-            payouts[1] = 0;
+            payouts[0] = 0; // NO gets 0
+            payouts[1] = 1; // YES wins - gets 1
         } else {
-            payouts[0] = 0;
-            payouts[1] = 1; // NO wins
+            payouts[0] = 1; // NO wins - gets 1
+            payouts[1] = 0; // YES gets 0
         }
         
         vm.prank(oracle);
@@ -369,8 +398,11 @@ contract CtfExchangeBatchRedeemTest is TestHelper {
 
     function _resolveCondition5050(bytes32 questionId) internal {
         uint256[] memory payouts = new uint256[](2);
-        payouts[0] = 1; // YES gets 1
-        payouts[1] = 1; // NO gets 1 (50-50 split)
+        // CTF payout array indices map to outcome slots:
+        // payoutNumerators[0] = outcome slot 0 → index set 1 (NO in CTFExchange)
+        // payoutNumerators[1] = outcome slot 1 → index set 2 (YES in CTFExchange)
+        payouts[0] = 1; // NO gets 1
+        payouts[1] = 1; // YES gets 1 (50-50 split)
         
         vm.prank(oracle);
         ctf.reportPayouts(questionId, payouts);
@@ -430,7 +462,7 @@ contract CtfExchangeBatchRedeemTest is TestHelper {
         console.log("User2 NO tokens:", ctf.balanceOf(user2, noPositionId));
     }
 
-    function _verifyBatchRedemptionResults(
+    function _verifyBatchRedemptionResultsWithExpected(
         bytes32 conditionId,
         address[] memory users,
         uint256[] memory yesAmounts,
@@ -440,7 +472,9 @@ contract CtfExchangeBatchRedeemTest is TestHelper {
         uint256 user1InitialYes,
         uint256 user1InitialNo,
         uint256 user2InitialYes,
-        uint256 user2InitialNo
+        uint256 user2InitialNo,
+        uint256 user1ExpectedUSDC,
+        uint256 user2ExpectedUSDC
     ) internal {
         // CTFExchange uses opposite mapping: index 1 = NO, index 2 = YES
         uint256 yesPositionId = CTHelpers.getPositionId(
@@ -458,30 +492,34 @@ contract CtfExchangeBatchRedeemTest is TestHelper {
         assertEq(ctf.balanceOf(user2, yesPositionId), user2InitialYes - yesAmounts[1], "User2 YES tokens should be reduced");
         assertEq(ctf.balanceOf(user2, noPositionId), user2InitialNo - noAmounts[1], "User2 NO tokens should be reduced");
         
-        // Check USDC balances - users should have received collateral back
+        // Check USDC balances and verify against expected
         uint256 user1FinalUSDC = usdc.balanceOf(user1);
         uint256 user2FinalUSDC = usdc.balanceOf(user2);
         
         console.log("Final USDC balances:");
         console.log("User1 USDC:", user1FinalUSDC);
         console.log("User2 USDC:", user2FinalUSDC);
+        console.log("User1 Expected USDC:", user1ExpectedUSDC);
+        console.log("User2 Expected USDC:", user2ExpectedUSDC);
         
-        // Users should have received USDC back (collateral from redeemed tokens)
-        assertTrue(user1FinalUSDC > user1InitialUSDC, "User1 should have received USDC from redemption");
-        assertTrue(user2FinalUSDC > user2InitialUSDC, "User2 should have received USDC from redemption");
+        // Verify exact expected balances
+        assertEq(user1FinalUSDC, user1ExpectedUSDC, "User1 final USDC should match expected balance");
+        assertEq(user2FinalUSDC, user2ExpectedUSDC, "User2 final USDC should match expected balance");
         
         // Check that batch redeem contract has no leftover tokens
         assertEq(ctf.balanceOf(address(batchRedeem), yesPositionId), 0, "Batch redeem contract should have no YES tokens");
         assertEq(ctf.balanceOf(address(batchRedeem), noPositionId), 0, "Batch redeem contract should have no NO tokens");
     }
 
-    function _verifyCustomBatchRedemptionResults(
+    function _verifyCustomBatchRedemptionResultsWithExpected(
         bytes32 conditionId,
         address[] memory users,
         uint256[] memory yesAmounts,
         uint256[] memory noAmounts,
         uint256 user1InitialUSDC,
-        uint256 user2InitialUSDC
+        uint256 user2InitialUSDC,
+        uint256 user1ExpectedUSDC,
+        uint256 user2ExpectedUSDC
     ) internal {
         // CTFExchange uses opposite mapping: index 1 = NO, index 2 = YES
         uint256 yesPositionId = CTHelpers.getPositionId(
@@ -499,17 +537,19 @@ contract CtfExchangeBatchRedeemTest is TestHelper {
         assertEq(ctf.balanceOf(user2, yesPositionId), 100e6 - yesAmounts[1], "User2 YES tokens should be reduced by custom amount");
         assertEq(ctf.balanceOf(user2, noPositionId), 100e6 - noAmounts[1], "User2 NO tokens should be reduced by custom amount");
         
-        // Check USDC balances
+        // Check USDC balances and verify against expected
         uint256 user1FinalUSDC = usdc.balanceOf(user1);
         uint256 user2FinalUSDC = usdc.balanceOf(user2);
         
         console.log("Final USDC balances (custom):");
         console.log("User1 USDC:", user1FinalUSDC);
         console.log("User2 USDC:", user2FinalUSDC);
+        console.log("User1 Expected USDC:", user1ExpectedUSDC);
+        console.log("User2 Expected USDC:", user2ExpectedUSDC);
         
-        // Users should have received USDC back
-        assertTrue(user1FinalUSDC > user1InitialUSDC, "User1 should have received USDC from custom redemption");
-        assertTrue(user2FinalUSDC > user2InitialUSDC, "User2 should have received USDC from custom redemption");
+        // Verify exact expected balances
+        assertEq(user1FinalUSDC, user1ExpectedUSDC, "User1 final USDC should match expected balance");
+        assertEq(user2FinalUSDC, user2ExpectedUSDC, "User2 final USDC should match expected balance");
         
         // Check that batch redeem contract has no leftover tokens
         assertEq(ctf.balanceOf(address(batchRedeem), yesPositionId), 0, "Batch redeem contract should have no YES tokens");
