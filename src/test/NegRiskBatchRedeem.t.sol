@@ -93,7 +93,7 @@ contract NegRiskBatchRedeemTest is TestHelper {
 
         vm.prank(operator);
         vm.expectRevert(abi.encodeWithSelector(0x2e938bed)); // NoTokensToRedeem selector
-        batchRedeem.batchRedeemQuestionCustom(questionId, users, amounts, amounts);
+        batchRedeem.batchRedeemQuestion(questionId, users, amounts, amounts);
     }
 
     function test_customBatchRedeemInvalidLengths() public {
@@ -109,7 +109,7 @@ contract NegRiskBatchRedeemTest is TestHelper {
 
         vm.prank(operator);
         vm.expectRevert(abi.encodeWithSelector(0x9d89020a)); // InvalidArrayLength selector
-        batchRedeem.batchRedeemQuestionCustom(questionId, users, yesAmounts, noAmounts);
+        batchRedeem.batchRedeemQuestion(questionId, users, yesAmounts, noAmounts);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -160,7 +160,7 @@ contract NegRiskBatchRedeemTest is TestHelper {
         
         // Execute batch redemption
         vm.prank(operator);
-        batchRedeem.batchRedeemQuestionCustom(testQuestionId, users, amounts, amounts);
+        batchRedeem.batchRedeemQuestion(testQuestionId, users, amounts, amounts);
         
         // Verify results - inline verification to avoid stack too deep
         // (yesPositionId and noPositionId already defined above)
@@ -226,7 +226,7 @@ contract NegRiskBatchRedeemTest is TestHelper {
         // Execute batch redemption - should fail for unresolved question
         vm.prank(operator);
         vm.expectRevert("result for condition not received yet");
-        batchRedeem.batchRedeemQuestionCustom(testQuestionId, users, amounts, amounts);
+        batchRedeem.batchRedeemQuestion(testQuestionId, users, amounts, amounts);
         
         console.log("Batch redemption with unresolved question correctly failed as expected!");
     }
@@ -266,7 +266,7 @@ contract NegRiskBatchRedeemTest is TestHelper {
         
         // Execute custom batch redemption
         vm.prank(operator);
-        batchRedeem.batchRedeemQuestionCustom(testQuestionId, users, yesAmounts, noAmounts);
+        batchRedeem.batchRedeemQuestion(testQuestionId, users, yesAmounts, noAmounts);
         
         // Verify results - inline verification to avoid stack too deep
         uint256 customYesPositionId = adapter.getPositionId(testQuestionId, true);
@@ -315,7 +315,7 @@ contract NegRiskBatchRedeemTest is TestHelper {
         amounts1[1] = 30e6;
         
         vm.prank(operator);
-        batchRedeem.batchRedeemQuestionCustom(question1Id, users1, amounts1, amounts1);
+        batchRedeem.batchRedeemQuestion(question1Id, users1, amounts1, amounts1);
         
         // Test redemption for Question 2 (NO wins)
         address[] memory users2 = new address[](2);
@@ -326,7 +326,7 @@ contract NegRiskBatchRedeemTest is TestHelper {
         amounts2[1] = 25e6;
         
         vm.prank(operator);
-        batchRedeem.batchRedeemQuestionCustom(question2Id, users2, amounts2, amounts2);
+        batchRedeem.batchRedeemQuestion(question2Id, users2, amounts2, amounts2);
         
         // Verify final balances
         uint256 user1FinalUSDC = usdc.balanceOf(user1);
@@ -426,7 +426,7 @@ contract NegRiskBatchRedeemTest is TestHelper {
         
         // Execute batch redemption
         vm.prank(operator);
-        batchRedeem.batchRedeemQuestionCustom(testQuestionId, users, yesAmounts, noAmounts);
+        batchRedeem.batchRedeemQuestion(testQuestionId, users, yesAmounts, noAmounts);
         
         // Verify token balances after redemption (all tokens should be redeemed)
         assertEq(ctf.balanceOf(user1, yesPositionId), 0, "User1 should have 0 YES tokens remaining (all redeemed)");

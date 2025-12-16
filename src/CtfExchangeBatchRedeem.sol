@@ -204,7 +204,7 @@ contract CtfExchangeBatchRedeem is ERC1155TokenReceiver, ICtfExchangeBatchRedeem
     /// @param _users - array of user addresses to redeem for
     /// @param _yesAmounts - array of yes token amounts to redeem for each user
     /// @param _noAmounts - array of no token amounts to redeem for each user
-    function batchRedeemConditionCustom(
+    function batchRedeemCondition(
         bytes32 _conditionId,
         address[] calldata _users,
         uint256[] calldata _yesAmounts,

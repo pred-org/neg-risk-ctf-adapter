@@ -89,7 +89,7 @@ contract CtfExchangeBatchRedeemTest is TestHelper {
 
         vm.prank(operator);
         vm.expectRevert(abi.encodeWithSelector(0x2e938bed)); // NoTokensToRedeem selector
-        batchRedeem.batchRedeemConditionCustom(conditionId, users, amounts, amounts);
+        batchRedeem.batchRedeemCondition(conditionId, users, amounts, amounts);
     }
 
     function test_customBatchRedeemInvalidLengths() public {
@@ -105,7 +105,7 @@ contract CtfExchangeBatchRedeemTest is TestHelper {
 
         vm.prank(operator);
         vm.expectRevert(abi.encodeWithSelector(0x9d89020a)); // InvalidArrayLength selector
-        batchRedeem.batchRedeemConditionCustom(conditionId, users, yesAmounts, noAmounts);
+        batchRedeem.batchRedeemCondition(conditionId, users, yesAmounts, noAmounts);
     }
 
     function test_onlyOperatorCanRedeem() public {
@@ -117,7 +117,7 @@ contract CtfExchangeBatchRedeemTest is TestHelper {
 
         vm.prank(user1); // Not an operator
         vm.expectRevert(ICtfExchangeBatchRedeemEE.NotOperator.selector);
-        batchRedeem.batchRedeemConditionCustom(conditionId, users, amounts, amounts);
+        batchRedeem.batchRedeemCondition(conditionId, users, amounts, amounts);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -170,7 +170,7 @@ contract CtfExchangeBatchRedeemTest is TestHelper {
         
         // Execute batch redemption
         vm.prank(operator);
-        batchRedeem.batchRedeemConditionCustom(conditionId, users, yesAmounts, noAmounts);
+        batchRedeem.batchRedeemCondition(conditionId, users, yesAmounts, noAmounts);
         
         // Verify results - inline verification to avoid stack too deep
         assertEq(ctf.balanceOf(user1, yesPositionId), user1InitialYes - yesAmounts[0], "User1 YES tokens should be reduced");
@@ -230,7 +230,7 @@ contract CtfExchangeBatchRedeemTest is TestHelper {
         // Execute batch redemption - should fail for unresolved condition
         vm.prank(operator);
         vm.expectRevert("result for condition not received yet");
-        batchRedeem.batchRedeemConditionCustom(conditionId, users, yesAmounts, noAmounts);
+        batchRedeem.batchRedeemCondition(conditionId, users, yesAmounts, noAmounts);
         
         console.log("Batch redemption with unresolved condition correctly failed as expected!");
     }
@@ -266,7 +266,7 @@ contract CtfExchangeBatchRedeemTest is TestHelper {
         
         // Execute custom batch redemption
         vm.prank(operator);
-        batchRedeem.batchRedeemConditionCustom(conditionId, users, yesAmounts, noAmounts);
+        batchRedeem.batchRedeemCondition(conditionId, users, yesAmounts, noAmounts);
         
         // Verify results - inline verification to avoid stack too deep
         uint256 customYesPositionId = CTHelpers.getPositionId(
@@ -324,7 +324,7 @@ contract CtfExchangeBatchRedeemTest is TestHelper {
         
         // Execute batch redemption
         vm.prank(operator);
-        batchRedeem.batchRedeemConditionCustom(conditionId, users, yesAmounts, noAmounts);
+        batchRedeem.batchRedeemCondition(conditionId, users, yesAmounts, noAmounts);
         
         // Calculate expected USDC balances
         // 50-50 resolution: payoutNumerators [1, 1] means both get partial payout
