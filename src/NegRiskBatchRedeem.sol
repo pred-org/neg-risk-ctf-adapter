@@ -15,7 +15,6 @@ interface INegRiskBatchRedeemEE {
     error NotOperator();
     error InvalidArrayLength();
     error NoTokensToRedeem();
-    error TransferFailed();
 
     /// @notice Emitted when a new admin is added
     event NewAdmin(address indexed admin, address indexed newAdminAddress);
