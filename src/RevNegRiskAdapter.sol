@@ -73,18 +73,24 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, IRevNegRiskAdapterEE, Auth {
     }
 
     /*//////////////////////////////////////////////////////////////
-                           ERC1155 OPERATIONS
+                              CONSTANTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Returns the YES_TOKEN_BURN_ADDRESS constant
-    function getYesTokenBurnAddress() external view returns (address) {
+    /// @notice Returns the YES token burn address
+    /// @return The burn address for YES tokens
+    function getYesTokenBurnAddress() external pure returns (address) {
         return YES_TOKEN_BURN_ADDRESS;
     }
 
-    /// @notice Returns the FEE_DENOMINATOR constant
-    function getFeeDenominator() external view returns (uint256) {
+    /// @notice Returns the fee denominator
+    /// @return The fee denominator (10000)
+    function getFeeDenominator() external pure returns (uint256) {
         return FEE_DENOMINATOR;
     }
+
+    /*//////////////////////////////////////////////////////////////
+                           ERC1155 OPERATIONS
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Proxies ERC1155 balanceOf to the CTF
     /// @param _owner   - the owner of the tokens
@@ -128,7 +134,6 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, IRevNegRiskAdapterEE, Auth {
 
     /// @notice Convert a set of (n-1) yes positions to 1 no position
     /// @notice This is the reverse operation of NegRiskAdapter's convertPositions
-    /// @notice If the market has a fee, the fee is taken from the no position
     /// @param _marketId - the marketId
     /// @param _targetIndex - the index of the question for which to get the NO position
     /// @param _amount   - the amount of tokens to convert
@@ -143,11 +148,6 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, IRevNegRiskAdapterEE, Auth {
         if (_amount == 0) {
             return;
         }
-
-        // Get fee information from the NegRiskAdapter
-        uint256 feeBips = neg.getFeeBips(_marketId);
-        uint256 feeAmount = (_amount * feeBips) / FEE_DENOMINATOR;
-        uint256 amountOut = _amount - feeAmount;
 
         // **Seed:** adapter mints **+A WCOL** once.
         wcol.mint(_amount);
@@ -188,7 +188,7 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, IRevNegRiskAdapterEE, Auth {
         }
 
         // Process target question - use the collected USDC to get WCOL for the split
-        _processTargetQuestion(_marketId, _targetIndex, _amount, feeAmount, amountOut, _recipient);
+        _processTargetQuestion(_marketId, _targetIndex, _amount, _recipient);
 
         // **Net result:** user's YES tokens burned for non-target questions,
         // and user receives NO tokens for the target question
@@ -232,8 +232,6 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, IRevNegRiskAdapterEE, Auth {
         bytes32 _marketId, 
         uint256 _targetIndex, 
         uint256 _amount, 
-        uint256 _feeAmount, 
-        uint256 _amountOut,
         address _recipient
     ) internal {
         bytes32 targetQuestionId = NegRiskIdLib.getQuestionId(_marketId, uint8(_targetIndex));
@@ -249,14 +247,8 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, IRevNegRiskAdapterEE, Auth {
         // burn the YES(i) we created from split: −A `YES(i)`.
         ctf.safeTransferFrom(address(this), YES_TOKEN_BURN_ADDRESS, targetYesPositionId, _amount, "");
 
-        // transfer `NO(i)` to user (and fee to vault if any).
-        if (_feeAmount > 0) {
-            // transfer no token fees to vault
-            ctf.safeTransferFrom(address(this), vault, targetNoPositionId, _feeAmount, "");
-        }
-
         // transfer no tokens to sender
-        ctf.safeTransferFrom(address(this), _recipient, targetNoPositionId, _amountOut, "");
+        ctf.safeTransferFrom(address(this), _recipient, targetNoPositionId, _amount, "");
     }
 
     /*//////////////////////////////////////////////////////////////

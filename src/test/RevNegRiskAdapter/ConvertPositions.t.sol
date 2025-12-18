@@ -62,9 +62,6 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
     function _after(uint256 _questionCount, uint256 _feeBips, uint256 _targetIndex, uint256 _amount) internal {
         // check balances
         {
-            uint256 feeAmount = (_amount * _feeBips) / FEE_BIPS_MAX;
-            uint256 amountOut = _amount - feeAmount;
-
             uint8 i = 0;
             uint256 yesPositionsCount = 0;
 
@@ -87,10 +84,10 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
                     uint256 targetYesPositionId = nrAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, i), true);
                     uint256 targetNoPositionId = nrAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, i), false);
 
-                    // brian should have the NO token, after fees
-                    assertEq(ctf.balanceOf(brian, targetNoPositionId), amountOut, "Brian no tokens should be at the target no position");
-                    // vault has the rest of no tokens as fees
-                    assertEq(ctf.balanceOf(vault, targetNoPositionId), feeAmount, "Vault no tokens should be at the target no position");
+                    // brian should have the full NO token amount (no fees deducted)
+                    assertEq(ctf.balanceOf(brian, targetNoPositionId), _amount, "Brian no tokens should be at the target no position");
+                    // vault should have no no tokens (fees were removed)
+                    assertEq(ctf.balanceOf(vault, targetNoPositionId), 0, "Vault no tokens should be 0");
                     // User's target YES tokens are burned (not kept)
                     assertEq(ctf.balanceOf(brian, targetYesPositionId), 0, "Brian yes tokens should be 0");
                     // The target YES position gets burned from split

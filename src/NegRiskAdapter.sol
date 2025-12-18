@@ -252,7 +252,6 @@ contract NegRiskAdapter is ERC1155TokenReceiver, MarketStateManager, INegRiskAda
 
     /// @notice Convert a set of no positions to the complementary set of yes positions plus collateral proportional to
     /// (# of no positions - 1)
-    /// @notice If the market has a fee, the fee is taken from both collateral and the yes positions
     /// @param _marketId - the marketId
     /// @param _indexSet - the set of positions to convert, expressed as an index set where the least significant bit is
     /// the first question (index zero)
@@ -343,31 +342,17 @@ contract NegRiskAdapter is ERC1155TokenReceiver, MarketStateManager, INegRiskAda
             );
         }
 
-        uint256 feeAmount = (_amount * md.feeBips()) / FEE_DENOMINATOR;
-        uint256 amountOut = _amount - feeAmount;
-
         if (noPositionIds.length > 1) {
             // collateral out is always proportional to the number of no positions minus 1
             uint256 multiplier = noPositionIds.length - 1;
-            // transfer collateral fees to vault
-            if (feeAmount > 0) {
-                wcol.release(vault, multiplier * feeAmount);
-            }
             // transfer collateral to sender
-            wcol.release(msg.sender, multiplier * amountOut);
+            wcol.release(msg.sender, multiplier * _amount);
         }
 
         if (yesPositionIds.length > 0) {
-            if (feeAmount > 0) {
-                // transfer yes token fees to vault
-                ctf.safeBatchTransferFrom(
-                    address(this), vault, yesPositionIds, Helpers.values(yesPositionIds.length, feeAmount), ""
-                );
-            }
-
             // transfer yes tokens to sender
             ctf.safeBatchTransferFrom(
-                address(this), msg.sender, yesPositionIds, Helpers.values(yesPositionIds.length, amountOut), ""
+                address(this), msg.sender, yesPositionIds, Helpers.values(yesPositionIds.length, _amount), ""
             );
         }
 
