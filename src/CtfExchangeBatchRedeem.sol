@@ -1,16 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.19;
 
-import {NegRiskAdapter} from "src/NegRiskAdapter.sol";
 import {IConditionalTokens} from "src/interfaces/IConditionalTokens.sol";
-import {WrappedCollateral} from "src/WrappedCollateral.sol";
 import {ERC1155TokenReceiver} from "lib/solmate/src/tokens/ERC1155.sol";
-import {Helpers} from "src/libraries/Helpers.sol";
 import {ERC20} from "lib/solmate/src/tokens/ERC20.sol";
+import {CTHelpers} from "src/libraries/CTHelpers.sol";
+import {Helpers} from "src/libraries/Helpers.sol";
 
-/// @title INegRiskBatchRedeemEE
-/// @notice NegRiskBatchRedeem Errors and Events
-interface INegRiskBatchRedeemEE {
+/// @title ICtfExchangeBatchRedeemEE
+/// @notice CTF Exchange Batch Redeem Errors and Events
+interface ICtfExchangeBatchRedeemEE {
     error NotAdmin();
     error NotOperator();
     error InvalidArrayLength();
@@ -31,7 +30,7 @@ interface INegRiskBatchRedeemEE {
 
     /// @notice Emitted when batch redemption is performed
     event BatchRedemption(
-        bytes32 indexed questionId,
+        bytes32 indexed conditionId,
         address[] indexed users,
         uint256[] yesAmounts,
         uint256[] noAmounts,
@@ -39,16 +38,16 @@ interface INegRiskBatchRedeemEE {
     );
 }
 
-/// @title NegRiskBatchRedeem
-/// @notice Contract that provides batch redemption functionality for whitelisted operators
+/// @title CtfExchangeBatchRedeem
+/// @notice Contract that provides batch redemption functionality for CTF Exchange markets
 /// @notice Operators can redeem positions for multiple users who have given token allowance to this contract
+/// @notice Works directly with ConditionalTokens, bypassing NegRiskAdapter
 /// @author Pred
-contract NegRiskBatchRedeem is ERC1155TokenReceiver, INegRiskBatchRedeemEE {
+contract CtfExchangeBatchRedeem is ERC1155TokenReceiver, ICtfExchangeBatchRedeemEE {
     /*//////////////////////////////////////////////////////////////
                                  STATE
     //////////////////////////////////////////////////////////////*/
 
-    NegRiskAdapter public immutable negRiskAdapter;
     IConditionalTokens public immutable ctf;
     ERC20 public immutable col;
 
@@ -76,14 +75,11 @@ contract NegRiskBatchRedeem is ERC1155TokenReceiver, INegRiskBatchRedeemEE {
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    /// @param _negRiskAdapter - NegRiskAdapter address
-    constructor(address _negRiskAdapter) {
-        negRiskAdapter = NegRiskAdapter(_negRiskAdapter);
-        ctf = negRiskAdapter.ctf();
-        col = negRiskAdapter.col();
-        
-        // Approve the NegRiskAdapter to transfer tokens on behalf of this contract
-        ctf.setApprovalForAll(address(negRiskAdapter), true);
+    /// @param _ctf - ConditionalTokens contract address
+    /// @param _collateral - Collateral token address (e.g., USDC)
+    constructor(address _ctf, address _collateral) {
+        ctf = IConditionalTokens(_ctf);
+        col = ERC20(_collateral);
         
         // Deployer is automatically an admin and an operator
         admins[msg.sender] = 1;
@@ -189,12 +185,10 @@ contract NegRiskBatchRedeem is ERC1155TokenReceiver, INegRiskBatchRedeemEE {
         // Transfer tokens from user to this contract
         ctf.safeBatchTransferFrom(_user, address(this), positionIds, userAmounts, "");
 
-        // Redeem the positions using the adapter's redeemPositions function
-        // redeemPositions expects length 2 array: [yesAmount, noAmount]
-        uint256[] memory redeemAmounts = new uint256[](2);
-        redeemAmounts[0] = _yesAmount;
-        redeemAmounts[1] = _noAmount;
-        negRiskAdapter.redeemPositions(_conditionId, redeemAmounts);
+        // Redeem the positions directly using ConditionalTokens
+        // For binary markets, we need to redeem both index sets [1, 2]
+        uint256[] memory indexSets = Helpers.partition(); // [1, 2]
+        ctf.redeemPositions(address(col), bytes32(0), _conditionId, indexSets);
 
         payout = col.balanceOf(address(this));
         if (payout > 0) {
@@ -206,12 +200,12 @@ contract NegRiskBatchRedeem is ERC1155TokenReceiver, INegRiskBatchRedeemEE {
     /// @notice Batch redeem positions for multiple users with custom amounts for yes/no tokens
     /// @notice Can only be called by whitelisted operators
     /// @notice Assumes all users have given token allowance to this contract
-    /// @param _questionId - the questionId to redeem positions for
+    /// @param _conditionId - the conditionId to redeem positions for
     /// @param _users - array of user addresses to redeem for
     /// @param _yesAmounts - array of yes token amounts to redeem for each user
     /// @param _noAmounts - array of no token amounts to redeem for each user
-    function batchRedeemQuestion(
-        bytes32 _questionId,
+    function batchRedeemCondition(
+        bytes32 _conditionId,
         address[] calldata _users,
         uint256[] calldata _yesAmounts,
         uint256[] calldata _noAmounts
@@ -221,9 +215,17 @@ contract NegRiskBatchRedeem is ERC1155TokenReceiver, INegRiskBatchRedeemEE {
         }
         if (_users.length == 0) revert NoTokensToRedeem();
 
-        bytes32 conditionId = negRiskAdapter.getConditionId(_questionId);
-        uint256 yesPositionId = negRiskAdapter.getPositionId(_questionId, true);
-        uint256 noPositionId = negRiskAdapter.getPositionId(_questionId, false);
+        // Calculate position IDs from condition ID
+        // CTFExchange uses opposite mapping: index 1 = NO, index 2 = YES (opposite of NegRiskAdapter)
+        uint256 yesPositionId = CTHelpers.getPositionId(
+            address(col),
+            CTHelpers.getCollectionId(bytes32(0), _conditionId, 2)
+        );
+        uint256 noPositionId = CTHelpers.getPositionId(
+            address(col),
+            CTHelpers.getCollectionId(bytes32(0), _conditionId, 1)
+        );
+
         uint256 totalPayout = 0;
 
         // Process each user
@@ -233,10 +235,11 @@ contract NegRiskBatchRedeem is ERC1155TokenReceiver, INegRiskBatchRedeemEE {
             uint256 noAmount = _noAmounts[i];
 
             // Redeem positions for this user with custom amounts
-            uint256 userPayout = _redeemUserPositions(conditionId, user, yesPositionId, noPositionId, yesAmount, noAmount);
+            uint256 userPayout = _redeemUserPositions(_conditionId, user, yesPositionId, noPositionId, yesAmount, noAmount);
             totalPayout += userPayout;
         }
 
-        emit BatchRedemption(_questionId, _users, _yesAmounts, _noAmounts, totalPayout);
+        emit BatchRedemption(_conditionId, _users, _yesAmounts, _noAmounts, totalPayout);
     }
 }
+
