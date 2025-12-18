@@ -73,6 +73,22 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, IRevNegRiskAdapterEE, Auth {
     }
 
     /*//////////////////////////////////////////////////////////////
+                              CONSTANTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Returns the YES token burn address
+    /// @return The burn address for YES tokens
+    function getYesTokenBurnAddress() external pure returns (address) {
+        return YES_TOKEN_BURN_ADDRESS;
+    }
+
+    /// @notice Returns the fee denominator
+    /// @return The fee denominator (10000)
+    function getFeeDenominator() external pure returns (uint256) {
+        return FEE_DENOMINATOR;
+    }
+
+    /*//////////////////////////////////////////////////////////////
                            ERC1155 OPERATIONS
     //////////////////////////////////////////////////////////////*/
 

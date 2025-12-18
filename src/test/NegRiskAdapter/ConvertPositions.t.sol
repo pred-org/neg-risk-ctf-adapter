@@ -55,9 +55,6 @@ contract NegRiskAdapter_ConvertPositions_Test is NegRiskAdapter_SetUp {
     function _after(uint256 _questionCount, uint256 _feeBips, uint256 _indexSet, uint256 _amount) internal {
         // check balances
         {
-            uint256 feeAmount = (_amount * _feeBips) / FEE_BIPS_MAX;
-            uint256 amountOut = _amount - feeAmount;
-
             uint8 i = 0;
             uint256 noPositionsCount;
             uint256 yesPositionsCount;
@@ -81,10 +78,10 @@ contract NegRiskAdapter_ConvertPositions_Test is NegRiskAdapter_SetUp {
                     uint256 yesPositionId = nrAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, i), true);
                     uint256 noPositionId = nrAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, i), false);
 
-                    // brian has _amount of each yes token, after fees
-                    assertEq(ctf.balanceOf(brian, yesPositionId), _amount - feeAmount);
-                    // vault has the rest of yes tokens as fees
-                    assertEq(ctf.balanceOf(vault, yesPositionId), feeAmount);
+                    // brian has full _amount of each yes token (no fees deducted)
+                    assertEq(ctf.balanceOf(brian, yesPositionId), _amount);
+                    // vault should have no yes tokens (fees were removed)
+                    assertEq(ctf.balanceOf(vault, yesPositionId), 0);
                     // no tokens should be at the burn address
                     assertEq(ctf.balanceOf(nrAdapter.NO_TOKEN_BURN_ADDRESS(), noPositionId), _amount);
                     // nr adapter should have no conditional tokens
@@ -97,8 +94,8 @@ contract NegRiskAdapter_ConvertPositions_Test is NegRiskAdapter_SetUp {
 
             assertEq(noPositionsCount + yesPositionsCount, _questionCount);
 
-            // brian should have (noPositionsCount -1) * amountOut USDC
-            assertEq(usdc.balanceOf(brian), (noPositionsCount - 1) * amountOut);
+            // brian should have (noPositionsCount -1) * _amount USDC (no fees deducted)
+            assertEq(usdc.balanceOf(brian), (noPositionsCount - 1) * _amount);
 
             // the ctf should have (questionCount + yesPositionCount)*_amount WCOL
             assertEq(wcol.balanceOf(address(ctf)), _amount * (_questionCount + yesPositionsCount));

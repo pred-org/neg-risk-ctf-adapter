@@ -162,16 +162,12 @@ contract RevNegRiskAdapter_MergeAllYesTokensSimple_Test is RevNegRiskAdapter_Set
                     assertEq(ctf.balanceOf(brian, targetYesPositionId), 0, "Brian yes tokens should be 0 for resolved question");
                     assertEq(ctf.balanceOf(brian, targetNoPositionId), 0, "Brian no tokens should be 0 for resolved question");
                     
-                    // The target YES position should be consumed during merging (except for the fee amount)
-                    uint256 feeBips = nrAdapter.getFeeBips(marketId);
-                    uint256 feeAmount = (_amount * feeBips) / FEE_BIPS_MAX;
-                    uint256 expectedRemainingYesTokens = feeAmount;
-                    assertEq(ctf.balanceOf(address(revAdapter), targetYesPositionId), expectedRemainingYesTokens, "Yes tokens should remain equal to fee amount");
+                    // The target YES position should be consumed during merging (no fees, so no remaining tokens)
+                    assertEq(ctf.balanceOf(address(revAdapter), targetYesPositionId), 0, "Yes tokens should be 0 (no fees)");
                     // rev adapter should have no NO tokens (they were used for merging)
                     assertEq(ctf.balanceOf(address(revAdapter), targetNoPositionId), 0, "Rev adapter should have no NO tokens");
                     
                     // Verify that the YES tokens for the resolved question are also burned
-                    // The YES tokens created from split are burned, but the fee amount remains in the adapter
                     address burnAddress = revAdapter.getYesTokenBurnAddress();
                     assertEq(ctf.balanceOf(burnAddress, targetYesPositionId), _amount, "Resolved question YES tokens should be at burn address");
                 }
@@ -180,11 +176,8 @@ contract RevNegRiskAdapter_MergeAllYesTokensSimple_Test is RevNegRiskAdapter_Set
 
             assertEq(yesPositionsCount + 1, _questionCount);
 
-            // brian should have USDC from the merge operation (amount after fees)
-            uint256 feeBips = nrAdapter.getFeeBips(marketId);
-            uint256 feeAmount = (_amount * feeBips) / FEE_BIPS_MAX;
-            uint256 expectedUsdcAmount = _amount - feeAmount;
-            assertEq(usdc.balanceOf(brian), expectedUsdcAmount, "Brian should have USDC from merge");
+            // brian should have full USDC from the merge operation (no fees deducted)
+            assertEq(usdc.balanceOf(brian), _amount, "Brian should have full USDC from merge");
 
             // The CTF WCOL balance should be 0
             assertEq(wcol.balanceOf(address(revAdapter)), 0, "WCOL balance should be 0");
