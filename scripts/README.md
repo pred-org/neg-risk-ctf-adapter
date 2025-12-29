@@ -87,7 +87,7 @@ The NegRiskCtfExchange constructor requires:
 - `_collateral`: The collateral token address (e.g., USDC)
 - `_ctf`: The ConditionalTokens contract address
 - `_negRiskAdapter`: The NegRiskAdapter contract address
-- `_proxyFactory`: The Polymarket proxy factory address
+- `_proxyFactory`: The PRED proxy factory address
 - `_safeFactory`: The Gnosis Safe factory address
 
 ## NegRiskCtfExchange Available Functions
@@ -105,9 +105,9 @@ The NegRiskCtfExchange constructor requires:
 
 To find the correct factory addresses:
 
-1. Check Polymarket's documentation or deployed contracts
+1. Check PRED's documentation or deployed contracts
 2. Look for existing CTFExchange deployments on the target network
-3. Contact the Polymarket team for the official factory addresses
+3. Contact the PRED team for the official factory addresses
 
 ## Example Output
 
