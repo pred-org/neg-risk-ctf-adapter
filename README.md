@@ -1,4 +1,4 @@
-# Polymarket Multi-Outcome Markets
+# PRED Multi-Outcome Markets
 
 The contracts in this repository are designed to unify mutually exclusive binary markets into a single multi-outcome market structure. By mutually exclusive binary markets, we mean a set of binary YES/NO markets of which one and only one will resolve true. The canonical example is a set of markets each representing a candidate in a particular political election, where only one can win. Each component binary market is a YES/NO market for a particular candidate. The fact that only one candidate can win guarantees that there are certain equivalencies amongst certain sets of positions.
 
@@ -15,7 +15,7 @@ The Vault holds USDC and Yes tokens which are collected as fees from users who c
 
 ## Use with the UmaCtfAdapter
 
-The NegRiskOperator and NegRiskAdapter are designed to be used with the [UmaCtfAdapter](https://github.com/Polymarket/uma-ctf-adapter), or any oracle with the same interface.
+The NegRiskOperator and NegRiskAdapter are designed to be used with the [UmaCtfAdapter](https://github.com/pred-org/uma-ctf-adapter), or any oracle with the same interface.
 A dedicated UmaCtfAdapter will need to be deployed with the UmaCtfAdapter's `ctf` set to the address of the NegRiskAdapter, and the NegRiskOperator's `oracle` set to the address of the UmaCtfAdapter.
 
 In order to prepare a question for a market using the NegRiskOperator, the question must be initialized on the UmaCtfAdapter first. Then, the question may be prepared on the NegRiskOperator where the `_requestId` parameter is the `questionID` returned by the UmaCtfAdapter.
