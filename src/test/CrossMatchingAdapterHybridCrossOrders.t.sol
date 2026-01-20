@@ -2015,6 +2015,430 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         console.log("This is 33%% better than their limit price of 0.15 per token");
         console.log("Test passed!");
     }
+
+    /// @notice Test LONG cross-match where taker SELL NO gets price improvement
+    /// Combined prices > 1, surplus goes to taker
+    function testLongCrossMatch_TakerSellNO_PriceImprovement() public {
+        console.log("=== Testing LONG Cross-Match: Taker SELL NO Gets Price Improvement ===");
+        
+        // Create 3 questions
+        bytes32[] memory questionIds = new bytes32[](3);
+        uint256[] memory yesPositionIds = new uint256[](3);
+        uint256[] memory noPositionIds = new uint256[](3);
+
+        questionIds[0] = questionId;
+        yesPositionIds[0] = yesPositionId;
+        noPositionIds[0] = noPositionId;
+        
+        for (uint256 i = 1; i < 3; i++) {
+            questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
+            yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
+            noPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], false);
+            _registerTokensWithCTFExchange(yesPositionIds[i], noPositionIds[i], negRiskAdapter.getConditionId(questionIds[i]), questionIds[i]);
+        }
+        
+        negRiskAdapter.setPrepared(marketId);
+        
+        // Scenario:
+        // Taker: SELL NO0 at signed price 0.30 (expects minimum 0.70 USDC = 1-0.30)
+        // Maker1: BUY YES0 at 0.40 (pays 0.40 USDC)
+        // Maker2: BUY YES1 at 0.40 (pays 0.40 USDC)
+        // Combined price: 0.30 + 0.40 + 0.40 = 1.10 > 1.00
+        // Surplus: 0.10 per token goes to taker
+        // Expected: Taker receives 0.70 + 0.10 = 0.80 USDC (not just 0.70)
+        
+        uint256 fillAmount = 1e6; // 1 token
+        
+        // Taker order - LONG SELL (selling NO tokens)
+        OrderIntent memory takerOrder = _createAndSignOrder(
+            user1, 
+            noPositionIds[0], 
+            1,  // SELL
+            fillAmount,  // makerAmount (1 NO token)
+            0.70e6,  // takerAmount (0.70 USDC minimum, based on price 0.30)
+            questionIds[0], 
+            0,  // LONG intent
+            _user1PK
+        );
+        
+        // Mint NO tokens to taker
+        _mintTokensToUser(user1, noPositionIds[0], 5e6);
+        
+        // Maker orders - LONG BUY (buying YES tokens)
+        ICrossMatchingAdapter.MakerOrder[] memory makerOrders = new ICrossMatchingAdapter.MakerOrder[](1);
+        
+        makerOrders[0].makerFillAmounts = new uint256[](2);
+        makerOrders[0].makerFillAmounts[0] = 0.40e6;  // pays 0.40 USDC
+        makerOrders[0].makerFillAmounts[1] = 0.40e6;  // pays 0.40 USDC
+        
+        makerOrders[0].orders = new OrderIntent[](2);
+        // Maker1: BUY YES1 at price 0.40
+        makerOrders[0].orders[0] = _createAndSignOrder(
+            user2, 
+            yesPositionIds[1], 
+            0,  // BUY
+            0.40e6,  // makerAmount (0.40 USDC)
+            fillAmount,  // takerAmount (1 YES token)
+            questionIds[1], 
+            0,  // LONG intent
+            _user2PK
+        );
+        // Maker2: BUY YES2 at price 0.40
+        makerOrders[0].orders[1] = _createAndSignOrder(
+            user3, 
+            yesPositionIds[2], 
+            0,  // BUY
+            0.40e6,  // makerAmount (0.40 USDC)
+            fillAmount,  // takerAmount (1 YES token)
+            questionIds[2], 
+            0,  // LONG intent
+            _user3PK
+        );
+        makerOrders[0].orderType = ICrossMatchingAdapter.OrderType.CROSS_MATCH;
+        
+        // Fund makers with USDC
+        MockUSDC(address(usdc)).mint(user2, 10e6);
+        MockUSDC(address(usdc)).mint(user3, 10e6);
+        
+        uint256[] memory takerFillAmount = new uint256[](1);
+        takerFillAmount[0] = fillAmount;
+        
+        // Record initial balances
+        uint256 takerInitialUSDC = usdc.balanceOf(user1);
+        uint256 takerInitialNO = ctf.balanceOf(user1, noPositionIds[0]);
+        
+        // Execute
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, 0);
+        
+        // Verify taker received price improvement
+        uint256 takerFinalUSDC = usdc.balanceOf(user1);
+        uint256 takerUSDCReceived = takerFinalUSDC - takerInitialUSDC;
+        
+        console.log("Taker signed price: 0.30 (expected minimum 0.70 USDC)");
+        console.log("Combined price: 0.30 + 0.40 + 0.40 = 1.10");
+        console.log("Surplus: 0.10 USDC goes to taker");
+        console.log("Taker USDC received: %s", takerUSDCReceived);
+        
+        // Taker should receive 0.80 USDC (0.70 base + 0.10 surplus)
+        assertEq(takerUSDCReceived, 0.80e6, "Taker should receive 0.80 USDC with price improvement");
+        
+        // Verify taker sold NO tokens
+        assertEq(ctf.balanceOf(user1, noPositionIds[0]), takerInitialNO - fillAmount, "Taker should have sold NO tokens");
+        
+        console.log("=== LONG Taker SELL NO Price Improvement Test PASSED ===");
+    }
+
+    /// @notice Test LONG cross-match where taker SELL NO has no price improvement (exact match)
+    function testLongCrossMatch_TakerSellNO_ExactMatch() public {
+        console.log("=== Testing LONG Cross-Match: Taker SELL NO Exact Match (No Improvement) ===");
+        
+        // Create 3 questions
+        bytes32[] memory questionIds = new bytes32[](3);
+        uint256[] memory yesPositionIds = new uint256[](3);
+        uint256[] memory noPositionIds = new uint256[](3);
+
+        questionIds[0] = questionId;
+        yesPositionIds[0] = yesPositionId;
+        noPositionIds[0] = noPositionId;
+        
+        for (uint256 i = 1; i < 3; i++) {
+            questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
+            yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
+            noPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], false);
+            _registerTokensWithCTFExchange(yesPositionIds[i], noPositionIds[i], negRiskAdapter.getConditionId(questionIds[i]), questionIds[i]);
+        }
+        
+        negRiskAdapter.setPrepared(marketId);
+        
+        // Scenario:
+        // Taker: SELL NO0 at signed price 0.40 (expects 0.60 USDC)
+        // Maker1: BUY YES0 at 0.30 (pays 0.30 USDC)
+        // Maker2: BUY YES1 at 0.30 (pays 0.30 USDC)
+        // Combined price: 0.40 + 0.30 + 0.30 = 1.00 (exact match)
+        // No surplus
+        // Expected: Taker receives exactly 0.60 USDC
+        
+        uint256 fillAmount = 1e6; // 1 token
+        
+        // Taker order
+        OrderIntent memory takerOrder = _createAndSignOrder(
+            user1, 
+            noPositionIds[0], 
+            1,  // SELL
+            fillAmount,
+            0.60e6,  // takerAmount (0.60 USDC, based on price 0.40)
+            questionIds[0], 
+            0,  // LONG intent
+            _user1PK
+        );
+        
+        _mintTokensToUser(user1, noPositionIds[0], 5e6);
+        
+        // Maker orders
+        ICrossMatchingAdapter.MakerOrder[] memory makerOrders = new ICrossMatchingAdapter.MakerOrder[](1);
+        
+        makerOrders[0].makerFillAmounts = new uint256[](2);
+        makerOrders[0].makerFillAmounts[0] = 0.30e6;
+        makerOrders[0].makerFillAmounts[1] = 0.30e6;
+        
+        makerOrders[0].orders = new OrderIntent[](2);
+        makerOrders[0].orders[0] = _createAndSignOrder(
+            user2, 
+            yesPositionIds[1], 
+            0,  // BUY
+            0.30e6,
+            fillAmount,
+            questionIds[1], 
+            0,  // LONG
+            _user2PK
+        );
+        makerOrders[0].orders[1] = _createAndSignOrder(
+            user3, 
+            yesPositionIds[2], 
+            0,  // BUY
+            0.30e6,
+            fillAmount,
+            questionIds[2], 
+            0,  // LONG
+            _user3PK
+        );
+        makerOrders[0].orderType = ICrossMatchingAdapter.OrderType.CROSS_MATCH;
+        
+        MockUSDC(address(usdc)).mint(user2, 10e6);
+        MockUSDC(address(usdc)).mint(user3, 10e6);
+        
+        uint256[] memory takerFillAmount = new uint256[](1);
+        takerFillAmount[0] = fillAmount;
+        
+        uint256 takerInitialUSDC = usdc.balanceOf(user1);
+        
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, 0);
+        
+        uint256 takerUSDCReceived = usdc.balanceOf(user1) - takerInitialUSDC;
+        
+        console.log("Combined price: 0.40 + 0.30 + 0.30 = 1.00 (exact)");
+        console.log("Taker USDC received: %s", takerUSDCReceived);
+        
+        assertEq(takerUSDCReceived, 0.60e6, "Taker should receive exactly 0.60 USDC (no improvement)");
+        
+        console.log("=== LONG Taker SELL NO Exact Match Test PASSED ===");
+    }
+
+    /// @notice Test SHORT cross-match where taker SELL YES gets price improvement
+    /// Combined prices < 1, surplus goes to taker
+    function testShortCrossMatch_TakerSellYES_PriceImprovement() public {
+        console.log("=== Testing SHORT Cross-Match: Taker SELL YES Gets Price Improvement ===");
+        
+        // Create 3 questions
+        bytes32[] memory questionIds = new bytes32[](3);
+        uint256[] memory yesPositionIds = new uint256[](3);
+
+        questionIds[0] = questionId;
+        yesPositionIds[0] = yesPositionId;
+        
+        for (uint256 i = 1; i < 3; i++) {
+            questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
+            yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
+            uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
+            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]), questionIds[i]);
+        }
+        
+        negRiskAdapter.setPrepared(marketId);
+        
+        // Scenario:
+        // Taker: SELL YES0 at signed price 0.20 (expects minimum 0.20 USDC)
+        // Maker1: SELL YES1 at 0.30 (expects 0.30 USDC)
+        // Maker2: SELL YES2 at 0.40 (expects 0.40 USDC)
+        // Combined price: 0.20 + 0.30 + 0.40 = 0.90 < 1.00
+        // Surplus: 1.00 - 0.90 = 0.10 per token goes to taker
+        // Expected: Taker receives 0.20 + 0.10 = 0.30 USDC (not just 0.20)
+        
+        uint256 fillAmount = 1e6; // 1 token
+        
+        // Taker order - SHORT SELL (selling YES tokens)
+        OrderIntent memory takerOrder = _createAndSignOrder(
+            user1, 
+            yesPositionIds[0], 
+            1,  // SELL
+            fillAmount,  // makerAmount (1 YES token)
+            0.20e6,  // takerAmount (0.20 USDC minimum)
+            questionIds[0], 
+            1,  // SHORT intent
+            _user1PK
+        );
+        
+        // Mint YES tokens to all sellers
+        _mintTokensToUser(user1, yesPositionIds[0], 5e6);
+        _mintTokensToUser(user2, yesPositionIds[1], 5e6);
+        _mintTokensToUser(user3, yesPositionIds[2], 5e6);
+        
+        // Maker orders - SHORT SELL (selling YES tokens)
+        ICrossMatchingAdapter.MakerOrder[] memory makerOrders = new ICrossMatchingAdapter.MakerOrder[](1);
+        
+        makerOrders[0].makerFillAmounts = new uint256[](2);
+        makerOrders[0].makerFillAmounts[0] = fillAmount;
+        makerOrders[0].makerFillAmounts[1] = fillAmount;
+        
+        makerOrders[0].orders = new OrderIntent[](2);
+        // Maker1: SELL YES1 at price 0.30
+        makerOrders[0].orders[0] = _createAndSignOrder(
+            user2, 
+            yesPositionIds[1], 
+            1,  // SELL
+            fillAmount,
+            0.30e6,  // takerAmount (0.30 USDC)
+            questionIds[1], 
+            1,  // SHORT intent
+            _user2PK
+        );
+        // Maker2: SELL YES2 at price 0.40
+        makerOrders[0].orders[1] = _createAndSignOrder(
+            user3, 
+            yesPositionIds[2], 
+            1,  // SELL
+            fillAmount,
+            0.40e6,  // takerAmount (0.40 USDC)
+            questionIds[2], 
+            1,  // SHORT intent
+            _user3PK
+        );
+        makerOrders[0].orderType = ICrossMatchingAdapter.OrderType.CROSS_MATCH;
+        
+        // Prepare wrapped collateral for minting (needed for cross match)
+        MockUSDC(address(usdc)).mint(address(negRiskAdapter.wcol()), 10e6);
+        vm.startPrank(address(negRiskAdapter));
+        WrappedCollateral(address(negRiskAdapter.wcol())).mint(10e6);
+        WrappedCollateral(address(negRiskAdapter.wcol())).transfer(address(ctf), 10e6);
+        vm.stopPrank();
+        
+        uint256[] memory takerFillAmount = new uint256[](1);
+        takerFillAmount[0] = fillAmount;
+        
+        // Record initial balances
+        uint256 takerInitialUSDC = usdc.balanceOf(user1);
+        uint256 takerInitialYES = ctf.balanceOf(user1, yesPositionIds[0]);
+        
+        // Execute
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, 0);
+        
+        // Verify taker received price improvement
+        uint256 takerFinalUSDC = usdc.balanceOf(user1);
+        uint256 takerUSDCReceived = takerFinalUSDC - takerInitialUSDC;
+        
+        console.log("Taker signed price: 0.20 (expected minimum 0.20 USDC)");
+        console.log("Combined price: 0.20 + 0.30 + 0.40 = 0.90");
+        console.log("Surplus: 1.00 - 0.90 = 0.10 USDC goes to taker");
+        console.log("Taker USDC received: %s", takerUSDCReceived);
+        
+        // Taker should receive 0.30 USDC (0.20 base + 0.10 surplus)
+        assertEq(takerUSDCReceived, 0.30e6, "Taker should receive 0.30 USDC with price improvement");
+        
+        // Verify taker sold YES tokens
+        assertEq(ctf.balanceOf(user1, yesPositionIds[0]), takerInitialYES - fillAmount, "Taker should have sold YES tokens");
+        
+        // Verify makers received their expected amounts (no improvement for makers)
+        console.log("Maker1 USDC received: %s (expected 0.30)", usdc.balanceOf(user2));
+        console.log("Maker2 USDC received: %s (expected 0.40)", usdc.balanceOf(user3));
+        
+        console.log("=== SHORT Taker SELL YES Price Improvement Test PASSED ===");
+    }
+
+    /// @notice Test SHORT cross-match where taker SELL YES has no price improvement (exact match)
+    function testShortCrossMatch_TakerSellYES_ExactMatch() public {
+        console.log("=== Testing SHORT Cross-Match: Taker SELL YES Exact Match (No Improvement) ===");
+        
+        // Create 3 questions
+        bytes32[] memory questionIds = new bytes32[](3);
+        uint256[] memory yesPositionIds = new uint256[](3);
+
+        questionIds[0] = questionId;
+        yesPositionIds[0] = yesPositionId;
+        
+        for (uint256 i = 1; i < 3; i++) {
+            questionIds[i] = negRiskOperator.prepareQuestion(marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i+1));
+            yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
+            uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
+            _registerTokensWithCTFExchange(yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]), questionIds[i]);
+        }
+        
+        negRiskAdapter.setPrepared(marketId);
+        
+        // Scenario:
+        // Taker: SELL YES0 at signed price 0.30 (expects 0.30 USDC)
+        // Maker1: SELL YES1 at 0.30 (expects 0.30 USDC)
+        // Maker2: SELL YES2 at 0.40 (expects 0.40 USDC)
+        // Combined price: 0.30 + 0.30 + 0.40 = 1.00 (exact match)
+        // No surplus
+        // Expected: Taker receives exactly 0.30 USDC
+        
+        uint256 fillAmount = 1e6;
+        
+        OrderIntent memory takerOrder = _createAndSignOrder(
+            user1, 
+            yesPositionIds[0], 
+            1,  // SELL
+            fillAmount,
+            0.30e6,
+            questionIds[0], 
+            1,  // SHORT
+            _user1PK
+        );
+        
+        _mintTokensToUser(user1, yesPositionIds[0], 5e6);
+        _mintTokensToUser(user2, yesPositionIds[1], 5e6);
+        _mintTokensToUser(user3, yesPositionIds[2], 5e6);
+        
+        ICrossMatchingAdapter.MakerOrder[] memory makerOrders = new ICrossMatchingAdapter.MakerOrder[](1);
+        
+        makerOrders[0].makerFillAmounts = new uint256[](2);
+        makerOrders[0].makerFillAmounts[0] = fillAmount;
+        makerOrders[0].makerFillAmounts[1] = fillAmount;
+        
+        makerOrders[0].orders = new OrderIntent[](2);
+        makerOrders[0].orders[0] = _createAndSignOrder(
+            user2, 
+            yesPositionIds[1], 
+            1,  // SELL
+            fillAmount,
+            0.30e6,
+            questionIds[1], 
+            1,  // SHORT
+            _user2PK
+        );
+        makerOrders[0].orders[1] = _createAndSignOrder(
+            user3, 
+            yesPositionIds[2], 
+            1,  // SELL
+            fillAmount,
+            0.40e6,
+            questionIds[2], 
+            1,  // SHORT
+            _user3PK
+        );
+        makerOrders[0].orderType = ICrossMatchingAdapter.OrderType.CROSS_MATCH;
+        
+        MockUSDC(address(usdc)).mint(address(negRiskAdapter.wcol()), 10e6);
+        vm.startPrank(address(negRiskAdapter));
+        WrappedCollateral(address(negRiskAdapter.wcol())).mint(10e6);
+        WrappedCollateral(address(negRiskAdapter.wcol())).transfer(address(ctf), 10e6);
+        vm.stopPrank();
+        
+        uint256[] memory takerFillAmount = new uint256[](1);
+        takerFillAmount[0] = fillAmount;
+        
+        uint256 takerInitialUSDC = usdc.balanceOf(user1);
+        
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, 0);
+        
+        uint256 takerUSDCReceived = usdc.balanceOf(user1) - takerInitialUSDC;
+        
+        console.log("Combined price: 0.30 + 0.30 + 0.40 = 1.00 (exact)");
+        console.log("Taker USDC received: %s", takerUSDCReceived);
+        
+        assertEq(takerUSDCReceived, 0.30e6, "Taker should receive exactly 0.30 USDC (no improvement)");
+        
+        console.log("=== SHORT Taker SELL YES Exact Match Test PASSED ===");
+    }
 }
 
 // Mock USDC contract

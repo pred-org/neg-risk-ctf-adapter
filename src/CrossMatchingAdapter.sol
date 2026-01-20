@@ -352,18 +352,36 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         Parsed memory takerOrder = parsedOrders[0];
         (uint256 makerAssetId, uint256 takerAssetId) = _deriveAssetIds(takerOrder);
         
-        uint256 takingAmount = _updateTakingWithSurplus(takerOrder.takingAmount, takerOrder.tokenId);
         uint256 feeAmount;
         if (takerOrder.side == Side.BUY) {
-            feeAmount = CalculatorHelper.calculateFee(takerOrder.feeRateBps, takingAmount, takerOrder.makingAmount, takerOrder.takingAmount, takerOrder.side, ctfExchange.BPS_DIVISOR());
+            uint256 takingAmount = _updateTakingWithSurplus(takerOrder.takingAmount, takerOrder.tokenId, 0);
+            feeAmount = CalculatorHelper.calculateFee(takerOrder.feeRateBps, takingAmount, takerOrder.makingAmount, takingAmount, takerOrder.side, ctfExchange.BPS_DIVISOR());
             parsedOrders[0].feeAmount = feeAmount;
             _distributeNoTokens(parsedOrders[0], fillAmount);
             emit OrderFilled(takerOrder.orderHash, takerOrder.maker, address(this), makerAssetId, takerAssetId, takerOrder.makingAmount, takerOrder.takingAmount, feeAmount);
         } else {
-            feeAmount = CalculatorHelper.calculateFee(takerOrder.feeRateBps, takerOrder.makingAmount, takerOrder.makingAmount, takerOrder.takingAmount, takerOrder.side, ctfExchange.BPS_DIVISOR());
+            // Merge NO tokens with taker's YES tokens to get WCOL
+            bytes32 conditionId = neg.getConditionId(takerOrder.questionId);
+            _mergePositions(conditionId, fillAmount);
+            
+            // Get actual payout: WCOL balance minus totalSellUSDC
+            // (we burn fillAmount + totalSellUSDC, but mergeAllYesTokens adds back fillAmount)
+            uint256 takingAmount = _updateTakingWithSurplus(takerOrder.payAmount, 0, totalSellUSDC);
+            parsedOrders[0].payAmount = takingAmount;
+            
+            feeAmount = CalculatorHelper.calculateFee(takerOrder.feeRateBps, takingAmount, takerOrder.makingAmount, takingAmount, takerOrder.side, ctfExchange.BPS_DIVISOR());
             parsedOrders[0].feeAmount = feeAmount;
-            _mergeNoTokens(parsedOrders[0], fillAmount);
-            emit OrderFilled(takerOrder.orderHash, takerOrder.maker, address(this), makerAssetId, takerAssetId, takerOrder.makingAmount, takerOrder.takingAmount, feeAmount);
+            
+            // Pay fee to vault, remaining to taker
+            if (feeAmount > 0) {
+                wcol.unwrap(neg.vault(), feeAmount);
+            }
+            uint256 amountOut = takingAmount - feeAmount;
+            if (amountOut > 0) {
+                wcol.unwrap(takerOrder.maker, amountOut);
+            }
+            
+            emit OrderFilled(takerOrder.orderHash, takerOrder.maker, address(this), makerAssetId, takerAssetId, takerOrder.makingAmount, takingAmount, feeAmount);
         }
 
         // Merge all the YES tokens to get USDC
@@ -371,8 +389,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         revNeg.mergeAllYesTokens(marketId, fillAmount, pivotIndex);
         // wrap the generated USDC to the adapter
         wcol.wrap(address(this), fillAmount);
-
-        // Fees are collected during token distribution/merging
 
         // burn the WCOL, since we minted it earlier
         wcol.burn(fillAmount + totalSellUSDC);
@@ -552,30 +568,45 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         _handleBuyOrders(parsedOrders, fillAmount);
         
         // STEP 4: Handle sell orders: return USDC to sellers
-        uint256 totalVaultUSDC = _handleSellOrders(parsedOrders, fillAmount);
+        _handleSellOrders(parsedOrders, fillAmount);
 
         Parsed memory takerOrder = parsedOrders[0];
         (uint256 makerAssetId, uint256 takerAssetId) = _deriveAssetIds(takerOrder);
         
-        uint256 takingAmount = _updateTakingWithSurplus(takerOrder.takingAmount, takerOrder.tokenId);
         if (takerOrder.side == Side.BUY) {
-            uint256 feeAmount = CalculatorHelper.calculateFee(takerOrder.feeRateBps, takingAmount, takerOrder.makingAmount, takerOrder.takingAmount, takerOrder.side,ctfExchange.BPS_DIVISOR());
+            uint256 takingAmount = _updateTakingWithSurplus(takerOrder.takingAmount, takerOrder.tokenId, 0);
+            uint256 feeAmount = CalculatorHelper.calculateFee(takerOrder.feeRateBps, takingAmount, takerOrder.makingAmount, takingAmount, takerOrder.side,ctfExchange.BPS_DIVISOR());
             takerOrder.feeAmount = feeAmount;
             _processBuyOrder(takerOrder, fillAmount);
             emit OrderFilled(takerOrder.orderHash, takerOrder.maker, address(this), makerAssetId, takerAssetId, takerOrder.makingAmount, takerOrder.takingAmount, feeAmount);
         } else {
-            uint256 feeAmount = CalculatorHelper.calculateFee(takerOrder.feeRateBps, takerOrder.makingAmount, takerOrder.makingAmount, takerOrder.takingAmount, takerOrder.side, ctfExchange.BPS_DIVISOR());
+            // Merge taker's NO tokens with YES to get WCOL
+            bytes32 conditionId = neg.getConditionId(takerOrder.questionId);
+            _mergePositions(conditionId, fillAmount);
+            
+            // Get actual payout: WCOL balance minus totalSellUSDC (which will be burned)
+            uint256 takingAmount = _updateTakingWithSurplus(takerOrder.counterPayAmount, 0, totalSellUSDC);
+            takerOrder.counterPayAmount = takingAmount;
+            
+            uint256 feeAmount = CalculatorHelper.calculateFee(takerOrder.feeRateBps, takingAmount, takerOrder.makingAmount, takingAmount, takerOrder.side, ctfExchange.BPS_DIVISOR());
             takerOrder.feeAmount = feeAmount;
-            totalVaultUSDC += _processSellOrder(takerOrder, fillAmount);
-            emit OrderFilled(takerOrder.orderHash, takerOrder.maker, address(this), makerAssetId, takerAssetId, takerOrder.makingAmount, takerOrder.takingAmount, feeAmount);
+            
+            // Pay fee to vault, remaining to taker
+            if (feeAmount > 0) {
+                wcol.unwrap(neg.vault(), feeAmount);
+            }
+            uint256 amountOut = takingAmount - feeAmount;
+            if (amountOut > 0) {
+                wcol.unwrap(takerOrder.maker, amountOut);
+            }
+            
+            emit OrderFilled(takerOrder.orderHash, takerOrder.maker, address(this), makerAssetId, takerAssetId, takerOrder.makingAmount, takingAmount, feeAmount);
         }
 
         // STEP 5: Burning extra WCOL to maintain self-financing
-        // Since we're minting WCOL for seller returns,
-        // we need to burn it back to maintain self-financing
-        uint256 remainingWCOL = wcol.balanceOf(address(this));
-        if (remainingWCOL > 0 && remainingWCOL >= totalVaultUSDC) {
-            wcol.burn(totalVaultUSDC);
+        // We minted totalSellUSDC upfront, now burn it back
+        if (totalSellUSDC > 0) {
+            wcol.burn(totalSellUSDC);
         }
 
         emit OrdersMatched(takerOrder.orderHash, takerOrder.maker, makerAssetId, takerAssetId, takerOrder.makingAmount, takerOrder.takingAmount);
@@ -595,35 +626,30 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
     function _handleSellOrders(
         Parsed[] memory parsedOrders,
         uint256 fillAmount
-    ) internal returns (uint256) {
-        uint256 totalVaultUSDC = 0;
+    ) internal {
         Parsed memory takerOrder = parsedOrders[0];
         for (uint256 i = 1; i < parsedOrders.length; i++) {
             if (parsedOrders[i].side == Side.SELL) {
-                totalVaultUSDC += _processSellOrder(parsedOrders[i], fillAmount);
+                _processSellOrder(parsedOrders[i], fillAmount);
                 (uint256 makerAssetId, uint256 takerAssetId) = _deriveAssetIds(parsedOrders[i]);
                 emit OrderFilled(parsedOrders[i].orderHash, parsedOrders[i].maker, takerOrder.maker, makerAssetId, takerAssetId, parsedOrders[i].makingAmount, parsedOrders[i].takingAmount, parsedOrders[i].feeAmount);
             }
         }
-        return totalVaultUSDC;
     }
     
     function _processSellOrder(
         Parsed memory order,
-        // bytes32 marketId,
         uint256 fillAmount
-    ) internal returns (uint256) {
+    ) internal {
         // For sell orders, we need to merge the user's NO tokens with the generated YES tokens
         // to get USDC, which will be used to pay back the vault and the user
         
         require(order.side == Side.SELL, "Order must be a sell order");
-        uint256 noPositionId = order.tokenId;
         
         // Get the condition ID for this question from the NegRiskAdapter
         bytes32 conditionId = neg.getConditionId(order.questionId);
         
-        // Use NegRiskAdapter's mergePositions function instead of calling ConditionalTokens directly
-        // This ensures the tokens are merged correctly with the right collateral token
+        // Merge positions to get WCOL
         _mergePositions(conditionId, fillAmount);
         
         // Calculate fee for this order
@@ -639,8 +665,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         if (amountOut > 0) {
             wcol.unwrap(order.maker, amountOut);
         }
-        
-        return order.payAmount;
     }
 
     function _handleBuyOrders(
@@ -822,10 +846,10 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         ctf.splitPosition(address(wcol), bytes32(0), _conditionId, Helpers.partition(), _amount);
     }
 
-    function _updateTakingWithSurplus(uint256 minimumAmount, uint256 tokenId) internal returns (uint256) {
+    function _updateTakingWithSurplus(uint256 minimumAmount, uint256 tokenId, uint256 burnAmount) internal returns (uint256) {
         uint256 actualAmount = _getBalance(tokenId);
-        if (actualAmount < minimumAmount) revert ITradingEE.TooLittleTokensReceived();
-        return actualAmount;
+        if (actualAmount < burnAmount + minimumAmount) revert ITradingEE.TooLittleTokensReceived();
+        return actualAmount - burnAmount;
     }
 
     function _deriveAssetIds(Parsed memory order) internal pure returns (uint256 makerAssetId, uint256 takerAssetId) {
