@@ -187,8 +187,47 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
 
         // Process all single maker orders in a single batch call
         if (singleOrderCount > 0) {
-            // Single call to match all orders at once
+            uint256[2] memory feeTokenIds;
+            uint256 tokenCount = 0;
+
+            if (takerOrder.side == Side.BUY) {
+                feeTokenIds[tokenCount] = takerOrder.tokenId;
+                tokenCount++;
+            }
+
+            for (uint256 i = 0; i < singleOrderCount; i++) {
+                if (singleMakerOrders[i].side == Side.BUY) {
+                    feeTokenIds[tokenCount] = singleMakerOrders[i].tokenId;
+                    tokenCount++;
+                    break;
+                }
+            }
+
             ctfExchange.matchOrders(takerOrder, singleMakerOrders, singleOrdersTakerAmount, singleMakerFillAmounts);
+
+            // Forward fees to vault (fees are sent to msg.sender by ctfExchange)
+            _forwardFeesToVault(feeTokenIds, tokenCount);
+        }
+    }
+
+    /// @notice Forwards accumulated fees to the vault
+    /// @param feeTokenIds Array of CTF token IDs that may have fees (from BUY orders)
+    /// @param tokenCount Number of token IDs to check (0, 1, or 2)
+    function _forwardFeesToVault(uint256[2] memory feeTokenIds, uint256 tokenCount) internal {
+        address vault = neg.vault();
+
+        // Forward USDC fees (from SELL orders)
+        uint256 usdcBalance = usdc.balanceOf(address(this));
+        if (usdcBalance > 0) {
+            usdc.transfer(vault, usdcBalance);
+        }
+
+        // Forward CTF token fees (from BUY orders)
+        for (uint256 i = 0; i < tokenCount; i++) {
+            uint256 balance = ctf.balanceOf(address(this), feeTokenIds[i]);
+            if (balance > 0) {
+                ctf.safeTransferFrom(address(this), vault, feeTokenIds[i], balance, "");
+            }
         }
     }
 
