@@ -290,9 +290,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         // Validate all maker orders signatures and parameters and update the order status
         for (uint256 i = 0; i < multiOrderMaker.length; ) {
             (uint256 makerTakingAmount, bytes32 orderHash) = ctfExchange.performOrderChecks(multiOrderMaker[i], makerFillAmounts[i]);
-
-            uint256 makerShares = multiOrderMaker[i].side == Side.BUY ? makerTakingAmount : makerFillAmounts[i];
-            if (makerShares != fillAmount) revert FillAmountMismatch();
+            _checkMakerShares(multiOrderMaker[i].side, makerTakingAmount, makerFillAmounts[i], fillAmount);
 
             parsedOrders[i + 1] = _parseOrder(multiOrderMaker[i], fillAmount, makerFillAmounts[i], makerTakingAmount, orderHash);
             totalCombinedPrice += parsedOrders[i + 1].priceQ6;
@@ -532,9 +530,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         // Parse maker orders
         for (uint256 i = 0; i < multiOrderMaker.length; ) {
             (uint256 makerTakingAmount, bytes32 orderHash) = ctfExchange.performOrderChecks(multiOrderMaker[i], makerFillAmounts[i]);
-
-            uint256 makerShares = multiOrderMaker[i].side == Side.BUY ? makerTakingAmount : makerFillAmounts[i];
-            if (makerShares != fillAmount) revert FillAmountMismatch();
+            _checkMakerShares(multiOrderMaker[i].side, makerTakingAmount, makerFillAmounts[i], fillAmount);
 
             parsedOrders[i + 1] = _parseOrder(multiOrderMaker[i], fillAmount, makerFillAmounts[i], makerTakingAmount, orderHash);
             if (parsedOrders[i + 1].side == Side.SELL) {
@@ -861,5 +857,18 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
     function _deriveAssetIds(Parsed memory order) internal pure returns (uint256 makerAssetId, uint256 takerAssetId) {
         if (order.side == Side.BUY) return (0, order.tokenId);
         return (order.tokenId, 0);
+    }
+
+    /// @dev Ensures the maker leg settles exactly `fillAmount` shares so that the order book
+    ///      accounting (driven by makerFillAmounts) cannot diverge from the on-chain
+    ///      settlement (driven by fillAmount).
+    function _checkMakerShares(
+        Side makerSide,
+        uint256 makerTakingAmount,
+        uint256 makerFillAmount,
+        uint256 fillAmount
+    ) internal pure {
+        uint256 makerShares = makerSide == Side.BUY ? makerTakingAmount : makerFillAmount;
+        if (makerShares != fillAmount) revert FillAmountMismatch();
     }
 }
