@@ -7,6 +7,9 @@ lcov.info
 # Ignore Forge broadcast artifacts
 **/broadcast/
 
+# Ignore Forge gas snapshots
+.forge-snapshots/
+
 # Dotenv file
 .env
 
