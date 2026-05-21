@@ -714,4 +714,138 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
             revAdapter.convertPositions(marketId, _targetIndex, _amount, brian);
         }
     }
-} 
+
+    /// @notice Target question is already resolved -> revert MarketAlreadyResolved.
+    function test_revert_convertPositions_marketAlreadyResolved(
+        uint256 _questionCount,
+        uint256 _targetIndex,
+        uint128 _amount
+    ) public {
+        vm.assume(_amount > 0);
+        _questionCount = bound(_questionCount, 2, QUESTION_COUNT_MAX);
+        _targetIndex = bound(_targetIndex, 0, _questionCount - 1);
+
+        _before(_questionCount, 0, _targetIndex, _amount);
+
+        // Resolve the TARGET question (outcome value doesn't matter).
+        bytes32 targetQuestionId = NegRiskIdLib.getQuestionId(marketId, uint8(_targetIndex));
+        vm.prank(oracle);
+        nrAdapter.reportOutcome(targetQuestionId, false);
+
+        vm.startPrank(brian);
+        ctf.setApprovalForAll(address(revAdapter), true);
+
+        vm.expectRevert(MarketAlreadyResolved.selector);
+        revAdapter.convertPositions(marketId, _targetIndex, _amount, brian);
+        vm.stopPrank();
+    }
+
+    /// @notice Every non-target question is already resolved -> revert NoUnresolvedPositions.
+    function test_revert_convertPositions_noUnresolvedPositions(
+        uint256 _questionCount,
+        uint256 _targetIndex,
+        uint128 _amount
+    ) public {
+        vm.assume(_amount > 0);
+        _questionCount = bound(_questionCount, 2, QUESTION_COUNT_MAX);
+        _targetIndex = bound(_targetIndex, 0, _questionCount - 1);
+
+        _before(_questionCount, 0, _targetIndex, _amount);
+
+        // Resolve every non-target question to NO (adversarial setup).
+        for (uint256 j = 0; j < _questionCount; j++) {
+            if (j != _targetIndex) {
+                bytes32 questionIdJ = NegRiskIdLib.getQuestionId(marketId, uint8(j));
+                vm.prank(oracle);
+                nrAdapter.reportOutcome(questionIdJ, false);
+            }
+        }
+
+        vm.startPrank(brian);
+        ctf.setApprovalForAll(address(revAdapter), true);
+
+        vm.expectRevert(NoUnresolvedPositions.selector);
+        revAdapter.convertPositions(marketId, _targetIndex, _amount, brian);
+        vm.stopPrank();
+    }
+
+    /// @notice Partial resolution: some non-target questions resolved (worthless YES),
+    ///         but at least one non-target stays unresolved and target stays unresolved.
+    ///         The operation must succeed and only burn YES for UNRESOLVED non-targets.
+    function test_convertPositions_partiallyResolved(uint128 _amount) public {
+        vm.assume(_amount > 0);
+        uint256 _questionCount = 4;
+        uint256 _targetIndex = 0;
+
+        _before(_questionCount, 0, _targetIndex, _amount);
+
+        // Resolve question index 1 to NO. brian's YES(q1) is now worthless but
+        // he still holds it; the adapter should NOT pull/burn it.
+        bytes32 questionId1 = NegRiskIdLib.getQuestionId(marketId, 1);
+        vm.prank(oracle);
+        nrAdapter.reportOutcome(questionId1, false);
+
+        vm.startPrank(brian);
+        ctf.setApprovalForAll(address(revAdapter), true);
+
+        vm.expectEmit(true, true, true, true);
+        emit PositionsConverted(brian, marketId, _targetIndex, _amount);
+        revAdapter.convertPositions(marketId, _targetIndex, _amount, brian);
+        vm.stopPrank();
+
+        address burnAddr = revAdapter.getYesTokenBurnAddress();
+
+        // (a) YES(q1) was NOT burned — still in brian's hands.
+        uint256 yesPos1 = nrAdapter.getPositionId(questionId1, true);
+        assertEq(ctf.balanceOf(brian, yesPos1), _amount, "resolved YES must remain with brian");
+        assertEq(ctf.balanceOf(burnAddr, yesPos1), 0, "resolved YES must not be at burn addr");
+
+        // (b) YES for unresolved non-targets q2 & q3 WERE burned.
+        for (uint8 j = 2; j < uint8(_questionCount); j++) {
+            uint256 yesPosJ = nrAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, j), true);
+            assertEq(ctf.balanceOf(brian, yesPosJ), 0, "unresolved YES must leave brian");
+            assertEq(ctf.balanceOf(burnAddr, yesPosJ), _amount, "unresolved YES must be at burn addr");
+        }
+
+        // (c) brian received NO(target).
+        uint256 noTargetPos =
+            nrAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, uint8(_targetIndex)), false);
+        assertEq(ctf.balanceOf(brian, noTargetPos), _amount, "brian must receive NO(target)");
+
+        // (d) Core invariant: the adapter holds no WCOL.
+        assertEq(wcol.balanceOf(address(revAdapter)), 0, "adapter WCOL must be 0");
+    }
+
+    /// @notice CEI guarantee: if the YES burn reverts (e.g. user is missing
+    ///         a required YES token), wcol.mint MUST NOT have executed.
+    ///         Pre-fix the mint ran before the burn; this test locks that ordering in.
+    function test_convertPositions_noUnbackedMintOnFailedBurn(uint128 _amount) public {
+        vm.assume(_amount > 0);
+        uint256 _questionCount = 3;
+        uint256 _targetIndex = 0;
+
+        _before(_questionCount, 0, _targetIndex, _amount);
+
+        // Take one required YES token away from brian so the batch burn will revert.
+        bytes32 questionId1 = NegRiskIdLib.getQuestionId(marketId, 1);
+        uint256 yesPos1 = nrAdapter.getPositionId(questionId1, true);
+        vm.prank(brian);
+        ctf.safeTransferFrom(brian, alice, yesPos1, _amount, "");
+
+        uint256 wcolSupplyBefore = wcol.totalSupply();
+
+        vm.startPrank(brian);
+        ctf.setApprovalForAll(address(revAdapter), true);
+        vm.expectRevert();
+        revAdapter.convertPositions(marketId, _targetIndex, _amount, brian);
+        vm.stopPrank();
+
+        // WCOL supply must be unchanged - the mint never happened.
+        assertEq(
+            wcol.totalSupply(),
+            wcolSupplyBefore,
+            "WCOL must not be minted when the YES burn fails (CEI violation)"
+        );
+        assertEq(wcol.balanceOf(address(revAdapter)), 0, "adapter WCOL must be 0 after revert");
+    }
+}

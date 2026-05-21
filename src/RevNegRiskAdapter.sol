@@ -23,6 +23,8 @@ interface IRevNegRiskAdapterEE is IAuthEE {
     error NotApprovedForAll();
     error InvalidTargetIndex();
     error MarketNotPrepared();
+    error NoUnresolvedPositions();
+    error MarketAlreadyResolved();
 
     event PositionsConverted(
         address indexed stakeholder, bytes32 indexed marketId, uint256 indexed targetIndex, uint256 amount
@@ -149,45 +151,49 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, IRevNegRiskAdapterEE, Auth {
             return;
         }
 
-        // **Seed:** adapter mints **+A WCOL** once.
-        wcol.mint(_amount);
 
-        // Collect all yesPositionIds that need to be burned (skip resolved questions and target index)
+        {
+            bytes32 targetConditionId =
+                neg.getConditionId(NegRiskIdLib.getQuestionId(_marketId, uint8(_targetIndex)));
+            if (ctf.payoutDenominator(targetConditionId) != 0) revert MarketAlreadyResolved();
+        }
         uint256[] memory yesPositionIds = new uint256[](questionCount - 1);
         uint256 positionCount = 0;
-        
+
         // **For each j ≠ i (loop):**
         for (uint256 j = 0; j < questionCount;) {
             if (j != _targetIndex) {
                 bytes32 questionId = NegRiskIdLib.getQuestionId(_marketId, uint8(j));
                 bytes32 conditionId = neg.getConditionId(questionId);
-                
-                // Skip resolved questions - they don't have YES tokens to burn
-                // A question is resolved if payoutDenominator >= 1
-                if (ctf.payoutDenominator(conditionId) >= 1) {
-                    unchecked { ++j; }
-                    continue;
+
+                if (ctf.payoutDenominator(conditionId) == 0) {
+                    yesPositionIds[positionCount] = neg.getPositionId(questionId, true);
+                    unchecked { ++positionCount; }
                 }
-                
-                uint256 yesPositionId = neg.getPositionId(questionId, true);
-                yesPositionIds[positionCount] = yesPositionId;
-                unchecked { ++positionCount; }
             }
             unchecked { ++j; }
         }
 
-        // Batch transfer all YES tokens to burn address in a single call (gas optimization)
-        if (positionCount > 0) {
-            // Resize array to actual size if needed
-            if (positionCount < yesPositionIds.length) {
-                assembly {
-                    mstore(yesPositionIds, positionCount)
-                }
+        if (positionCount == 0) revert NoUnresolvedPositions();
+
+        // Resize array down to actual length so the batch transfer is exactly sized.
+        if (positionCount < yesPositionIds.length) {
+            assembly {
+                mstore(yesPositionIds, positionCount)
             }
-            ctf.safeBatchTransferFrom(msg.sender, YES_TOKEN_BURN_ADDRESS, yesPositionIds, Helpers.values(positionCount, _amount), "");
         }
 
-        // Process target question - use the collected USDC to get WCOL for the split
+        ctf.safeBatchTransferFrom(
+            msg.sender,
+            YES_TOKEN_BURN_ADDRESS,
+            yesPositionIds,
+            Helpers.values(positionCount, _amount),
+            ""
+        );
+
+        wcol.mint(_amount);
+
+        // Process target question - split target, burn YES(target), send NO(target) to recipient.
         _processTargetQuestion(_marketId, _targetIndex, _amount, _recipient);
 
         // **Net result:** user's YES tokens burned for non-target questions,
