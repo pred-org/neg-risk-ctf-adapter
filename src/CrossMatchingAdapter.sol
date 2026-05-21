@@ -290,6 +290,10 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         // Validate all maker orders signatures and parameters and update the order status
         for (uint256 i = 0; i < multiOrderMaker.length; ) {
             (uint256 makerTakingAmount, bytes32 orderHash) = ctfExchange.performOrderChecks(multiOrderMaker[i], makerFillAmounts[i]);
+
+            uint256 makerShares = multiOrderMaker[i].side == Side.BUY ? makerTakingAmount : makerFillAmounts[i];
+            if (makerShares != fillAmount) revert FillAmountMismatch();
+
             parsedOrders[i + 1] = _parseOrder(multiOrderMaker[i], fillAmount, makerFillAmounts[i], makerTakingAmount, orderHash);
             totalCombinedPrice += parsedOrders[i + 1].priceQ6;
             if (parsedOrders[i + 1].side == Side.SELL) {
@@ -528,6 +532,10 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         // Parse maker orders
         for (uint256 i = 0; i < multiOrderMaker.length; ) {
             (uint256 makerTakingAmount, bytes32 orderHash) = ctfExchange.performOrderChecks(multiOrderMaker[i], makerFillAmounts[i]);
+
+            uint256 makerShares = multiOrderMaker[i].side == Side.BUY ? makerTakingAmount : makerFillAmounts[i];
+            if (makerShares != fillAmount) revert FillAmountMismatch();
+
             parsedOrders[i + 1] = _parseOrder(multiOrderMaker[i], fillAmount, makerFillAmounts[i], makerTakingAmount, orderHash);
             if (parsedOrders[i + 1].side == Side.SELL) {
                 totalSellUSDC += parsedOrders[i + 1].payAmount;

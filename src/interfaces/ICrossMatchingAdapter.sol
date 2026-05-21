@@ -30,6 +30,7 @@ interface ICrossMatchingAdapter {
     error InvalidSingleOrderShape(); // single maker order must have exactly one nested order and fill amount
     error NoConvertiblePositions();
     error MarketNotPrepared();
+    error FillAmountMismatch();    // per-maker share count must match the taker's cross-match unit
 
     // Events
     event OrderFilled(bytes32 indexed orderHash, address indexed maker, address indexed taker, uint256 makerAssetId, uint256 takerAssetId, uint256 makerAmountFilled, uint256 takerAmountFilled, uint256 fee);
