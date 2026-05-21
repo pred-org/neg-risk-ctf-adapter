@@ -118,11 +118,12 @@ contract RevNegRiskAdapter_MergeAllYesTokensResolved_Test is RevNegRiskAdapter_S
     }
 
     /*//////////////////////////////////////////////////////////////
-              Q0 RESOLVED: CALLER MUST PICK A DIFFERENT PIVOT
+                  Q0 RESOLVED: 2-ARG AUTO-PIVOT + 3-ARG EXPLICIT
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice When Q0 IS resolved, the 2-arg overload (default pivot=0) must revert.
-    ///         The 3-arg overload lets the caller select an unresolved pivot (Q1) and succeed.
+    /// @notice When Q0 is resolved, the 2-arg overload auto-skips to the first unresolved
+    ///         question (Q1) and the merge succeeds. The 3-arg overload remains available
+    ///         for callers who want to pick the pivot explicitly.
     function test_mergeAllYesTokens_q0Resolved_explicitPivot(uint128 _amount) public {
         vm.assume(_amount > 0);
         uint256 questionCount = 3;
@@ -133,16 +134,11 @@ contract RevNegRiskAdapter_MergeAllYesTokensResolved_Test is RevNegRiskAdapter_S
         vm.prank(oracle);
         nrAdapter.reportOutcome(q0, true);
 
-        // Default pivot=0 reverts because Q0 is now resolved.
+        // 2-arg overload auto-pivots to Q1 (Q0 is resolved) and succeeds.
         vm.prank(brian);
-        vm.expectRevert(MarketAlreadyResolved.selector);
         revAdapter.mergeAllYesTokens(marketId, _amount);
 
-        // Explicitly pivot on Q1 (unresolved): the merge succeeds.
-        vm.prank(brian);
-        revAdapter.mergeAllYesTokens(marketId, _amount, 1);
-
-        assertEq(usdc.balanceOf(brian), _amount, "Brian should receive USDC from merge via Q1 pivot");
+        assertEq(usdc.balanceOf(brian), _amount, "Brian should receive USDC from auto-pivot merge");
         assertEq(wcol.balanceOf(address(revAdapter)), 0, "WCOL balance must be 0");
 
         address burnAddress = revAdapter.getYesTokenBurnAddress();
@@ -152,7 +148,7 @@ contract RevNegRiskAdapter_MergeAllYesTokensResolved_Test is RevNegRiskAdapter_S
         assertEq(ctf.balanceOf(brian, q0YesId), _amount, "Resolved Q0 YES must remain with brian");
         assertEq(ctf.balanceOf(burnAddress, q0YesId), 0, "Resolved Q0 YES must not be burned");
 
-        // Q1 is the explicit pivot: brian's YES is pulled; the split-minted YES is burned.
+        // Q1 is the auto-selected pivot: brian's YES is pulled; the split-minted YES is burned.
         uint256 q1YesId = nrAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, 1), true);
         assertEq(ctf.balanceOf(brian, q1YesId), 0, "Brian's Q1 YES should be 0");
         assertEq(ctf.balanceOf(burnAddress, q1YesId), _amount, "Q1 pivot YES should be at burn address");

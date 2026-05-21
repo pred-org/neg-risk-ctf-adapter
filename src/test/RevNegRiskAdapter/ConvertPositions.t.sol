@@ -295,28 +295,36 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
     }
 
     function test_revert_convertPositions_noConvertiblePositions() public {
-        vm.prank(oracle);
-        marketId = nrAdapter.prepareMarket(0, "");
-
-        nrAdapter.setPrepared(marketId);
+        // Each scenario uses a distinct market because MarketDataManager forbids
+        // adding questions after setPrepared (MarketAlreadyFinalized).
 
         // 0 questions prepared
-        vm.expectRevert(NoConvertiblePositions.selector);
-        revAdapter.convertPositions(marketId, 0, 0, brian);
-
         vm.prank(oracle);
-        nrAdapter.prepareQuestion(marketId, "");
+        bytes32 marketZero = nrAdapter.prepareMarket(0, "zero");
+        nrAdapter.setPrepared(marketZero);
+        vm.expectRevert(NoConvertiblePositions.selector);
+        revAdapter.convertPositions(marketZero, 0, 0, brian);
 
         // 1 question prepared
-        vm.expectRevert(NoConvertiblePositions.selector);
-        revAdapter.convertPositions(marketId, 0, 0, brian);
-
         vm.prank(oracle);
-        nrAdapter.prepareQuestion(marketId, "");
+        bytes32 marketOne = nrAdapter.prepareMarket(0, "one");
+        vm.prank(oracle);
+        nrAdapter.prepareQuestion(marketOne, "");
+        nrAdapter.setPrepared(marketOne);
+        vm.expectRevert(NoConvertiblePositions.selector);
+        revAdapter.convertPositions(marketOne, 0, 0, brian);
 
-        // 2 questions prepared - should work
+        // 2 questions prepared - amount=0 returns early
+        vm.prank(oracle);
+        bytes32 marketTwo = nrAdapter.prepareMarket(0, "two");
+        vm.prank(oracle);
+        nrAdapter.prepareQuestion(marketTwo, "");
+        vm.prank(oracle);
+        nrAdapter.prepareQuestion(marketTwo, "");
+        nrAdapter.setPrepared(marketTwo);
+
         vm.prank(brian);
-        revAdapter.convertPositions(marketId, 0, 0, brian);
+        revAdapter.convertPositions(marketTwo, 0, 0, brian);
     }
 
     function test_revert_convertPositions_invalidTargetIndex(uint256 _questionCount, uint256 _targetIndex) public {

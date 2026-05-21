@@ -11,6 +11,8 @@ interface IMarketStateManagerEE {
     error MarketAlreadyPrepared();
     error MarketAlreadyDetermined();
     error FeeBipsOutOfBounds();
+    error MarketAlreadyFinalized();
+    error QuestionCountOverflow();
 }
 
 /// @title MarketStateManager
@@ -77,12 +79,15 @@ abstract contract MarketStateManager is IMarketStateManagerEE {
     /// @return index      - the resulting question index
     function _prepareQuestion(bytes32 _marketId) internal returns (bytes32 questionId, uint256 index) {
         MarketData md = marketData[_marketId];
-        address oracle = marketData[_marketId].oracle();
+        address oracle = md.oracle();
 
         if (oracle == address(0)) revert MarketNotPrepared();
         if (oracle != msg.sender) revert OnlyOracle();
+        if (md.prepared()) revert MarketAlreadyFinalized();
 
         index = md.questionCount();
+        // Guard against questionCount overflowing into the determined flag
+        if (index >= 255) revert QuestionCountOverflow();
         questionId = NegRiskIdLib.getQuestionId(_marketId, uint8(index));
         marketData[_marketId] = md.incrementQuestionCount();
     }

@@ -2,6 +2,10 @@
 cache/
 out/
 
+# Forge gas snapshots (already-tracked files will still show modifications;
+# run `git rm --cached -r .forge-snapshots/` to fully untrack them).
+.forge-snapshots/
+
 lcov.info
 
 # Ignore Forge broadcast artifacts
