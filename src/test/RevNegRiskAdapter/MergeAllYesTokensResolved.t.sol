@@ -5,217 +5,161 @@ import {console, RevNegRiskAdapter_SetUp} from "src/test/RevNegRiskAdapter/RevNe
 import {NegRiskIdLib} from "src/libraries/NegRiskIdLib.sol";
 import {IConditionalTokens} from "src/interfaces/IConditionalTokens.sol";
 
+/// @notice Tests for mergeAllYesTokens in markets that contain at least one
+///         resolved question. The audit fix forbids using a RESOLVED question
+///         as the pivot, but resolved NON-pivot questions are skipped gracefully
+///         so the user can still merge the remaining YES tokens to USDC.
 contract RevNegRiskAdapter_MergeAllYesTokensResolved_Test is RevNegRiskAdapter_SetUp {
     uint256 constant QUESTION_COUNT_MAX = 32;
     bytes32 marketId;
-    bytes32 questionId0;
-    bytes32 conditionId0;
-    uint256 positionIdFalse0;
-    uint256 positionIdTrue0;
 
+    /// @dev Prepare a market with `_questionCount` questions, split USDC to alice
+    ///      for each, and transfer alice's YES tokens for ALL questions to brian.
+    ///      Does NOT resolve any question; resolution is left to each test.
     function _before(uint256 _questionCount, uint256 _feeBips, uint256 _amount) internal {
-        bytes memory data = new bytes(0);
-
-        // prepare market
         vm.prank(oracle);
-        marketId = nrAdapter.prepareMarket(_feeBips, data);
+        marketId = nrAdapter.prepareMarket(_feeBips, "");
 
-        uint8 i = 0;
-
-        // prepare questions and split initial liquidity to alice
-        while (i < _questionCount) {
+        for (uint8 i = 0; i < _questionCount; ++i) {
             vm.prank(oracle);
-            bytes32 questionId = nrAdapter.prepareQuestion(marketId, data);
+            bytes32 questionId = nrAdapter.prepareQuestion(marketId, "");
             bytes32 conditionId = nrAdapter.getConditionId(questionId);
 
-            // split position to alice
             vm.startPrank(alice);
             usdc.mint(alice, _amount);
             usdc.approve(address(nrAdapter), _amount);
             nrAdapter.splitPosition(conditionId, _amount);
             vm.stopPrank();
-
-            // Store the 0th question details
-            if (i == 0) {
-                questionId0 = questionId;
-                conditionId0 = conditionId;
-                positionIdFalse0 = nrAdapter.getPositionId(questionId, false);
-                positionIdTrue0 = nrAdapter.getPositionId(questionId, true);
-            }
-
-            unchecked { ++i; }
         }
 
         nrAdapter.setPrepared(marketId);
+        assertEq(nrAdapter.getQuestionCount(marketId), _questionCount);
 
-        // resolve the 0th question to true
-        vm.prank(oracle);
-        nrAdapter.reportOutcome(marketId, true);
-
-        // transfer all YES tokens from alice to brian
-        for (uint256 j = 1; j < _questionCount; j++) {
-            bytes32 questionId = NegRiskIdLib.getQuestionId(marketId, uint8(j));
-            uint256 yesPositionId = nrAdapter.getPositionId(questionId, true);
-            uint256 balance = ctf.balanceOf(alice, yesPositionId);
-            
+        // Forward all of alice's YES tokens to brian.
+        for (uint8 i = 0; i < _questionCount; ++i) {
+            uint256 yesId = nrAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, i), true);
             vm.prank(alice);
-            ctf.safeTransferFrom(alice, brian, yesPositionId, balance, "");
+            ctf.safeTransferFrom(alice, brian, yesId, _amount, "");
+            assertEq(ctf.balanceOf(brian, yesId), _amount);
         }
 
-        // also transfer the 0th question YES tokens to brian
-        uint256 balance0 = ctf.balanceOf(alice, positionIdTrue0);
-        vm.prank(alice);
-        ctf.safeTransferFrom(alice, brian, positionIdTrue0, balance0, "");
-    }
-
-    function test_mergeAllYesTokens_resolvedQuestionBehavior() public {
-        uint256 questionCount = 3;
-        uint256 feeBips = 1000; // 10%
-        uint256 amount = 100e6; // 100 USDC
-
-        _before(questionCount, feeBips, amount);
-
-        // check initial balances
-        uint256 initialUsdcBalance = usdc.balanceOf(brian);
-        uint256 initialWcolBalance = wcol.balanceOf(brian);
-
-        console.log("Initial USDC balance:", initialUsdcBalance);
-        console.log("Initial WCOL balance:", initialWcolBalance);
-
-        // approve the adapter to spend brian's tokens
         vm.startPrank(brian);
-        usdc.approve(address(revAdapter), amount);
         ctf.setApprovalForAll(address(revAdapter), true);
         vm.stopPrank();
-
-        // call mergeAllYesTokens
-        vm.prank(brian);
-        revAdapter.mergeAllYesTokens(marketId, amount);
-
-        // check final balances
-        uint256 finalUsdcBalance = usdc.balanceOf(brian);
-        uint256 finalWcolBalance = wcol.balanceOf(brian);
-
-        console.log("Final USDC balance:", finalUsdcBalance);
-        console.log("Final WCOL balance:", finalWcolBalance);
-
-        // The function should work even with resolved questions
-        // Brian should receive USDC from the merge operation
-        assertTrue(finalUsdcBalance > initialUsdcBalance, "Brian should receive USDC");
-        
-        // WCOL balance should be 0
-        assertEq(finalWcolBalance, 0, "WCOL balance should be 0");
-
-        // Verify all YES tokens are consumed after merge
-        address burnAddress = revAdapter.getYesTokenBurnAddress();
-        
-        // Check that all YES tokens from questions 1 to n-1 are burned
-        for (uint256 j = 1; j < questionCount; j++) {
-            bytes32 questionId = NegRiskIdLib.getQuestionId(marketId, uint8(j));
-            uint256 yesPositionId = nrAdapter.getPositionId(questionId, true);
-            assertEq(ctf.balanceOf(brian, yesPositionId), 0, "All YES tokens from non-target questions should be consumed");
-            assertEq(ctf.balanceOf(burnAddress, yesPositionId), amount, string(abi.encodePacked("YES tokens for question ", vm.toString(j), " should be at burn address")));
-        }
-
-        // Check that the 0th question YES tokens are also consumed and burned
-        assertEq(ctf.balanceOf(brian, positionIdTrue0), 0, "0th question YES tokens should be consumed");
-        assertEq(ctf.balanceOf(burnAddress, positionIdTrue0), amount, "0th question YES tokens should be at burn address");
     }
 
-    function test_mergeAllYesTokens_resolvedQuestionFalse() public {
+    /*//////////////////////////////////////////////////////////////
+                       1 OF 3 RESOLVED, NOT THE PIVOT
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice With 3 questions and Q1 resolved (the resolved question is NOT the pivot),
+    ///         mergeAllYesTokens(pivotId=0) settles via Q0 and processes the remaining
+    ///         non-pivot YES (Q2). YES(Q1) is left with brian (worthless / redeemable separately).
+    function test_mergeAllYesTokens_resolvedNonPivotQuestionTrue(uint128 _amount) public {
+        vm.assume(_amount > 0);
         uint256 questionCount = 3;
-        uint256 feeBips = 1000; // 10%
-        uint256 amount = 100e6; // 100 USDC
+        uint256 resolvedIdx = 1; // non-pivot
 
-        // Create a new market for this test to avoid the "payout denominator already set" error
-        bytes memory data = new bytes(0);
+        _before(questionCount, 0, _amount);
+
+        bytes32 resolvedQuestionId = NegRiskIdLib.getQuestionId(marketId, uint8(resolvedIdx));
         vm.prank(oracle);
-        bytes32 newMarketId = nrAdapter.prepareMarket(feeBips, data);
+        nrAdapter.reportOutcome(resolvedQuestionId, true);
 
-        uint8 i = 0;
-        // prepare questions and split initial liquidity to alice
-        while (i < questionCount) {
-            vm.prank(oracle);
-            bytes32 questionId = nrAdapter.prepareQuestion(newMarketId, data);
-            bytes32 conditionId = nrAdapter.getConditionId(questionId);
+        uint256 usdcBefore = usdc.balanceOf(brian);
 
-            // split position to alice
-            vm.startPrank(alice);
-            usdc.mint(alice, amount);
-            usdc.approve(address(nrAdapter), amount);
-            nrAdapter.splitPosition(conditionId, amount);
-            vm.stopPrank();
-
-            // Store the 0th question details
-            if (i == 0) {
-                questionId0 = questionId;
-                conditionId0 = conditionId;
-                positionIdFalse0 = nrAdapter.getPositionId(questionId, false);
-                positionIdTrue0 = nrAdapter.getPositionId(questionId, true);
-            }
-
-            unchecked { ++i; }
-        }
-
-        nrAdapter.setPrepared(newMarketId);
-
-        // resolve the 0th question to false
-        vm.prank(oracle);
-        nrAdapter.reportOutcome(newMarketId, false);
-
-        // transfer all YES tokens from alice to brian
-        for (uint256 j = 1; j < questionCount; j++) {
-            bytes32 questionId = NegRiskIdLib.getQuestionId(newMarketId, uint8(j));
-            uint256 yesPositionId = nrAdapter.getPositionId(questionId, true);
-            uint256 balance = ctf.balanceOf(alice, yesPositionId);
-            
-            vm.prank(alice);
-            ctf.safeTransferFrom(alice, brian, yesPositionId, balance, "");
-        }
-
-        // also transfer the 0th question YES tokens to brian
-        uint256 balance0 = ctf.balanceOf(alice, positionIdTrue0);
-        vm.prank(alice);
-        ctf.safeTransferFrom(alice, brian, positionIdTrue0, balance0, "");
-
-        // check initial balances
-        uint256 initialUsdcBalance = usdc.balanceOf(brian);
-        uint256 initialWcolBalance = wcol.balanceOf(brian);
-
-        // approve the adapter to spend brian's tokens
-        vm.startPrank(brian);
-        usdc.approve(address(revAdapter), amount);
-        ctf.setApprovalForAll(address(revAdapter), true);
-        vm.stopPrank();
-
-        // call mergeAllYesTokens
         vm.prank(brian);
-        revAdapter.mergeAllYesTokens(newMarketId, amount);
+        revAdapter.mergeAllYesTokens(marketId, _amount);
 
-        // check final balances
-        uint256 finalUsdcBalance = usdc.balanceOf(brian);
-        uint256 finalWcolBalance = wcol.balanceOf(brian);
+        // Brian receives full _amount USDC from the pivot merge (no fees on this flow).
+        assertEq(usdc.balanceOf(brian), usdcBefore + _amount, "Brian should receive USDC from merge");
+        assertEq(wcol.balanceOf(address(revAdapter)), 0, "WCOL balance must be 0");
 
-        // The function should work even with resolved questions
-        // Brian should receive USDC from the merge operation
-        assertTrue(finalUsdcBalance > initialUsdcBalance, "Brian should receive USDC");
-        
-        // WCOL balance should be 0
-        assertEq(finalWcolBalance, 0, "WCOL balance should be 0");
-
-        // Verify all YES tokens are consumed after merge
         address burnAddress = revAdapter.getYesTokenBurnAddress();
-        
-        // Check that all YES tokens from questions 1 to n-1 are burned
-        for (uint256 j = 1; j < questionCount; j++) {
-            bytes32 questionId = NegRiskIdLib.getQuestionId(newMarketId, uint8(j));
-            uint256 yesPositionId = nrAdapter.getPositionId(questionId, true);
-            assertEq(ctf.balanceOf(brian, yesPositionId), 0, "All YES tokens from non-target questions should be consumed");
-            assertEq(ctf.balanceOf(burnAddress, yesPositionId), amount, string(abi.encodePacked("YES tokens for question ", vm.toString(j), " should be at burn address")));
-        }
 
-        // Check that the 0th question YES tokens are also consumed and burned
-        assertEq(ctf.balanceOf(brian, positionIdTrue0), 0, "0th question YES tokens should be consumed");
-        assertEq(ctf.balanceOf(burnAddress, positionIdTrue0), amount, "0th question YES tokens should be at burn address");
+        // Pivot YES (Q0): minted by the internal split and sent to burn; brian's own YES(Q0)
+        // is pulled into the adapter and then consumed by the final mergePositions.
+        uint256 pivotYesId = nrAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, 0), true);
+        assertEq(ctf.balanceOf(brian, pivotYesId), 0, "Brian pivot YES should be 0");
+        assertEq(ctf.balanceOf(burnAddress, pivotYesId), _amount, "Pivot YES should be at burn address");
+
+        // Resolved non-pivot YES (Q1): NOT touched — still with brian, not at the burn address.
+        uint256 resolvedYesId = nrAdapter.getPositionId(resolvedQuestionId, true);
+        assertEq(ctf.balanceOf(brian, resolvedYesId), _amount, "Resolved non-pivot YES must remain with brian");
+        assertEq(ctf.balanceOf(burnAddress, resolvedYesId), 0, "Resolved non-pivot YES must not be burned");
+
+        // Unresolved non-pivot YES (Q2): burned via the batch transfer in convertPositions.
+        uint256 otherYesId = nrAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, 2), true);
+        assertEq(ctf.balanceOf(brian, otherYesId), 0, "Unresolved non-pivot YES should leave brian");
+        assertEq(ctf.balanceOf(burnAddress, otherYesId), _amount, "Unresolved non-pivot YES should be burned");
+    }
+
+    /// @notice Same flow but the resolved non-pivot question pays out FALSE.
+    function test_mergeAllYesTokens_resolvedNonPivotQuestionFalse(uint128 _amount) public {
+        vm.assume(_amount > 0);
+        uint256 questionCount = 3;
+        uint256 resolvedIdx = 1;
+
+        _before(questionCount, 0, _amount);
+
+        bytes32 resolvedQuestionId = NegRiskIdLib.getQuestionId(marketId, uint8(resolvedIdx));
+        vm.prank(oracle);
+        nrAdapter.reportOutcome(resolvedQuestionId, false);
+
+        vm.prank(brian);
+        revAdapter.mergeAllYesTokens(marketId, _amount);
+
+        assertEq(usdc.balanceOf(brian), _amount, "Brian should receive USDC from merge");
+        assertEq(wcol.balanceOf(address(revAdapter)), 0, "WCOL balance must be 0");
+
+        // Resolved non-pivot YES must not be pulled regardless of outcome value.
+        uint256 resolvedYesId = nrAdapter.getPositionId(resolvedQuestionId, true);
+        assertEq(ctf.balanceOf(brian, resolvedYesId), _amount, "Resolved non-pivot YES must remain with brian");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+              Q0 RESOLVED: CALLER MUST PICK A DIFFERENT PIVOT
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice When Q0 IS resolved, the 2-arg overload (default pivot=0) must revert.
+    ///         The 3-arg overload lets the caller select an unresolved pivot (Q1) and succeed.
+    function test_mergeAllYesTokens_q0Resolved_explicitPivot(uint128 _amount) public {
+        vm.assume(_amount > 0);
+        uint256 questionCount = 3;
+
+        _before(questionCount, 0, _amount);
+
+        bytes32 q0 = NegRiskIdLib.getQuestionId(marketId, 0);
+        vm.prank(oracle);
+        nrAdapter.reportOutcome(q0, true);
+
+        // Default pivot=0 reverts because Q0 is now resolved.
+        vm.prank(brian);
+        vm.expectRevert(MarketAlreadyResolved.selector);
+        revAdapter.mergeAllYesTokens(marketId, _amount);
+
+        // Explicitly pivot on Q1 (unresolved): the merge succeeds.
+        vm.prank(brian);
+        revAdapter.mergeAllYesTokens(marketId, _amount, 1);
+
+        assertEq(usdc.balanceOf(brian), _amount, "Brian should receive USDC from merge via Q1 pivot");
+        assertEq(wcol.balanceOf(address(revAdapter)), 0, "WCOL balance must be 0");
+
+        address burnAddress = revAdapter.getYesTokenBurnAddress();
+
+        // Resolved Q0's YES stays with brian (skipped in the burn loop).
+        uint256 q0YesId = nrAdapter.getPositionId(q0, true);
+        assertEq(ctf.balanceOf(brian, q0YesId), _amount, "Resolved Q0 YES must remain with brian");
+        assertEq(ctf.balanceOf(burnAddress, q0YesId), 0, "Resolved Q0 YES must not be burned");
+
+        // Q1 is the explicit pivot: brian's YES is pulled; the split-minted YES is burned.
+        uint256 q1YesId = nrAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, 1), true);
+        assertEq(ctf.balanceOf(brian, q1YesId), 0, "Brian's Q1 YES should be 0");
+        assertEq(ctf.balanceOf(burnAddress, q1YesId), _amount, "Q1 pivot YES should be at burn address");
+
+        // Q2 (unresolved non-pivot) is burned via the batch transfer.
+        uint256 q2YesId = nrAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, 2), true);
+        assertEq(ctf.balanceOf(brian, q2YesId), 0, "Brian's Q2 YES should be 0");
+        assertEq(ctf.balanceOf(burnAddress, q2YesId), _amount, "Q2 YES should be burned");
     }
 }

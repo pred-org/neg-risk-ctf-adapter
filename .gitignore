@@ -4,11 +4,11 @@ out/
 
 lcov.info
 
-# Ignores development broadcast logs
-!/broadcast
-/broadcast/*/31337/
-/broadcast/**/dry-run/
-/broadcast
+# Ignore Forge broadcast artifacts
+**/broadcast/
+
+# Ignore Forge gas snapshots
+.forge-snapshots/
 
 # Dotenv file
 .env
