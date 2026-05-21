@@ -166,10 +166,16 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, IRevNegRiskAdapterEE, Auth {
                 bytes32 questionId = NegRiskIdLib.getQuestionId(_marketId, uint8(j));
                 bytes32 conditionId = neg.getConditionId(questionId);
 
-                if (ctf.payoutDenominator(conditionId) == 0) {
-                    yesPositionIds[positionCount] = neg.getPositionId(questionId, true);
-                    unchecked { ++positionCount; }
+                // Skip resolved questions - they don't have YES tokens to burn
+                // A question is resolved if payoutDenominator >= 1
+                if (ctf.payoutDenominator(conditionId) >= 1) {
+                    unchecked { ++j; }
+                    continue;
                 }
+
+                uint256 yesPositionId = neg.getPositionId(questionId, true);
+                yesPositionIds[positionCount] = yesPositionId;
+                unchecked { ++positionCount; }
             }
             unchecked { ++j; }
         }
