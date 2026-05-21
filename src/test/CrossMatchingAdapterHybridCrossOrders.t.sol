@@ -1865,8 +1865,8 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         ICrossMatchingAdapter.MakerOrder[] memory makerOrders = new ICrossMatchingAdapter.MakerOrder[](1);
         
         makerOrders[0].makerFillAmounts = new uint256[](2);
-        makerOrders[0].makerFillAmounts[0] = 1e6;  // 1 token
-        makerOrders[0].makerFillAmounts[1] = 1e6;  // 1 token
+        makerOrders[0].makerFillAmounts[0] = 0.2e6;
+        makerOrders[0].makerFillAmounts[1] = 0.2e6;
         
         makerOrders[0].orders = new OrderIntent[](2);
         // Order 0: YES0 at price 0.3
@@ -2438,6 +2438,112 @@ contract CrossMatchingAdapterHybridCrossOrdersTest is Test, TestHelper, ICrossMa
         assertEq(takerUSDCReceived, 0.30e6, "Taker should receive exactly 0.30 USDC (no improvement)");
         
         console.log("=== SHORT Taker SELL YES Exact Match Test PASSED ===");
+    }
+
+    /// @notice Long cross-match: a BUY maker is signalled with half of the
+    ///         fill that the taker is actually consuming. With the fix this
+    ///         reverts with FillAmountMismatch; without the fix the maker
+    ///         would have been over-filled relative to their signed order.
+    function testHybridMatchCrossLongOrders_revertsWhenMakerFillIsUnderRecorded() public {
+        bytes32[] memory questionIds = new bytes32[](5);
+        uint256[] memory yesPositionIds = new uint256[](5);
+
+        questionIds[0] = questionId;
+        yesPositionIds[0] = yesPositionId;
+
+        for (uint256 i = 1; i < 5; i++) {
+            questionIds[i] = negRiskOperator.prepareQuestion(
+                marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i + 1)
+            );
+            yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
+            uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
+            _registerTokensWithCTFExchange(
+                yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]), questionIds[i]
+            );
+        }
+
+        ICrossMatchingAdapter.MakerOrder[] memory makerOrders = new ICrossMatchingAdapter.MakerOrder[](1);
+        makerOrders[0].makerFillAmounts = new uint256[](4);
+        for (uint256 i = 0; i < 4; i++) {
+            makerOrders[0].makerFillAmounts[i] = 0.1e6;
+        }
+        // Operator reports the second maker as only 50% filled (0.05e6 USDC,
+        // i.e. 0.5e6 YES) while the taker still consumes a full 1e6 unit.
+        makerOrders[0].makerFillAmounts[1] = 0.05e6;
+
+        makerOrders[0].orders = new OrderIntent[](4);
+        makerOrders[0].orders[0] = _createAndSignOrder(user2, yesPositionIds[0], 0, 0.1e6, 1e6, questionIds[0], 0, _user2PK);
+        makerOrders[0].orders[1] = _createAndSignOrder(user3, yesPositionIds[1], 0, 0.1e6, 1e6, questionIds[1], 0, _user3PK);
+        makerOrders[0].orders[2] = _createAndSignOrder(user4, yesPositionIds[2], 0, 0.1e6, 1e6, questionIds[2], 0, _user4PK);
+        makerOrders[0].orders[3] = _createAndSignOrder(user5, yesPositionIds[3], 0, 0.1e6, 1e6, questionIds[3], 0, _user5PK);
+        makerOrders[0].orderType = ICrossMatchingAdapter.OrderType.CROSS_MATCH;
+
+        uint256[] memory takerFillAmount = new uint256[](1);
+        takerFillAmount[0] = 0.6e6;
+
+        OrderIntent memory takerOrder = _createAndSignOrder(
+            user1, yesPositionIds[4], 0, 0.6e6, 1e6, questionIds[4], 0, _user1PK
+        );
+
+        vm.expectRevert(ICrossMatchingAdapter.FillAmountMismatch.selector);
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, 0);
+    }
+
+    /// @notice Short cross-match: a SELL maker is signalled with half of the
+    ///         fill that the taker is actually consuming. With the fix this
+    ///         reverts with FillAmountMismatch.
+    function testHybridMatchCrossOrdersSellers_revertsWhenMakerFillIsUnderRecorded() public {
+        bytes32[] memory questionIds = new bytes32[](5);
+        uint256[] memory yesPositionIds = new uint256[](5);
+
+        questionIds[0] = questionId;
+        yesPositionIds[0] = yesPositionId;
+
+        for (uint256 i = 1; i < 5; i++) {
+            questionIds[i] = negRiskOperator.prepareQuestion(
+                marketId, bytes(abi.encodePacked("Question ", i)), bytes32(i + 1)
+            );
+            yesPositionIds[i] = negRiskAdapter.getPositionId(questionIds[i], true);
+            uint256 noPosId = negRiskAdapter.getPositionId(questionIds[i], false);
+            _registerTokensWithCTFExchange(
+                yesPositionIds[i], noPosId, negRiskAdapter.getConditionId(questionIds[i]), questionIds[i]
+            );
+        }
+
+        negRiskAdapter.setPrepared(marketId);
+
+        ICrossMatchingAdapter.MakerOrder[] memory makerOrders = new ICrossMatchingAdapter.MakerOrder[](1);
+        makerOrders[0].makerFillAmounts = new uint256[](4);
+        for (uint256 i = 0; i < 4; i++) {
+            makerOrders[0].makerFillAmounts[i] = 1e6;
+        }
+        // Operator reports the third maker as only 50% filled (0.5e6 YES)
+        // while the taker still consumes a full 1e6 unit on the other side.
+        makerOrders[0].makerFillAmounts[2] = 0.5e6;
+
+        makerOrders[0].orders = new OrderIntent[](4);
+        makerOrders[0].orders[0] = _createAndSignOrder(user2, yesPositionIds[0], 1, 1e6, 0.1e6, questionIds[0], 1, _user2PK);
+        makerOrders[0].orders[1] = _createAndSignOrder(user3, yesPositionIds[1], 1, 1e6, 0.1e6, questionIds[1], 1, _user3PK);
+        makerOrders[0].orders[2] = _createAndSignOrder(user4, yesPositionIds[2], 1, 1e6, 0.1e6, questionIds[2], 1, _user4PK);
+        makerOrders[0].orders[3] = _createAndSignOrder(user5, yesPositionIds[3], 1, 1e6, 0.1e6, questionIds[3], 1, _user5PK);
+        makerOrders[0].orderType = ICrossMatchingAdapter.OrderType.CROSS_MATCH;
+
+        uint256[] memory takerFillAmount = new uint256[](1);
+        takerFillAmount[0] = 0.4e6;
+
+        uint256 noPositionId4 = negRiskAdapter.getPositionId(questionIds[4], false);
+        OrderIntent memory takerOrder = _createAndSignOrder(
+            user1, noPositionId4, 0, 0.4e6, 1e6, questionIds[4], 1, _user1PK
+        );
+
+        // Mint YES tokens to makers so balance checks don't trip earlier.
+        _mintTokensToUser(user2, yesPositionIds[0], 5e6);
+        _mintTokensToUser(user3, yesPositionIds[1], 5e6);
+        _mintTokensToUser(user4, yesPositionIds[2], 5e6);
+        _mintTokensToUser(user5, yesPositionIds[3], 5e6);
+
+        vm.expectRevert(ICrossMatchingAdapter.FillAmountMismatch.selector);
+        adapter.hybridMatchOrders(marketId, takerOrder, makerOrders, takerFillAmount, 0);
     }
 }
 
