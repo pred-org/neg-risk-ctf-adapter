@@ -212,7 +212,26 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, IRevNegRiskAdapterEE, Auth {
     /// @param _marketId - the marketId
     /// @param _amount   - the amount of tokens to convert
     function mergeAllYesTokens(bytes32 _marketId, uint256 _amount) public {
-        mergeAllYesTokens(_marketId, _amount, 0);
+        mergeAllYesTokens(_marketId, _amount, _findUnresolvedPivot(_marketId));
+    }
+
+    /// @notice Returns the index of the first unresolved question in the market, or 0 if
+    ///         none can be found. Returning 0 in the all-resolved / empty cases preserves
+    ///         backwards-compatible reverts in convertPositions:
+    ///           - questionCount == 0      -> NoConvertiblePositions
+    ///           - questionCount == 1      -> NoConvertiblePositions
+    ///           - all questions resolved  -> MarketAlreadyResolved (when _amount > 0)
+    ///           - _amount == 0            -> early-returns inside convertPositions
+    function _findUnresolvedPivot(bytes32 _marketId) internal view returns (uint256) {
+        uint256 questionCount = neg.getQuestionCount(_marketId);
+        for (uint256 i = 0; i < questionCount;) {
+            bytes32 conditionId = neg.getConditionId(NegRiskIdLib.getQuestionId(_marketId, uint8(i)));
+            if (ctf.payoutDenominator(conditionId) == 0) {
+                return i;
+            }
+            unchecked { ++i; }
+        }
+        return 0;
     }
 
     /// @notice Convert all yes positions to a single no position and then merge to get collateral

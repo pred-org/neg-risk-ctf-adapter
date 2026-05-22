@@ -171,14 +171,16 @@ contract RevNegRiskAdapter_MergeAllYesTokensSimple_Test is RevNegRiskAdapter_Set
 
         _before(_questionCount, _feeBips, _amount);
 
-        // merge all yes tokens
+        // merge all yes tokens against pivot=0 explicitly so the resolved-question semantics
+        // assert against question 0 (the 2-arg overload now auto-selects the first unresolved
+        // pivot, which would skip question 0).
         {
             vm.startPrank(brian);
             ctf.setApprovalForAll(address(revAdapter), true);
 
             vm.expectEmit();
             emit PositionsConverted(brian, marketId, 0, _amount);
-            revAdapter.mergeAllYesTokens(marketId, _amount);
+            revAdapter.mergeAllYesTokens(marketId, _amount, 0);
         }
 
         _after(_questionCount, _amount);
@@ -199,7 +201,7 @@ contract RevNegRiskAdapter_MergeAllYesTokensSimple_Test is RevNegRiskAdapter_Set
 
             vm.expectEmit();
             emit PositionsConverted(brian, marketId, 0, _amount);
-            revAdapter.mergeAllYesTokens(marketId, _amount);
+            revAdapter.mergeAllYesTokens(marketId, _amount, 0);
         }
 
         _after(_questionCount, _amount);
@@ -220,7 +222,7 @@ contract RevNegRiskAdapter_MergeAllYesTokensSimple_Test is RevNegRiskAdapter_Set
 
             vm.expectEmit();
             emit PositionsConverted(brian, marketId, 0, _amount);
-            revAdapter.mergeAllYesTokens(marketId, _amount);
+            revAdapter.mergeAllYesTokens(marketId, _amount, 0);
         }
 
         _after(_questionCount, _amount);
@@ -235,7 +237,7 @@ contract RevNegRiskAdapter_MergeAllYesTokensSimple_Test is RevNegRiskAdapter_Set
 
         {
             vm.prank(brian);
-            revAdapter.mergeAllYesTokens(marketId, amount);
+            revAdapter.mergeAllYesTokens(marketId, amount, 0);
         }
     }
 
@@ -245,33 +247,41 @@ contract RevNegRiskAdapter_MergeAllYesTokensSimple_Test is RevNegRiskAdapter_Set
     }
 
     function test_revert_mergeAllYesTokens_noConvertiblePositions() public {
-        vm.prank(oracle);
-        marketId = nrAdapter.prepareMarket(0, "");
-
-        nrAdapter.setPrepared(marketId);
+        // Each scenario uses a distinct market because MarketDataManager forbids
+        // adding questions after setPrepared (MarketAlreadyFinalized).
 
         // 0 questions prepared
-        vm.expectRevert(NoConvertiblePositions.selector);
-        revAdapter.mergeAllYesTokens(marketId, 0);
-
         vm.prank(oracle);
-        nrAdapter.prepareQuestion(marketId, "");
+        bytes32 marketZero = nrAdapter.prepareMarket(0, "zero");
+        nrAdapter.setPrepared(marketZero);
+        vm.expectRevert(NoConvertiblePositions.selector);
+        revAdapter.mergeAllYesTokens(marketZero, 0);
 
         // 1 question prepared
-        vm.expectRevert(NoConvertiblePositions.selector);
-        revAdapter.mergeAllYesTokens(marketId, 0);
-
         vm.prank(oracle);
-        nrAdapter.prepareQuestion(marketId, "");
+        bytes32 marketOne = nrAdapter.prepareMarket(0, "one");
+        vm.prank(oracle);
+        nrAdapter.prepareQuestion(marketOne, "");
+        nrAdapter.setPrepared(marketOne);
+        vm.expectRevert(NoConvertiblePositions.selector);
+        revAdapter.mergeAllYesTokens(marketOne, 0);
 
-        // 2 questions prepared - should work (but need to set up approvals first)
+        // 2 questions prepared - amount=0 returns early inside convertPositions
+        vm.prank(oracle);
+        bytes32 marketTwo = nrAdapter.prepareMarket(0, "two");
+        vm.prank(oracle);
+        nrAdapter.prepareQuestion(marketTwo, "");
+        vm.prank(oracle);
+        nrAdapter.prepareQuestion(marketTwo, "");
+        nrAdapter.setPrepared(marketTwo);
+
         vm.startPrank(brian);
         usdc.approve(address(revAdapter), 0);
         ctf.setApprovalForAll(address(revAdapter), true);
         vm.stopPrank();
 
         vm.prank(brian);
-        revAdapter.mergeAllYesTokens(marketId, 0);
+        revAdapter.mergeAllYesTokens(marketTwo, 0);
     }
 
     function test_revert_mergeAllYesTokens_userNotApproved(uint256 _questionCount, uint128 _amount) public {
@@ -320,11 +330,11 @@ contract RevNegRiskAdapter_MergeAllYesTokensSimple_Test is RevNegRiskAdapter_Set
 
         _before(_questionCount, 0, _amount);
 
-        // merge all yes tokens
+        // merge all yes tokens (explicit pivot=0 to match the resolved-question setup)
         {
             vm.startPrank(brian);
             ctf.setApprovalForAll(address(revAdapter), true);
-            revAdapter.mergeAllYesTokens(marketId, _amount);
+            revAdapter.mergeAllYesTokens(marketId, _amount, 0);
         }
 
         // WCOL balance should always be 0 after execution
@@ -346,14 +356,15 @@ contract RevNegRiskAdapter_MergeAllYesTokensSimple_Test is RevNegRiskAdapter_Set
 
         _before(_questionCount, 0, _amount);
 
-        // merge all yes tokens and verify event
+        // merge all yes tokens and verify event (pivot=0 explicitly because question 0
+        // is the resolved question under test).
         {
             vm.startPrank(brian);
             ctf.setApprovalForAll(address(revAdapter), true);
 
             vm.expectEmit(true, true, true, true);
             emit PositionsConverted(brian, marketId, 0, _amount);
-            revAdapter.mergeAllYesTokens(marketId, _amount);
+            revAdapter.mergeAllYesTokens(marketId, _amount, 0);
         }
     }
 
@@ -370,14 +381,14 @@ contract RevNegRiskAdapter_MergeAllYesTokensSimple_Test is RevNegRiskAdapter_Set
         uint256 initialUsdcBalance = usdc.balanceOf(brian);
         uint256 initialWcolBalance = wcol.balanceOf(address(revAdapter));
 
-        // merge all yes tokens
+        // merge all yes tokens (explicit pivot=0 to test the resolved-pivot path)
         {
             vm.startPrank(brian);
             ctf.setApprovalForAll(address(revAdapter), true);
 
             vm.expectEmit();
             emit PositionsConverted(brian, marketId, 0, amount);
-            revAdapter.mergeAllYesTokens(marketId, amount);
+            revAdapter.mergeAllYesTokens(marketId, amount, 0);
         }
 
         // Verify final balances
@@ -399,28 +410,48 @@ contract RevNegRiskAdapter_MergeAllYesTokensSimple_Test is RevNegRiskAdapter_Set
         }
     }
 
-    /// @notice mergeAllYesTokens must revert if the pivot question is already resolved (TRUE).
-    function test_revert_mergeAllYesTokens_pivotResolvedTrue(uint256 _questionCount, uint128 _amount) public {
+    /// @notice With question 0 resolved (TRUE), the 2-arg mergeAllYesTokens auto-skips to
+    ///         the first unresolved question (Q1) and the merge succeeds. The resolved
+    ///         question's YES tokens remain with the user (worthless / redeemable separately).
+    /// @dev    `_questionCount` is bounded to >=3 so that after Q0 (resolved) is skipped and
+    ///         Q1 is taken as the pivot, at least one unresolved non-pivot question (Q2)
+    ///         remains for the burn loop — convertPositions reverts with NoUnresolvedPositions
+    ///         if zero unresolved non-pivot questions are found.
+    function test_mergeAllYesTokens_q0ResolvedTrue_autoPivots(uint256 _questionCount, uint128 _amount) public {
         vm.assume(_amount > 0);
-        _questionCount = bound(_questionCount, 2, QUESTION_COUNT_MAX);
+        _questionCount = bound(_questionCount, 3, QUESTION_COUNT_MAX);
 
         _before(_questionCount, 0, _amount);
 
-        // Resolve pivot (question 0) AFTER setup so balances are already in place.
+        // Resolve question 0 AFTER setup so balances are already in place.
         vm.prank(oracle);
         nrAdapter.reportOutcome(questionId0, true);
 
         vm.startPrank(brian);
         ctf.setApprovalForAll(address(revAdapter), true);
-        vm.expectRevert(MarketAlreadyResolved.selector);
+
+        // Auto-pivot lands on Q1 because Q0 is now resolved.
+        vm.expectEmit();
+        emit PositionsConverted(brian, marketId, 1, _amount);
         revAdapter.mergeAllYesTokens(marketId, _amount);
         vm.stopPrank();
+
+        // Brian receives full _amount USDC from the Q1 merge.
+        assertEq(usdc.balanceOf(brian), _amount, "Brian should receive USDC from merge via Q1 pivot");
+        assertEq(wcol.balanceOf(address(revAdapter)), 0, "WCOL balance must be 0");
+
+        // Resolved Q0 YES is skipped: stays with brian, never reaches the burn address.
+        assertEq(ctf.balanceOf(brian, positionIdTrue0), _amount, "Resolved Q0 YES must remain with brian");
+        address burnAddress = revAdapter.getYesTokenBurnAddress();
+        assertEq(ctf.balanceOf(burnAddress, positionIdTrue0), 0, "Resolved Q0 YES must not be burned");
     }
 
-    /// @notice mergeAllYesTokens must revert if the pivot question is already resolved (FALSE).
-    function test_revert_mergeAllYesTokens_pivotResolvedFalse(uint256 _questionCount, uint128 _amount) public {
+    /// @notice Same as above but resolving Q0 as FALSE. payoutDenominator is still non-zero,
+    ///         so the auto-pivot helper treats Q0 as resolved and skips to Q1.
+    /// @dev    See test_mergeAllYesTokens_q0ResolvedTrue_autoPivots for the >=3 bound rationale.
+    function test_mergeAllYesTokens_q0ResolvedFalse_autoPivots(uint256 _questionCount, uint128 _amount) public {
         vm.assume(_amount > 0);
-        _questionCount = bound(_questionCount, 2, QUESTION_COUNT_MAX);
+        _questionCount = bound(_questionCount, 3, QUESTION_COUNT_MAX);
 
         _before(_questionCount, 0, _amount);
 
@@ -429,39 +460,14 @@ contract RevNegRiskAdapter_MergeAllYesTokensSimple_Test is RevNegRiskAdapter_Set
 
         vm.startPrank(brian);
         ctf.setApprovalForAll(address(revAdapter), true);
-        vm.expectRevert(MarketAlreadyResolved.selector);
-        revAdapter.mergeAllYesTokens(marketId, _amount);
-        vm.stopPrank();
-    }
 
-    /// @notice mergeAllYesTokens succeeds when a non-pivot question is already resolved:
-    ///         the resolved YES is skipped (not burned), brian keeps it; the merge still settles
-    ///         via the unresolved pivot.
-    function test_mergeAllYesTokens_nonPivotResolved(uint128 _amount) public {
-        vm.assume(_amount > 0);
-        uint256 _questionCount = 4;
-
-        _before(_questionCount, 0, _amount);
-
-        // Resolve a non-pivot question (index 1).
-        bytes32 resolvedQuestionId = NegRiskIdLib.getQuestionId(marketId, 1);
-        vm.prank(oracle);
-        nrAdapter.reportOutcome(resolvedQuestionId, true);
-
-        vm.startPrank(brian);
-        ctf.setApprovalForAll(address(revAdapter), true);
+        vm.expectEmit();
+        emit PositionsConverted(brian, marketId, 1, _amount);
         revAdapter.mergeAllYesTokens(marketId, _amount);
         vm.stopPrank();
 
-        address burnAddress = revAdapter.getYesTokenBurnAddress();
-
-        // The resolved non-pivot question's YES must NOT be pulled from brian.
-        uint256 resolvedYesId = nrAdapter.getPositionId(resolvedQuestionId, true);
-        assertEq(ctf.balanceOf(brian, resolvedYesId), _amount, "resolved non-pivot YES must remain with brian");
-        assertEq(ctf.balanceOf(burnAddress, resolvedYesId), 0, "resolved non-pivot YES must not be at burn addr");
-
-        // Brian still receives USDC from the pivot merge.
-        assertEq(usdc.balanceOf(brian), _amount, "Brian should receive USDC from merge");
+        assertEq(usdc.balanceOf(brian), _amount, "Brian should receive USDC from merge via Q1 pivot");
         assertEq(wcol.balanceOf(address(revAdapter)), 0, "WCOL balance must be 0");
+        assertEq(ctf.balanceOf(brian, positionIdTrue0), _amount, "Resolved Q0 YES must remain with brian");
     }
 }
