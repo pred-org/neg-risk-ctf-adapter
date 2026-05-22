@@ -182,6 +182,69 @@ contract NegRiskBatchRedeemTest is TestHelper {
         console.log("Batch redemption with resolved question completed successfully!");
     }
 
+    /// @notice Pre-existing USDC sitting in NegRiskBatchRedeem
+    /// must not be paid out to the first user in the batch. Each user must only receive
+    /// the collateral produced by their own redemption.
+    function test_batchRedeem_donationDoesNotDrainFirstUser() public {
+        bytes32 testMarketId = adapter.prepareMarket(0, "Donation market");
+        bytes32 testQuestionId = adapter.prepareQuestion(testMarketId, "Donation question");
+
+        uint256 yesPositionId = adapter.getPositionId(testQuestionId, true);
+        uint256 noPositionId = adapter.getPositionId(testQuestionId, false);
+
+        uint256 tokenAmount = 100e6;
+        _distributeTokensToUsers(testQuestionId, tokenAmount);
+
+        // Donate USDC directly into the batch redeem contract before any redemption.
+        // Pre-fix behaviour: user1 (first in batch) walks away with this donation in
+        // addition to their share, and user2 receives zero.
+        uint256 donation = 5e6;
+        usdc.mint(address(this), donation);
+        usdc.transfer(address(batchRedeem), donation);
+        assertEq(usdc.balanceOf(address(batchRedeem)), donation, "Donation should be sitting in batch redeem");
+
+        uint256 user1InitialUSDC = usdc.balanceOf(user1);
+        uint256 user2InitialUSDC = usdc.balanceOf(user2);
+
+        // YES wins; each user redeems different amounts.
+        adapter.reportOutcome(testQuestionId, true);
+
+        address[] memory users = new address[](2);
+        users[0] = user1;
+        users[1] = user2;
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = 50e6;
+        amounts[1] = 30e6;
+
+        vm.prank(operator);
+        batchRedeem.batchRedeemQuestion(testQuestionId, users, amounts, amounts);
+
+        bytes32 conditionId = adapter.getConditionId(testQuestionId);
+
+        // Each user only receives exactly the collateral produced by their own redemption.
+        assertEq(
+            usdc.balanceOf(user1),
+            user1InitialUSDC + _calculateExpectedPayout(conditionId, amounts[0], amounts[0]),
+            "User1 must NOT be credited with the donation"
+        );
+        assertEq(
+            usdc.balanceOf(user2),
+            user2InitialUSDC + _calculateExpectedPayout(conditionId, amounts[1], amounts[1]),
+            "User2 must receive their full share (not drained by user1)"
+        );
+
+        // The donation stays in the contract; it was never authorized to be paid out.
+        assertEq(
+            usdc.balanceOf(address(batchRedeem)),
+            donation,
+            "Pre-existing donation must remain untouched"
+        );
+
+        // No leftover CTF tokens.
+        assertEq(ctf.balanceOf(address(batchRedeem), yesPositionId), 0);
+        assertEq(ctf.balanceOf(address(batchRedeem), noPositionId), 0);
+    }
+
     function test_batchRedeemWithUnresolvedQuestion() public {
         console.log("=== Testing Batch Redemption with Unresolved Question ===");
         
