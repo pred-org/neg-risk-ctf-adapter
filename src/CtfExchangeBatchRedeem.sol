@@ -167,38 +167,33 @@ contract CtfExchangeBatchRedeem is ERC1155TokenReceiver, ICtfExchangeBatchRedeem
     ) internal returns (uint256 payout) {
         if (_yesAmount == 0 && _noAmount == 0) return 0;
 
-        uint256 numTokens = (_yesAmount > 0 ? 1 : 0) + (_noAmount > 0 ? 1 : 0);
-        uint256[] memory positionIds = new uint256[](numTokens);
-        uint256[] memory userAmounts = new uint256[](numTokens);
-        uint256 idx = 0;
-        if (_yesAmount > 0) {
-            positionIds[idx] = _yesPositionId;
-            userAmounts[idx] = _yesAmount;
-            idx++;
-        }
-        if (_noAmount > 0) {
-            positionIds[idx] = _noPositionId;
-            userAmounts[idx] = _noAmount;
+        {
+            uint256 numTokens = (_yesAmount > 0 ? 1 : 0) + (_noAmount > 0 ? 1 : 0);
+            uint256[] memory positionIds = new uint256[](numTokens);
+            uint256[] memory userAmounts = new uint256[](numTokens);
+            uint256 idx = 0;
+            if (_yesAmount > 0) {
+                positionIds[idx] = _yesPositionId;
+                userAmounts[idx] = _yesAmount;
+                idx++;
+            }
+            if (_noAmount > 0) {
+                positionIds[idx] = _noPositionId;
+                userAmounts[idx] = _noAmount;
+            }
+            ctf.safeBatchTransferFrom(_user, address(this), positionIds, userAmounts, "");
         }
 
-        // Transfer tokens from user to this contract
-        ctf.safeBatchTransferFrom(_user, address(this), positionIds, userAmounts, "");
-
-        payout = _redeemAndMeasure(_conditionId);
+        // Redeem the positions directly using ConditionalTokens.
+        // For binary markets, both index sets [1, 2] are redeemed.
+        uint256 balBefore = col.balanceOf(address(this));
+        ctf.redeemPositions(address(col), bytes32(0), _conditionId, Helpers.partition());
+        payout = col.balanceOf(address(this)) - balBefore;
 
         if (payout > 0) {
             // Transfer the payout to the user
             col.transfer(_user, payout);
         }
-    }
-
-    /// @dev Wraps the inner CTF redemption with delta accounting on `col`.
-    /// Factored out to keep `_redeemUserPositions` under stack pressure.
-    function _redeemAndMeasure(bytes32 _conditionId) internal returns (uint256) {
-        uint256 balBefore = col.balanceOf(address(this));
-        // For binary markets, both index sets [1, 2] are redeemed.
-        ctf.redeemPositions(address(col), bytes32(0), _conditionId, Helpers.partition());
-        return col.balanceOf(address(this)) - balBefore;
     }
 
     /// @notice Batch redeem positions for multiple users with custom amounts for yes/no tokens
