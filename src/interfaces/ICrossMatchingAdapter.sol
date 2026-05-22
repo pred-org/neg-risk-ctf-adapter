@@ -31,6 +31,8 @@ interface ICrossMatchingAdapter {
     error NoConvertiblePositions();
     error MarketNotPrepared();
     error FillAmountMismatch();    // per-maker share count must match the taker's cross-match unit
+    error OrderNotSell();          // order side must be SELL on the sell-processing path
+    error QuestionIdMismatch();    // signed questionId does not derive the supplied tokenId
 
     // Events
     event OrderFilled(bytes32 indexed orderHash, address indexed maker, address indexed taker, uint256 makerAssetId, uint256 takerAssetId, uint256 makerAmountFilled, uint256 takerAmountFilled, uint256 fee);
