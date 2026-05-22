@@ -298,8 +298,8 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, IRevNegRiskAdapterEE, Auth {
     /// @param _amount - the amount of USDC to split
     /// @param _recipient - the address to receive the YES tokens
     function splitAllYesTokens(bytes32 _marketId, uint256 _amount, address _recipient) internal {
+        if (!neg.getPrepared(_marketId)) revert MarketNotPrepared();
         uint256 questionCount = neg.getQuestionCount(_marketId);
-        if (neg.getOracle(_marketId) == address(0)) revert MarketNotPrepared();
         if (questionCount <= 1) revert NoConvertiblePositions();
 
         uint256[] memory yesPositionIds = new uint256[](questionCount);

@@ -646,7 +646,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         // For sell orders, we need to merge the user's NO tokens with the generated YES tokens
         // to get USDC, which will be used to pay back the vault and the user
         
-        require(order.side == Side.SELL, "Order must be a sell order");
+        if (order.side != Side.SELL) revert OrderNotSell();
         
         // Get the condition ID for this question from the NegRiskAdapter
         bytes32 conditionId = neg.getConditionId(order.questionId);
@@ -771,7 +771,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
             }
         }
         uint256 positionId = neg.getPositionId(order.order.questionId, isYes);
-        require(positionId == order.tokenId, "Question ID mismatch");
+        if (positionId != order.tokenId) revert QuestionIdMismatch();
 
         return Parsed({
             maker: order.order.maker,
