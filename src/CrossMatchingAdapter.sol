@@ -386,7 +386,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         }
 
         // Merge all the YES tokens to get USDC
-        uint8 pivotIndex = _getQuestionIndexFromPositionId(takerOrder.tokenId, marketId);
+        uint8 pivotIndex = NegRiskIdLib.getQuestionIndex(takerOrder.questionId);
         revNeg.mergeAllYesTokens(marketId, fillAmount, pivotIndex);
         // wrap the generated USDC to the adapter
         wcol.wrap(address(this), fillAmount);
@@ -563,7 +563,7 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
             wcol.mint(totalSellUSDC);
         }
 
-        uint8 pivotId = _getQuestionIndexFromPositionId(parsedOrders[0].tokenId, marketId);
+        uint8 pivotId = NegRiskIdLib.getQuestionIndex(parsedOrders[0].questionId);
         bytes32 pivotConditionId = neg.getConditionId(parsedOrders[0].questionId);
         _splitAllYesTokens(pivotConditionId, pivotId, fillAmount, marketId);
         
@@ -789,29 +789,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
         });
     }
     
-    /// @dev Maps a position ID to its corresponding question index
-    /// @param positionId The position ID to map
-    /// @param marketId The market ID for context
-    /// @return qIndex The question index (0-based)
-    function _getQuestionIndexFromPositionId(uint256 positionId, bytes32 marketId) internal view returns (uint8) {
-        // Production-ready implementation: iterate through questions to find matching position ID
-        uint256 questionCount = neg.getQuestionCount(marketId);
-        
-        for (uint8 i = 0; i < questionCount; i++) {
-            bytes32 questionId = NegRiskIdLib.getQuestionId(marketId, i);
-            
-            // Check if this position ID matches either YES or NO for this question
-            uint256 yesPositionId = neg.getPositionId(questionId, true);
-            uint256 noPositionId = neg.getPositionId(questionId, false);
-            
-            if (positionId == yesPositionId || positionId == noPositionId) {
-                return i;
-            }
-        }
-        
-        // If we can't find a matching question, revert
-        revert UnsupportedToken();
-    }
 
     function getCollateral() public view override(IAssets, ICrossMatchingAdapter) returns (address) {
         return address(wcol);

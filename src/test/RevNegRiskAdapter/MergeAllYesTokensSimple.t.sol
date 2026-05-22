@@ -207,6 +207,50 @@ contract RevNegRiskAdapter_MergeAllYesTokensSimple_Test is RevNegRiskAdapter_Set
         _after(_questionCount, _amount);
     }
 
+    /// @notice A pre-existing donation of pivot NO must not be able to brick
+    /// mergeAllYesTokens. Delta accounting on the pivot NO balance ensures
+    /// the inner merge requests only what convertPositions actually produced,
+    /// regardless of any pre-existing balance.
+    function test_mergeAllYesTokens_donatedPivotNo_doesNotBrickOrOverpay(uint128 _amount) public {
+        vm.assume(_amount > 0);
+
+        uint256 _questionCount = 3;
+        _before(_questionCount, 0, _amount);
+
+        // Alice has _amount of pivot (q0) NO tokens from the split inside _before.
+        // She donates 1 wei of pivot NO directly into the revAdapter.
+        // Pre-fix: actualNoAmount = _amount + 1; the inner mergePositions then
+        //   requires _amount + 1 of YES which the adapter does not have ⇒ DoS.
+        vm.prank(alice);
+        ctf.safeTransferFrom(alice, address(revAdapter), positionIdFalse0, 1, "");
+        assertEq(ctf.balanceOf(address(revAdapter), positionIdFalse0), 1, "donation should land");
+
+        uint256 brianUsdcBefore = usdc.balanceOf(brian);
+
+        vm.startPrank(brian);
+        ctf.setApprovalForAll(address(revAdapter), true);
+        revAdapter.mergeAllYesTokens(marketId, _amount, 0);
+        vm.stopPrank();
+
+        // Brian gets exactly _amount USDC — the donation is not credited to him.
+        assertEq(
+            usdc.balanceOf(brian),
+            brianUsdcBefore + _amount,
+            "Brian must receive exactly the merge amount, not inflated by donation"
+        );
+
+        // The donated 1 wei of pivot NO is still in the adapter; never merged,
+        // never paid out.
+        assertEq(
+            ctf.balanceOf(address(revAdapter), positionIdFalse0),
+            1,
+            "Donated pivot NO must remain in the adapter"
+        );
+
+        // Adapter retains no USDC dust.
+        assertEq(usdc.balanceOf(address(revAdapter)), 0, "Adapter must retain no USDC");
+    }
+
     function test_mergeAllYesTokens_maxFees(uint256 _questionCount, uint128 _amount) public {
         vm.assume(_amount > 0);
 

@@ -239,23 +239,22 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, IRevNegRiskAdapterEE, Auth {
     /// @param _amount   - the amount of tokens to convert
     /// @param _pivotId  - the index of the question to use as pivot for merging
     function mergeAllYesTokens(bytes32 _marketId, uint256 _amount, uint256 _pivotId) public {
-        // convert all yes positions to the pivot no position
-        // Then merge the pivot no position with pivot yes position to get USDC
+        bytes32 pivotQuestionId = NegRiskIdLib.getQuestionId(_marketId, uint8(_pivotId));
+        uint256 noPositionId = neg.getPositionId(pivotQuestionId, false);
+        uint256 yesPositionId = neg.getPositionId(pivotQuestionId, true);
+
+        uint256 noBefore = ctf.balanceOf(address(this), noPositionId);
         convertPositions(_marketId, _pivotId, _amount, address(this));
-        
-        // Get the actual amount of NO tokens the adapter has (after fees)
-        uint256 noPositionId = neg.getPositionId(NegRiskIdLib.getQuestionId(_marketId, uint8(_pivotId)), false);
-        uint256 actualNoAmount = ctf.balanceOf(address(this), noPositionId);
-        
-        // Transfer the YES tokens from the user to the adapter for merging
-        uint256 yesPositionId = neg.getPositionId(NegRiskIdLib.getQuestionId(_marketId, uint8(_pivotId)), true);
-        ctf.safeTransferFrom(msg.sender, address(this), yesPositionId, _amount, "");
-        
-        // Merge the NO and YES tokens to get USDC (adapter has both tokens)
-        neg.mergePositions(neg.getConditionId(NegRiskIdLib.getQuestionId(_marketId, uint8(_pivotId))), actualNoAmount);
-        
-        // Transfer the USDC to the user (amount after fees)
-        col.transfer(msg.sender, actualNoAmount);
+        uint256 mergeAmount = ctf.balanceOf(address(this), noPositionId) - noBefore;
+
+        ctf.safeTransferFrom(msg.sender, address(this), yesPositionId, mergeAmount, "");
+
+        bytes32 conditionId = neg.getConditionId(pivotQuestionId);
+        uint256 colBefore = col.balanceOf(address(this));
+        neg.mergePositions(conditionId, mergeAmount);
+        uint256 payout = col.balanceOf(address(this)) - colBefore;
+
+        col.transfer(msg.sender, payout);
     }
 
     /// @dev internal function to process target question and avoid stack too deep
