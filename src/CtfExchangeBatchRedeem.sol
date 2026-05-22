@@ -186,10 +186,10 @@ contract CtfExchangeBatchRedeem is ERC1155TokenReceiver, ICtfExchangeBatchRedeem
 
         // Redeem the positions directly using ConditionalTokens
         // For binary markets, we need to redeem both index sets [1, 2]
-        uint256[] memory indexSets = Helpers.partition(); // [1, 2]
-        ctf.redeemPositions(address(col), bytes32(0), _conditionId, indexSets);
+        uint256 balBefore = col.balanceOf(address(this));
+        ctf.redeemPositions(address(col), bytes32(0), _conditionId, Helpers.partition());
+        payout = col.balanceOf(address(this)) - balBefore;
 
-        payout = col.balanceOf(address(this));
         if (payout > 0) {
             // Transfer the payout to the user
             col.transfer(_user, payout);
