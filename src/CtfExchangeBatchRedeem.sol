@@ -167,25 +167,25 @@ contract CtfExchangeBatchRedeem is ERC1155TokenReceiver, ICtfExchangeBatchRedeem
     ) internal returns (uint256 payout) {
         if (_yesAmount == 0 && _noAmount == 0) return 0;
 
-        {
-            uint256 numTokens = (_yesAmount > 0 ? 1 : 0) + (_noAmount > 0 ? 1 : 0);
-            uint256[] memory positionIds = new uint256[](numTokens);
-            uint256[] memory userAmounts = new uint256[](numTokens);
-            uint256 idx = 0;
-            if (_yesAmount > 0) {
-                positionIds[idx] = _yesPositionId;
-                userAmounts[idx] = _yesAmount;
-                idx++;
-            }
-            if (_noAmount > 0) {
-                positionIds[idx] = _noPositionId;
-                userAmounts[idx] = _noAmount;
-            }
-            ctf.safeBatchTransferFrom(_user, address(this), positionIds, userAmounts, "");
+        uint256 numTokens = (_yesAmount > 0 ? 1 : 0) + (_noAmount > 0 ? 1 : 0);
+        uint256[] memory positionIds = new uint256[](numTokens);
+        uint256[] memory userAmounts = new uint256[](numTokens);
+        uint256 idx = 0;
+        if (_yesAmount > 0) {
+            positionIds[idx] = _yesPositionId;
+            userAmounts[idx] = _yesAmount;
+            idx++;
+        }
+        if (_noAmount > 0) {
+            positionIds[idx] = _noPositionId;
+            userAmounts[idx] = _noAmount;
         }
 
-        // Redeem the positions directly using ConditionalTokens.
-        // For binary markets, both index sets [1, 2] are redeemed.
+        // Transfer tokens from user to this contract
+        ctf.safeBatchTransferFrom(_user, address(this), positionIds, userAmounts, "");
+
+        // Redeem the positions directly using ConditionalTokens
+        // For binary markets, we need to redeem both index sets [1, 2]
         uint256 balBefore = col.balanceOf(address(this));
         ctf.redeemPositions(address(col), bytes32(0), _conditionId, Helpers.partition());
         payout = col.balanceOf(address(this)) - balBefore;
