@@ -112,14 +112,6 @@ contract CrossMatchingAdapter is ReentrancyGuard, ERC1155TokenReceiver, AssetOpe
     /// @param questionId The question ID to check
     /// @return true if the question is unresolved, false if resolved
     function _isQuestionUnresolved(bytes32 questionId) internal view returns (bool) {
-        uint256 reportedAt_ = negOperator.reportedAt(questionId);
-        
-        // If not reported at all, it's unresolved
-        if (reportedAt_ == 0) {
-            return true;
-        }
-        
-        // If reported, check if it's been resolved
         bytes32 conditionId = neg.getConditionId(questionId);
         return ctf.payoutDenominator(conditionId) == 0;
     }
