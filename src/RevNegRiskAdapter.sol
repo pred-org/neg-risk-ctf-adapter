@@ -25,6 +25,7 @@ interface IRevNegRiskAdapterEE is IAuthEE {
     error MarketNotPrepared();
     error NoUnresolvedPositions();
     error MarketAlreadyResolved();
+    error MarketAlreadyDetermined();
 
     event PositionsConverted(
         address indexed stakeholder, bytes32 indexed marketId, uint256 indexed targetIndex, uint256 amount
@@ -141,6 +142,7 @@ contract RevNegRiskAdapter is ERC1155TokenReceiver, IRevNegRiskAdapterEE, Auth {
     /// @param _amount   - the amount of tokens to convert
     function convertPositions(bytes32 _marketId, uint256 _targetIndex, uint256 _amount, address _recipient) public {
         if (!neg.getPrepared(_marketId)) revert MarketNotPrepared();
+        if (neg.getDetermined(_marketId)) revert MarketAlreadyDetermined();
         uint256 questionCount = neg.getQuestionCount(_marketId);
 
         if (questionCount <= 1) revert NoConvertiblePositions();
