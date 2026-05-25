@@ -52,9 +52,8 @@ contract RevNegRiskAdapter_MergeAllYesTokensResolved_Test is RevNegRiskAdapter_S
                        1 OF 3 RESOLVED, NOT THE PIVOT
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice With 3 questions and Q1 resolved (the resolved question is NOT the pivot),
-    ///         mergeAllYesTokens(pivotId=0) settles via Q0 and processes the remaining
-    ///         non-pivot YES (Q2). YES(Q1) is left with brian (worthless / redeemable separately).
+    /// @notice With 3 questions and Q1 resolved TRUE, the market is determined and
+    ///         mergeAllYesTokens now reverts with MarketAlreadyDetermined.
     function test_mergeAllYesTokens_resolvedNonPivotQuestionTrue(uint128 _amount) public {
         vm.assume(_amount > 0);
         uint256 questionCount = 3;
@@ -66,32 +65,9 @@ contract RevNegRiskAdapter_MergeAllYesTokensResolved_Test is RevNegRiskAdapter_S
         vm.prank(oracle);
         nrAdapter.reportOutcome(resolvedQuestionId, true);
 
-        uint256 usdcBefore = usdc.balanceOf(brian);
-
         vm.prank(brian);
+        vm.expectRevert(MarketAlreadyDetermined.selector);
         revAdapter.mergeAllYesTokens(marketId, _amount);
-
-        // Brian receives full _amount USDC from the pivot merge (no fees on this flow).
-        assertEq(usdc.balanceOf(brian), usdcBefore + _amount, "Brian should receive USDC from merge");
-        assertEq(wcol.balanceOf(address(revAdapter)), 0, "WCOL balance must be 0");
-
-        address burnAddress = revAdapter.getYesTokenBurnAddress();
-
-        // Pivot YES (Q0): minted by the internal split and sent to burn; brian's own YES(Q0)
-        // is pulled into the adapter and then consumed by the final mergePositions.
-        uint256 pivotYesId = nrAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, 0), true);
-        assertEq(ctf.balanceOf(brian, pivotYesId), 0, "Brian pivot YES should be 0");
-        assertEq(ctf.balanceOf(burnAddress, pivotYesId), _amount, "Pivot YES should be at burn address");
-
-        // Resolved non-pivot YES (Q1): NOT touched — still with brian, not at the burn address.
-        uint256 resolvedYesId = nrAdapter.getPositionId(resolvedQuestionId, true);
-        assertEq(ctf.balanceOf(brian, resolvedYesId), _amount, "Resolved non-pivot YES must remain with brian");
-        assertEq(ctf.balanceOf(burnAddress, resolvedYesId), 0, "Resolved non-pivot YES must not be burned");
-
-        // Unresolved non-pivot YES (Q2): burned via the batch transfer in convertPositions.
-        uint256 otherYesId = nrAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, 2), true);
-        assertEq(ctf.balanceOf(brian, otherYesId), 0, "Unresolved non-pivot YES should leave brian");
-        assertEq(ctf.balanceOf(burnAddress, otherYesId), _amount, "Unresolved non-pivot YES should be burned");
     }
 
     /// @notice Same flow but the resolved non-pivot question pays out FALSE.
@@ -121,9 +97,8 @@ contract RevNegRiskAdapter_MergeAllYesTokensResolved_Test is RevNegRiskAdapter_S
                   Q0 RESOLVED: 2-ARG AUTO-PIVOT + 3-ARG EXPLICIT
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice When Q0 is resolved, the 2-arg overload auto-skips to the first unresolved
-    ///         question (Q1) and the merge succeeds. The 3-arg overload remains available
-    ///         for callers who want to pick the pivot explicitly.
+    /// @notice When Q0 is resolved TRUE, the market is determined and mergeAllYesTokens
+    ///         now reverts with MarketAlreadyDetermined.
     function test_mergeAllYesTokens_q0Resolved_explicitPivot(uint128 _amount) public {
         vm.assume(_amount > 0);
         uint256 questionCount = 3;
@@ -134,28 +109,67 @@ contract RevNegRiskAdapter_MergeAllYesTokensResolved_Test is RevNegRiskAdapter_S
         vm.prank(oracle);
         nrAdapter.reportOutcome(q0, true);
 
-        // 2-arg overload auto-pivots to Q1 (Q0 is resolved) and succeeds.
         vm.prank(brian);
+        vm.expectRevert(MarketAlreadyDetermined.selector);
         revAdapter.mergeAllYesTokens(marketId, _amount);
+    }
 
-        assertEq(usdc.balanceOf(brian), _amount, "Brian should receive USDC from auto-pivot merge");
+    /// @notice When Q0 is resolved FALSE, market is NOT determined and the 2-arg
+    ///         overload auto-skips Q0, pivots to Q1, and merge succeeds.
+    function test_mergeAllYesTokens_q0ResolvedFalse_autoPivotSucceeds(uint128 _amount) public {
+        vm.assume(_amount > 0);
+        uint256 questionCount = 3;
+
+        _before(questionCount, 0, _amount);
+
+        bytes32 q0 = NegRiskIdLib.getQuestionId(marketId, 0);
+        vm.prank(oracle);
+        nrAdapter.reportOutcome(q0, false);
+        assertFalse(nrAdapter.getDetermined(marketId), "market must not be determined");
+
+        vm.startPrank(brian);
+        vm.expectEmit(true, true, true, true);
+        emit PositionsConverted(brian, marketId, 1, _amount);
+        revAdapter.mergeAllYesTokens(marketId, _amount);
+        vm.stopPrank();
+
+        assertEq(usdc.balanceOf(brian), _amount, "Brian should receive USDC from Q1 pivot merge");
         assertEq(wcol.balanceOf(address(revAdapter)), 0, "WCOL balance must be 0");
 
         address burnAddress = revAdapter.getYesTokenBurnAddress();
-
-        // Resolved Q0's YES stays with brian (skipped in the burn loop).
         uint256 q0YesId = nrAdapter.getPositionId(q0, true);
+        // Resolved FALSE non-pivot YES should be skipped.
         assertEq(ctf.balanceOf(brian, q0YesId), _amount, "Resolved Q0 YES must remain with brian");
         assertEq(ctf.balanceOf(burnAddress, q0YesId), 0, "Resolved Q0 YES must not be burned");
+    }
 
-        // Q1 is the auto-selected pivot: brian's YES is pulled; the split-minted YES is burned.
-        uint256 q1YesId = nrAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, 1), true);
-        assertEq(ctf.balanceOf(brian, q1YesId), 0, "Brian's Q1 YES should be 0");
-        assertEq(ctf.balanceOf(burnAddress, q1YesId), _amount, "Q1 pivot YES should be at burn address");
+    /// @notice With Q0 resolved FALSE, callers can still choose explicit pivot Q2.
+    ///         The operation succeeds because market is not determined.
+    function test_mergeAllYesTokens_q0ResolvedFalse_explicitPivotSucceeds(uint128 _amount) public {
+        vm.assume(_amount > 0);
+        uint256 questionCount = 3;
+        uint256 pivotId = 2;
 
-        // Q2 (unresolved non-pivot) is burned via the batch transfer.
-        uint256 q2YesId = nrAdapter.getPositionId(NegRiskIdLib.getQuestionId(marketId, 2), true);
-        assertEq(ctf.balanceOf(brian, q2YesId), 0, "Brian's Q2 YES should be 0");
-        assertEq(ctf.balanceOf(burnAddress, q2YesId), _amount, "Q2 YES should be burned");
+        _before(questionCount, 0, _amount);
+
+        bytes32 q0 = NegRiskIdLib.getQuestionId(marketId, 0);
+        vm.prank(oracle);
+        nrAdapter.reportOutcome(q0, false);
+        assertFalse(nrAdapter.getDetermined(marketId), "market must not be determined");
+
+        vm.startPrank(brian);
+        vm.expectEmit(true, true, true, true);
+        emit PositionsConverted(brian, marketId, pivotId, _amount);
+        revAdapter.mergeAllYesTokens(marketId, _amount, pivotId);
+        vm.stopPrank();
+
+        assertEq(usdc.balanceOf(brian), _amount, "Brian should receive USDC from explicit pivot merge");
+        assertEq(wcol.balanceOf(address(revAdapter)), 0, "WCOL balance must be 0");
+
+        address burnAddress = revAdapter.getYesTokenBurnAddress();
+        uint256 q0YesId = nrAdapter.getPositionId(q0, true);
+        // Resolved FALSE non-pivot YES should be skipped.
+        assertEq(ctf.balanceOf(brian, q0YesId), _amount, "Resolved Q0 YES must remain with brian");
+        assertEq(ctf.balanceOf(burnAddress, q0YesId), 0, "Resolved Q0 YES must not be burned");
     }
 }

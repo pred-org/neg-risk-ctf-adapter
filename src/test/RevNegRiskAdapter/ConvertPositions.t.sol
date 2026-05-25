@@ -748,6 +748,67 @@ contract RevNegRiskAdapter_ConvertPositions_Test is RevNegRiskAdapter_SetUp {
         vm.stopPrank();
     }
 
+    /// @notice If any question resolves TRUE, market becomes determined and
+    ///         convertPositions must revert even when target remains unresolved.
+    function test_revert_convertPositions_marketAlreadyDetermined_targetUnresolved(uint128 _amount) public {
+        vm.assume(_amount > 0);
+        uint256 _questionCount = 3;
+        uint256 _targetIndex = 2;
+
+        _before(_questionCount, 0, _targetIndex, _amount);
+
+        // Resolve a non-target question TRUE -> market is determined.
+        bytes32 winningQuestionId = NegRiskIdLib.getQuestionId(marketId, 0);
+        vm.prank(oracle);
+        nrAdapter.reportOutcome(winningQuestionId, true);
+        assertTrue(nrAdapter.getDetermined(marketId), "market must be determined");
+
+        vm.startPrank(brian);
+        ctf.setApprovalForAll(address(revAdapter), true);
+        vm.expectRevert(MarketAlreadyDetermined.selector);
+        revAdapter.convertPositions(marketId, _targetIndex, _amount, brian);
+        vm.stopPrank();
+    }
+
+    /// @notice Guard precedence: when market is determined and target is also resolved,
+    ///         MarketAlreadyDetermined should fire before MarketAlreadyResolved.
+    function test_revert_convertPositions_marketAlreadyDetermined_precedesTargetResolved(uint128 _amount) public {
+        vm.assume(_amount > 0);
+        uint256 _questionCount = 3;
+        uint256 _targetIndex = 0;
+
+        _before(_questionCount, 0, _targetIndex, _amount);
+
+        // Resolve the target TRUE -> both "determined" and "target resolved" are true.
+        bytes32 targetQuestionId = NegRiskIdLib.getQuestionId(marketId, uint8(_targetIndex));
+        vm.prank(oracle);
+        nrAdapter.reportOutcome(targetQuestionId, true);
+        assertTrue(nrAdapter.getDetermined(marketId), "market must be determined");
+
+        vm.startPrank(brian);
+        ctf.setApprovalForAll(address(revAdapter), true);
+        vm.expectRevert(MarketAlreadyDetermined.selector);
+        revAdapter.convertPositions(marketId, _targetIndex, _amount, brian);
+        vm.stopPrank();
+    }
+
+    /// @notice Determined-market guard triggers before the amount==0 early return.
+    function test_revert_convertPositions_zeroAmount_marketAlreadyDetermined() public {
+        uint256 _questionCount = 3;
+        uint256 _targetIndex = 1;
+        uint256 _amount = 0;
+
+        _before(_questionCount, 0, _targetIndex, _amount);
+
+        bytes32 winningQuestionId = NegRiskIdLib.getQuestionId(marketId, 0);
+        vm.prank(oracle);
+        nrAdapter.reportOutcome(winningQuestionId, true);
+
+        vm.prank(brian);
+        vm.expectRevert(MarketAlreadyDetermined.selector);
+        revAdapter.convertPositions(marketId, _targetIndex, _amount, brian);
+    }
+
     /// @notice Every non-target question is already resolved -> revert NoUnresolvedPositions.
     function test_revert_convertPositions_noUnresolvedPositions(
         uint256 _questionCount,

@@ -285,6 +285,23 @@ contract RevNegRiskAdapter_MergeAllYesTokensSimple_Test is RevNegRiskAdapter_Set
         }
     }
 
+    /// @notice mergeAllYesTokens forwards into convertPositions; once market is determined,
+    ///         it reverts even for amount=0.
+    function test_revert_mergeAllYesTokens_zeroAmount_marketAlreadyDetermined() public {
+        uint256 questionCount = 3;
+        uint128 amount = 1000;
+
+        _before(questionCount, 0, amount);
+
+        vm.prank(oracle);
+        nrAdapter.reportOutcome(questionId0, true);
+        assertTrue(nrAdapter.getDetermined(marketId), "market must be determined");
+
+        vm.prank(brian);
+        vm.expectRevert(MarketAlreadyDetermined.selector);
+        revAdapter.mergeAllYesTokens(marketId, 0);
+    }
+
     function test_revert_mergeAllYesTokens_marketNotPrepared(bytes32 _marketId) public {
         vm.expectRevert(MarketNotPrepared.selector);
         revAdapter.mergeAllYesTokens(_marketId, 0);
@@ -454,13 +471,8 @@ contract RevNegRiskAdapter_MergeAllYesTokensSimple_Test is RevNegRiskAdapter_Set
         }
     }
 
-    /// @notice With question 0 resolved (TRUE), the 2-arg mergeAllYesTokens auto-skips to
-    ///         the first unresolved question (Q1) and the merge succeeds. The resolved
-    ///         question's YES tokens remain with the user (worthless / redeemable separately).
-    /// @dev    `_questionCount` is bounded to >=3 so that after Q0 (resolved) is skipped and
-    ///         Q1 is taken as the pivot, at least one unresolved non-pivot question (Q2)
-    ///         remains for the burn loop — convertPositions reverts with NoUnresolvedPositions
-    ///         if zero unresolved non-pivot questions are found.
+    /// @notice With question 0 resolved TRUE, the market is determined and
+    ///         mergeAllYesTokens now reverts with MarketAlreadyDetermined.
     function test_mergeAllYesTokens_q0ResolvedTrue_autoPivots(uint256 _questionCount, uint128 _amount) public {
         vm.assume(_amount > 0);
         _questionCount = bound(_questionCount, 3, QUESTION_COUNT_MAX);
@@ -474,20 +486,9 @@ contract RevNegRiskAdapter_MergeAllYesTokensSimple_Test is RevNegRiskAdapter_Set
         vm.startPrank(brian);
         ctf.setApprovalForAll(address(revAdapter), true);
 
-        // Auto-pivot lands on Q1 because Q0 is now resolved.
-        vm.expectEmit();
-        emit PositionsConverted(brian, marketId, 1, _amount);
+        vm.expectRevert(MarketAlreadyDetermined.selector);
         revAdapter.mergeAllYesTokens(marketId, _amount);
         vm.stopPrank();
-
-        // Brian receives full _amount USDC from the Q1 merge.
-        assertEq(usdc.balanceOf(brian), _amount, "Brian should receive USDC from merge via Q1 pivot");
-        assertEq(wcol.balanceOf(address(revAdapter)), 0, "WCOL balance must be 0");
-
-        // Resolved Q0 YES is skipped: stays with brian, never reaches the burn address.
-        assertEq(ctf.balanceOf(brian, positionIdTrue0), _amount, "Resolved Q0 YES must remain with brian");
-        address burnAddress = revAdapter.getYesTokenBurnAddress();
-        assertEq(ctf.balanceOf(burnAddress, positionIdTrue0), 0, "Resolved Q0 YES must not be burned");
     }
 
     /// @notice Same as above but resolving Q0 as FALSE. payoutDenominator is still non-zero,
