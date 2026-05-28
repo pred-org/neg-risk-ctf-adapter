@@ -13,6 +13,7 @@ interface IMarketStateManagerEE {
     error FeeBipsOutOfBounds();
     error MarketAlreadyFinalized();
     error QuestionCountOverflow();
+    error NegRiskInvariantViolated();
 }
 
 /// @title MarketStateManager
@@ -20,6 +21,8 @@ interface IMarketStateManagerEE {
 /// @author Mike Shrieve(mike@polymarket.com)
 abstract contract MarketStateManager is IMarketStateManagerEE {
     mapping(bytes32 _marketId => MarketData) internal marketData;
+
+    mapping(bytes32 _questionId => bool) public questionReported;
 
     /*//////////////////////////////////////////////////////////////
                                 GETTERS
@@ -51,6 +54,10 @@ abstract contract MarketStateManager is IMarketStateManagerEE {
 
     function getPrepared(bytes32 _marketId) external view returns (bool) {
         return marketData[_marketId].prepared();
+    }
+
+    function getReportedCount(bytes32 _marketId) external view returns (uint256) {
+        return marketData[_marketId].reportedCount();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -98,6 +105,10 @@ abstract contract MarketStateManager is IMarketStateManagerEE {
     /// @notice Reverts if msg.sender is not the market's oracle
     /// @notice Reverts if the question index is out of bounds
     /// @notice Reverts if the outcome is true, and the market has already been determined
+    /// @notice Reverts with NegRiskInvariantViolated if a multi-question market would resolve
+    ///         all-NO (i.e. the last unreported question is reported NO and no prior question
+    ///         was ever reported YES). Single-question markets are intentionally exempt because
+    ///         they degenerate into a binary YES/NO market where NO is a legitimate outcome.
     function _reportOutcome(bytes32 _questionId, bool _outcome) internal {
         bytes32 marketId = NegRiskIdLib.getMarketId(_questionId);
         uint256 questionIndex = NegRiskIdLib.getQuestionIndex(_questionId);
@@ -111,8 +122,25 @@ abstract contract MarketStateManager is IMarketStateManagerEE {
 
         if (_outcome == true) {
             if (data.determined()) revert MarketAlreadyDetermined();
-            marketData[marketId] = data.determine(questionIndex);
+            data = data.determine(questionIndex);
         }
+
+        if (!questionReported[_questionId]) {
+            uint256 qc = data.questionCount();
+            uint256 newReportedCount = data.reportedCount() + 1;
+
+            // Block all-NO finalization on a multi-question market. If outcome == true we
+            // would have set determined above, so this branch can only revert when the
+            // final unique question is being reported NO without any prior YES.
+            if (qc > 1 && newReportedCount == qc && !data.determined()) {
+                revert NegRiskInvariantViolated();
+            }
+
+            questionReported[_questionId] = true;
+            data = data.incrementReportedCount();
+        }
+
+        marketData[marketId] = data;
     }
 
     /// @notice Marks a market as prepared

@@ -9,6 +9,7 @@ type MarketData is bytes32;
 // md[2] = result
 // md[3:4] = feeBips
 // md[5] = prepared
+// md[6] = reportedCount
 // md[12:32] = oracle
 
 using MarketDataLib for MarketData global;
@@ -21,6 +22,10 @@ library MarketDataLib {
 
     /// @notice used to increment the questionCount
     uint256 constant INCREMENT = uint256(bytes32(bytes1(0x01)));
+
+    /// @notice used to increment the reportedCount
+    /// @dev    byte 6 lives at bit positions 200-207 of the underlying uint256, so 1 << 200
+    uint256 constant REPORTED_COUNT_INCREMENT = uint256(1) << 200;
 
     /// @notice extracts the oracle address from MarketData
     /// @return oracle - the address of the oracle
@@ -97,6 +102,22 @@ library MarketDataLib {
     function setPrepared(MarketData _data) internal pure returns (MarketData) {
         bytes32 data = MarketData.unwrap(_data);
         data |= bytes32(bytes1(0x01)) >> 40;
+        return MarketData.wrap(data);
+    }
+
+    /// @notice extracts the reportedCount from MarketData
+    /// @return reportedCount - the number of questions for which an outcome has been reported
+    function reportedCount(MarketData _data) internal pure returns (uint256) {
+        return uint256(uint8(MarketData.unwrap(_data)[6]));
+    }
+
+    /// @notice increments the reportedCount
+    /// @notice the caller is responsible for ensuring reportedCount <= questionCount, so this
+    ///         cannot overflow byte 6 because questionCount itself is capped at 255
+    /// @return marketData - the modified MarketData
+    function incrementReportedCount(MarketData _data) internal pure returns (MarketData) {
+        bytes32 data = MarketData.unwrap(_data);
+        data = bytes32(uint256(data) + REPORTED_COUNT_INCREMENT);
         return MarketData.wrap(data);
     }
 }
