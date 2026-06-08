@@ -34,7 +34,7 @@ rlp==3.0.0
 slither-analyzer==0.9.3
 solc-select==1.0.3
 toolz==0.12.0
-urllib3==1.26.15
+urllib3==2.7.0
 wcwidth==0.2.6
 web3==6.2.0
 websockets==11.0.2
