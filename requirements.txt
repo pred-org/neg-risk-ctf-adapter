@@ -36,6 +36,6 @@ solc-select==1.0.3
 toolz==0.12.0
 urllib3==1.26.15
 wcwidth==0.2.6
-web3==6.2.0
+web3==7.15.0
 websockets==11.0.2
 yarl==1.9.2
